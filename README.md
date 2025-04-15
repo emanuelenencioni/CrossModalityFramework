@@ -13,4 +13,8 @@ TODO
 
 ## Installation
 
-TODO
+## TODO
+- [ ] Handling DSEC_Night object detection
+- [ ] Finish a simple baseline model
+- [ ] First attempt to train the model -> only backbones in contrastive way ( CLIP or similar)
+- [ ] Add the heads and watch what happens.
