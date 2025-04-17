@@ -138,6 +138,7 @@ class DSECDataset(Dataset):
                  after_crop_resize_size=(512, 512), image_change_range=1, outputs={'events_vg', 'image'}, output_num=1,
                  classes=CLASSES, palette=PALETTE, isr_shift_pixel=4, test_mode=False, events_bins_5_avg_1=False,
                  isr_parms='', isr_type='real_time', enforce_3_channels=True, shift_type='rightdown'):
+        
         self.dataset_txt_path = dataset_txt_path
         self.events_num = events_num
         self.events_bins = events_bins
@@ -155,7 +156,6 @@ class DSECDataset(Dataset):
         self.outputs = outputs
         self.output_num = output_num
         self.CLASSES, self.PALETTE = classes, palette
-
         self.dataset_txt = np.loadtxt(self.dataset_txt_path, dtype=str, encoding='utf-8')
         self.events_height = 480
         self.events_width = 640
@@ -272,7 +272,7 @@ class DSECDataset(Dataset):
             _19classes = torch.round(_19classes).long()
             output['19classes'] = _19classes
 
-        if 'label' in self.outputs:
+        if 'label' in self.outputs: 
             label_name = '{}labels/{}_{:06d}_grey_gtFine_labelTrainIds.png'.format(
                 image_path.split('images/left/rectified')[0],
                 sequence_name, now_image_index)
@@ -282,6 +282,16 @@ class DSECDataset(Dataset):
             label = torch.round(label).long()
             label = label[:440, :]
             output['label'] = label
+
+            # TODO: here need to be BB and classes. 
+        if 'BB' in self.outputs:
+            timestamps = np.loadtxt(image_path.split('left/rectified')[0]+"timestamps.txt")
+            bb_path = image_path.split('images/left/rectified')[0] + "object_detections/left/tracks.npy"
+            bounding_boxes = np.load(bb_path,"r")
+
+            #mask to obtain only bb for the actual frame
+            mask = bounding_boxes['t'] == timestamps[now_image_index]
+            output['BB'] = bounding_boxes[mask]
 
         if 'events_vg' in self.outputs:
             self.events_h5 = h5py.File(events_h5_path, 'r')
@@ -365,23 +375,22 @@ class DSECDataset(Dataset):
         events_vg = events_norm(events_vg, clip_range=events_clip_range, final_range=1.0, enforce_no_events_zero=True)
         return events_vg
 
-    def get_gt_seg_maps(self, efficient_test=False):
-        """Get ground truth segmentation maps for evaluation."""
-        gt_seg_maps = []
+    def get_gt_gg(self, efficient_test=False):
+        """Get ground truth bb position and class"""
+        get_gt_gg = []
+
         for idx in range(self.dataset_txt.shape[0]):
             image_path = self.dataset_txt[idx][0]
             now_image_index = int(image_path.split('/')[-1].split('.')[0])
             sequence_name = image_path.split('/')[-5]
-            seg_map = '{}labels/{}_{:06d}_grey_gtFine_labelTrainIds.png'.format(
-                image_path.split('images/left/rectified')[0],
-                sequence_name, now_image_index)
-            #  seg_map = osp.join(self.ann_dir, img_info['ann']['seg_map'])
-            if efficient_test:
-                gt_seg_map = seg_map
-            else:
-                gt_seg_map = mmcv.imread(seg_map, flag='unchanged', backend='pillow')
-            gt_seg_map = gt_seg_map[:440, :]
-            gt_seg_maps.append(gt_seg_map)
+            seg_map = '{}object_detections/tracks.npy'.format("left")
+        
+            # if efficient_test:
+            #     gt_seg_maps = seg_map
+            # else:
+            #     gt_seg_maps = mmcv.imread(seg_map, flag='unchanged', backend='pillow')
+            # gt_seg_map = gt_seg_map[:440, :]
+            # gt_seg_maps.append(gt_seg_map)
         return gt_seg_maps
 
     def evaluate(self,
@@ -409,28 +418,9 @@ class DSECDataset(Dataset):
         if not set(metric).issubset(set(allowed_metrics)):
             raise KeyError('metric {} is not supported'.format(metric))
         eval_results = {}
-        gt_seg_maps = self.get_gt_seg_maps(efficient_test)
-        if self.CLASSES is None:
-            num_classes = len(
-                reduce(np.union1d, [np.unique(_) for _ in gt_seg_maps]))
-        else:
-            num_classes = len(self.CLASSES)
+        gt_bb = self.get_gt_bb(efficient_test)
 
-        '''assert len(results) == len(gt_seg_maps)
-        num_classes = 11
-        class_names = ('background', 'building', 'fence', 'person', 'pole', 'road',
-                       'sidewalk', 'vegetation', 'car', 'wall', 'traffic sign')
-        dsec_19_to_11_classes = [[0, 5], [1, 6], [2, 1], [3, 9], [4, 2], [5, 4], [6, 10], [7, 10], [8, 7],
-                                 [9, 7], [10, 0], [11, 3], [12, 3], [13, 8], [14, 8], [15, 8], [16, 8],
-                                 [17, 8], [18, 8]]
-        for i in range(len(results)):
-            converted_result = np.copy(results[i])
-            converted_gt_seg_map = np.copy(gt_seg_maps[i])
-            for old_id, new_id in dsec_19_to_11_classes:
-                converted_result[results[i] == old_id] = new_id
-                converted_gt_seg_map[gt_seg_maps[i] == old_id] = new_id
-            results[i] = converted_result
-            gt_seg_maps[i] = converted_gt_seg_map'''
+        # TODO update the new metrics for object detection
         ret_metrics = eval_metrics(
             results,  # np.int64, size: (H, W), range: 0~18
             gt_seg_maps,  # np.uint8, size: (H, W), range: 0~18+255
@@ -440,10 +430,6 @@ class DSECDataset(Dataset):
             label_map=self.label_map,  # None
             reduce_zero_label=self.reduce_zero_label)  # False
 
-        if self.CLASSES is None:
-            class_names = tuple(range(num_classes))
-        else:
-            class_names = self.CLASSES
 
         # summary table
         ret_metrics_summary = OrderedDict({
@@ -505,10 +491,14 @@ if __name__ == '__main__':
     else:
         events_bins = 1
         events_clip_range = None
-    dataset = DSECDataset(dataset_txt_path='/home/emanuele/Documenti/Codice/framework_VMR/dataset/night_test_dataset_warp.txt',
-                           outputs={'warp_image', 'events_vg', 'label', 'img_metas'},
+    dataset = DSECDataset(dataset_txt_path='/home/emanuele/Documenti/Codice/framework_VMR/dataset/night_dataset.txt',
+                           outputs={'events_vg', 'img_metas', 'BB'},
                            events_bins=events_bins, events_clip_range=events_clip_range,
                            events_bins_5_avg_1=events_bins_5_avg_1)
+    #testing BB
+    print(dataset[0]['BB'])
+
+
     gif_img = []
     for i in tqdm(range(45)):
         data_0 = dataset[i]
