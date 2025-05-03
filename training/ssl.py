@@ -40,3 +40,8 @@ def train_contrastive(model1, model2, dataloader, optimizer, device, temperature
         total_loss += loss.item()
 
     return total_loss / len(dataloader)
+
+
+
+if __name__ == "__main__":
+    
