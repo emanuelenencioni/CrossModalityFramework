@@ -1,3 +1,4 @@
+import os
 import torch
 from torch.utils.data import DataLoader
 import torch.nn as nn
@@ -49,8 +50,7 @@ class DualModalityBackbone(nn.Module):
         with torch.no_grad():
             dummy_rgb = torch.randn(1, 3, 224, 224)
             dummy_event = torch.randn(1, 3, 224, 224)
-            return self.rgb_backbone(dummy_rgb).shape[-1] + \
-                   self.event_backbone(dummy_event).shape[-1]
+            return self.rgb_backbone(dummy_rgb).shape[-1] + self.event_backbone(dummy_event).shape[-1]
 
     def forward(self, rgb, event):
         """
@@ -116,7 +116,8 @@ if __name__ == "__main__":
 
     # Loss & Optimizer
     criterion = CLIP_loss()
-    optimizer = torch.optim.Adam({model.parameters(),criterion.parameters()}, lr=1e-4)
+    params = list(model.parameters()) + list(criterion.parameters())
+    optimizer = torch.optim.Adam(params, lr=1e-4)
 
     # Dataloader (CMDA)
     events_bins_5_avg_1 = False
@@ -126,7 +127,8 @@ if __name__ == "__main__":
     else:
         events_bins = 1
         events_clip_range = None
-    dataset = DSECDataset(dataset_txt_path='/home/emanuele/Documenti/Codice/framework_VMR/dataset/night_dataset_warp.txt',
+    dir_path = os.path.dirname(os.path.realpath(__file__))
+    dataset = DSECDataset(dataset_txt_path=dir_path+'dataset/night_dataset.txt',
                            outputs={'events_vg', 'img_metas', 'BB','image'},
                            events_bins=events_bins, events_clip_range=events_clip_range,
                            events_bins_5_avg_1=events_bins_5_avg_1)
