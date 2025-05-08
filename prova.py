@@ -67,7 +67,6 @@ class DualModalityBackbone(nn.Module):
         combined = torch.cat([rgb_feat, event_feat], dim=1)
         projected = self.projector(combined)
         
-        # Split for modality-specific loss
         split_idx = projected.shape[1] // 2
         return projected[:, :split_idx], projected[:, split_idx:]
 
@@ -119,7 +118,7 @@ if __name__ == "__main__":
     criterion = CLIP_loss()
     optimizer = torch.optim.Adam({model.parameters(),criterion.parameters()}, lr=1e-4)
 
-    # Dataloader (CMDA-specific)
+    # Dataloader (CMDA)
     events_bins_5_avg_1 = False
     if events_bins_5_avg_1:
         events_bins = 1
