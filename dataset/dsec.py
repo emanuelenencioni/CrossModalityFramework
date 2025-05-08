@@ -18,7 +18,10 @@ from torch.utils.data import Dataset
 import torch.nn.functional as F
 import torch
 import sys
-from builder import DATASETS
+if __name__ == "__main__":
+    from builder import DATASETS
+else:
+    from dataset.builder import DATASETS
 from tqdm import tqdm
 
 
@@ -121,7 +124,7 @@ def events_norm(events, clip_range=1.0, final_range=1.0, enforce_no_events_zero=
     return events
 
 
-@DATASETS.register_module()
+@DATASETS.register_module() # to be registered in DATASETS registry
 class DSECDataset(Dataset):
     CLASSES = ('road', 'sidewalk', 'building', 'wall', 'fence', 'pole',
                'traffic light', 'traffic sign', 'vegetation', 'terrain', 'sky',
@@ -491,26 +494,26 @@ if __name__ == '__main__':
     else:
         events_bins = 1
         events_clip_range = None
-    dataset = DSECDataset(dataset_txt_path='/home/emanuele/Documenti/Codice/framework_VMR/dataset/night_dataset.txt',
-                           outputs={'events_vg', 'img_metas', 'BB'},
+    dataset = DSECDataset(dataset_txt_path='/home/emanuele/Documenti/Codice/framework_VMR/dataset/night_dataset_warp.txt',
+                           outputs={'events_vg', 'img_metas', 'BB','image'},
                            events_bins=events_bins, events_clip_range=events_clip_range,
                            events_bins_5_avg_1=events_bins_5_avg_1)
     #testing BB
-    print(dataset[0]['BB'])
-
-
+    print(dataset[1]['BB'])
+    print(len(dataset))
+    print(dataset[1]['image'])
     gif_img = []
-    for i in tqdm(range(45)):
-        data_0 = dataset[i]
-        events_vg = data_0['events_vg']
-        events_vg = torch.mean(events_vg, dim=0, keepdim=True)
-        events_vg = (events_vg + 1) / 2 * 255
-        events_vg = events_vg.repeat(3, 1, 1).numpy()
-        events_vg = np.uint8(np.transpose(events_vg, (1, 2, 0)))
-        img = Image.fromarray(events_vg)
-        gif_img.append(img)
+    # for i in tqdm(range(45)):
+    #     data_0 = dataset[i]
+    #     events_vg = data_0['events_vg']
+    #     events_vg = torch.mean(events_vg, dim=0, keepdim=True)
+    #     events_vg = (events_vg + 1) / 2 * 255
+    #     events_vg = events_vg.repeat(3, 1, 1).numpy()
+    #     events_vg = np.uint8(np.transpose(events_vg, (1, 2, 0)))
+    #     img = Image.fromarray(events_vg)
+    #     gif_img.append(img)
 
 
-    gif_img[0].save('animation.gif', save_all=True, append_images=gif_img[1:], optimize=False, duration=200, loop=1)
+    #gif_img[0].save('animation.gif', save_all=True, append_images=gif_img[1:], optimize=False, duration=200, loop=1)
 
 
