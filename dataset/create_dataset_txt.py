@@ -128,7 +128,10 @@ if __name__ == '__main__':
     print('create_dsec_dataset_txt.py')
 
     # root path of the DSEC_Night dataset
-    root_dir = '/home/emanuele/Documenti/Codice/framework_VMR/data/DSEC_Night/'
+
+    dir_path = os.path.dirname(os.path.realpath(__file__))
+    root_dir = dir_path.split("dataset")[0] + "/data/DSEC_Night/"
+
     parser = argparse.ArgumentParser()
     parser.add_argument('--root_dir', type=str, default=root_dir)
     opt = parser.parse_args()
@@ -138,11 +141,11 @@ if __name__ == '__main__':
 
     images_to_events_index_all(opt.root_dir)
     create_dsec_dataset(dst_path=opt.root_dir,
-                        dataset_txt_path='./night_dataset_warp.txt',
-                        events_num=0, labels_txt=False, labels_range=labels_range, image_change_num=2,
-                        warp_images_flag=True)
+                        dataset_txt_path='./night_dataset.txt',
+                        events_num=0, labels_txt=False, labels_range=labels_range, image_change_num=1,
+                        warp_images_flag=False)
 
     create_dsec_dataset(dst_path=opt.root_dir,
-                        dataset_txt_path='./night_test_dataset_warp.txt',
-                        events_num=0, labels_txt=True, labels_range=None, image_change_num=2,
-                        warp_images_flag=True)
+                        dataset_txt_path='./night_test_dataset.txt',
+                        events_num=0, labels_txt=True, labels_range=None, image_change_num=1,
+                        warp_images_flag=False)
