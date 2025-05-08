@@ -5,7 +5,7 @@ import torch.nn.functional as F
 
 class CLIP_loss(nn.Module):
     """
-        CLIP-style symmetric cross-entropy loss between two embeddings.
+        CLIP-style (https://arxiv.org/pdf/2103.00020) symmetric cross-entropy loss between two embeddings.
         z1, z2: [batch_size, dim]
     """
     def __init__():
