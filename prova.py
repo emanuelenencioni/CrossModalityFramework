@@ -80,8 +80,8 @@ def get_augmentation(modality):
 def train_epoch(model, dataloader, optimizer, criterion, device):
     model.train()
     total_loss = 0
-    
-    for batch in tqdm(dataloader,desc="Training net"):
+    pbar = tqdm(total=len(dataloader),desc=f"Training net, loss:{0}")
+    for batch in dataloader:
         #batch_t =  TODO
         rgbs = torch.stack([batch[i]["image"]for i in range(len(batch))]).to(device)
         events = torch.stack([ batch[i]["events_vg"] for i in range(len(batch))]).to(device)
@@ -96,9 +96,11 @@ def train_epoch(model, dataloader, optimizer, criterion, device):
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
-        
+
+        pbar.set_description(f"Training net, loss:{loss.item()}")
         total_loss += loss.item()
 
+        pbar.update(1)
     
     return total_loss / len(dataloader)
 
@@ -128,13 +130,13 @@ if __name__ == "__main__":
         events_bins = 1
         events_clip_range = None
     dir_path = os.path.dirname(os.path.realpath(__file__))
-    dataset = DSECDataset(dataset_txt_path=dir_path+'dataset/night_dataset.txt',
-                           outputs={'events_vg', 'img_metas', 'BB','image'},
+    dataset = DSECDataset(dataset_txt_path=dir_path+'/dataset/night_dataset.txt',
+                           outputs={'events_vg', 'img_metas','image'},
                            events_bins=events_bins, events_clip_range=events_clip_range,
                            events_bins_5_avg_1=events_bins_5_avg_1)
 
     
-    dataloader = DataLoader(dataset, batch_size=5, sampler=None,num_workers=4, collate_fn=collate_fn)
+    dataloader = DataLoader(dataset, batch_size=5, sampler=None,num_workers=8, collate_fn=collate_fn)
 
     # Training
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')

@@ -494,7 +494,8 @@ if __name__ == '__main__':
     else:
         events_bins = 1
         events_clip_range = None
-    dataset = DSECDataset(dataset_txt_path='/home/emanuele/Documenti/Codice/framework_VMR/dataset/night_dataset_warp.txt',
+    dir_path = os.path.dirname(os.path.realpath(__file__))
+    dataset = DSECDataset(dataset_txt_path=dir_path+'/night_dataset_warp.txt',
                            outputs={'events_vg', 'img_metas', 'BB','image'},
                            events_bins=events_bins, events_clip_range=events_clip_range,
                            events_bins_5_avg_1=events_bins_5_avg_1)
