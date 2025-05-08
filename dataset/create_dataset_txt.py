@@ -141,11 +141,11 @@ if __name__ == '__main__':
 
     images_to_events_index_all(opt.root_dir)
     create_dsec_dataset(dst_path=opt.root_dir,
-                        dataset_txt_path='./night_dataset.txt',
+                        dataset_txt_path=dir_path + '/night_dataset.txt',
                         events_num=0, labels_txt=False, labels_range=labels_range, image_change_num=1,
                         warp_images_flag=False)
 
     create_dsec_dataset(dst_path=opt.root_dir,
-                        dataset_txt_path='./night_test_dataset.txt',
+                        dataset_txt_path=dir_path + '/night_test_dataset.txt',
                         events_num=0, labels_txt=True, labels_range=None, image_change_num=1,
                         warp_images_flag=False)
