@@ -45,7 +45,7 @@ class DualModalityBackbone(nn.Module):
                  rgb_backbone=None, 
                  event_backbone=None, 
                  pretrained=True,
-                 embed_dim=256):
+                 embed_dim=256, img_size=224):
         """
         Args:
             rgb_backbone: Timm model name or custom module
@@ -53,6 +53,8 @@ class DualModalityBackbone(nn.Module):
             embed_dim: Shared latent space dimension
         """
         super().__init__()
+
+        self.img_size = img_size
         # RGB Backbone
         if isinstance(rgb_backbone, str):
             self.rgb_backbone = timm.create_model(
@@ -63,12 +65,17 @@ class DualModalityBackbone(nn.Module):
         
         # Event Backbone (same architecture by default)
         if isinstance(event_backbone, str):
-            self.event_backbone = timm.create_model(
-                event_backbone, pretrained=pretrained,
-                in_chans=3, num_classes=0)  # Assume 5-channel voxel grid
+            if "vit" in event_backbone: #TODO: trovare metodo migliore per capire se è un vit.
+                self.event_backbone = timm.create_model(
+                    event_backbone, img_size=img_size, pretrained=pretrained,
+                    in_chans=3, num_classes=0 )  # Assume 5-channel voxel grid
+            else:
+                self.event_backbone = timm.create_model(
+                    event_backbone, pretrained=pretrained,
+                    in_chans=3, num_classes=0 )  # Assume 5-channel voxel grid
         else:
             self.event_backbone = event_backbone
-        
+
         # Shared Projector (for contrastive loss)
         self.projector = nn.Sequential(
             nn.Linear(self._get_output_dim(), embed_dim),
@@ -79,8 +86,8 @@ class DualModalityBackbone(nn.Module):
     def _get_output_dim(self):
         """Infer feature dimension from backbone"""
         with torch.no_grad():
-            dummy_rgb = torch.randn(1, 3, 224, 224)
-            dummy_event = torch.randn(1, 3, 224, 224)
+            dummy_rgb = torch.randn(1, 3, self.img_size, self.img_size)
+            dummy_event = torch.randn(1, 3, self.img_size, self.img_size)
             return self.rgb_backbone(dummy_rgb).shape[-1] + self.event_backbone(dummy_event).shape[-1]
 
     def forward(self, rgb, event):

@@ -80,9 +80,3 @@ def train_ssl(model, dataloader, optimizer, criterion, device, epochs=1):
             pbar.update(1)
     
     return total_loss / len(dataloader)
-
-
-
-if __name__ == "__main__":
-    m_rgb = model()
-    m_events = model()

@@ -26,8 +26,9 @@ if __name__ == "__main__":
         # Configuration
     model = DualModalityBackbone(
         rgb_backbone='resnet18',
-        event_backbone='resnet18',  # Could use 'vit_tiny_patch16_224' for asymmetry
-        embed_dim=128
+        event_backbone='vit_huge_patch16_224',  # Could use 'vit_tiny_patch16_224' for asymmetry
+        embed_dim=128,
+        img_size=512
     )
 
     # Loss & Optimizer
@@ -50,7 +51,7 @@ if __name__ == "__main__":
                            events_bins_5_avg_1=events_bins_5_avg_1)
 
     
-    dataloader = DataLoader(dataset, batch_size=5, sampler=None,num_workers=8, collate_fn=collate_fn)
+    dataloader = DataLoader(dataset, batch_size=1, sampler=None,num_workers=8, collate_fn=collate_fn)
 
     # Training
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')

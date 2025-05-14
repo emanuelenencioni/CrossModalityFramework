@@ -14,7 +14,9 @@ TODO
 ## Installation
 
 ## TODO
-- [ ] Handling DSEC_Night object detection
-- [ ] Finish a simple baseline model
-- [ ] First attempt to train the model -> only backbones in contrastive way (CLIP or similar)
+- [X] Handling DSEC_Night object detection
+- [X] Finish a simple baseline model
+- [X] First attempt to train the model -> only backbones in contrastive way (CLIP or similar)
 - [ ] Add the heads and watch what happens.
+- [ ] look at detr for fusion or similar approaches.
+- [ ] Try two different backbones architectures.
