@@ -2,46 +2,87 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Dataset
 from torchvision import models
+from tqdm import tqdm
+from model.first_model import model
 
 
 
-def clip_contrastive_loss(z1, z2, temperature=0.07):
+
+
+class ContrastiveImageDataset(Dataset):
     """
-    CLIP-style symmetric cross-entropy loss between two embeddings.
-    z1, z2: [batch_size, dim]
+    Custom dumb dataset for SSL returning two augmented views per sample. 
+    Just to try some stuff before actually using the
+    articulated mumbo-jumbo stuff from CMDA
     """
-    batch_size = z1.size(0)
-    # Cosine similarity logits
-    logits = torch.matmul(z1, z2.t()) / temperature
+    def __init__(self, root_dir, transform=None):
+        self.root_dir = root_dir
+        self.samples = []
+        for class_name in os.listdir(root_dir):
+            class_dir = os.path.join(root_dir, class_name)
+            if os.path.isdir(class_dir):
+                for fname in os.listdir(class_dir):
+                    path = os.path.join(class_dir, fname)
+                    self.samples.append(path)
+        self.transform = transform
 
-    labels = torch.arange(batch_size, device=z1.device)
-    loss_i2t = F.cross_entropy(logits, labels)
-    loss_t2i = F.cross_entropy(logits.t(), labels)
-    return (loss_i2t + loss_t2i) / 2
+    def __len__(self):
+        return len(self.samples)
 
-def train_contrastive(model1, model2, dataloader, optimizer, device, temperature=0.07):
-    model1.train()
-    model2.train()
-    total_loss = 0.0
-    for x1, x2 in dataloader:
-        x1, x2 = x1.to(device), x2.to(device)
+    def __getitem__(self, idx):
+        path = self.samples[idx]
+        img = Image.open(path).convert('RGB')
+        x1 = self.transform(img)
+        x2 = self.transform(img)
+        return x1, x2
 
-        optimizer.zero_grad()
+# Training Loop
+def train_ssl(model, dataloader, optimizer, criterion, device, epochs=1):
+    """
+    # Training Loop
+    # Args:
+    #   model: The model to train.
+    #   dataloader: The dataloader to use. voc
+    #   optimizer: The optimizer to use.
+    #   criterion: The loss function to use.
+    #   device: The device to train on.
+    #   epochs: The number of epochs to train for.
+    #
+    # Returns:
+    #   The average loss over all batches.
+    """
+    model.train()
+    total_loss = 0
+    loss = 0
+    for i in range(epochs):
+        pbar = tqdm(total=len(dataloader),desc=f"Training net, loss:{loss}")
+        for batch in dataloader:
+            #batch_t =  TODO
+            rgbs = torch.stack([item["image"] for item in batch]).to(device)
+            events = torch.stack([item["events_vg"] for item in batch]).to(device)
+            # Forward pass
+            #print(events.size())
+            rgb_proj, event_proj = model(rgbs, events)
+            
+            # Compute loss
+            loss = criterion(rgb_proj, event_proj)
+            
+            # Backward
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
 
-        z1 = model1(x1)
-        z2 = model2(x2)
+            pbar.set_description(f"Training net, loss:{loss.item()}")
+            total_loss += loss.item()
 
-        loss = clip_contrastive_loss(z1, z2, temperature)
-        loss.backward()
-        optimizer.step()
-
-        total_loss += loss.item()
-
+            pbar.update(1)
+    
     return total_loss / len(dataloader)
 
 
 
 if __name__ == "__main__":
-    
+    m_rgb = model()
+    m_events = model()

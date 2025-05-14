@@ -4,71 +4,11 @@ from torch.utils.data import DataLoader
 import torch.nn as nn
 import timm  # For flexible backbones like ResNet/ViT
 from dataset.dsec import DSECDataset
-
+from model.backbone import DualModalityBackbone
+from training.ssl import train_ssl
 from training.loss import CLIP_loss
 
 from tqdm import tqdm
-
-class DualModalityBackbone(nn.Module):
-    def __init__(self, 
-                 rgb_backbone='resnet18', 
-                 event_backbone='resnet18', 
-                 pretrained=True,
-                 embed_dim=256):
-        """
-        Args:
-            rgb_backbone: Timm model name or custom module
-            event_backbone: Timm model name or custom module
-            embed_dim: Shared latent space dimension
-        """
-        super().__init__()
-        # RGB Backbone
-        if isinstance(rgb_backbone, str):
-            self.rgb_backbone = timm.create_model(
-                rgb_backbone, pretrained=pretrained, 
-                in_chans=3, num_classes=0)  # Remove classifier
-        else:
-            self.rgb_backbone = rgb_backbone  # Custom module
-        
-        # Event Backbone (same architecture by default)
-        if isinstance(event_backbone, str):
-            self.event_backbone = timm.create_model(
-                event_backbone, pretrained=pretrained,
-                in_chans=3, num_classes=0)  # Assume 5-channel voxel grid
-        else:
-            self.event_backbone = event_backbone
-        
-        # Shared Projector (for contrastive loss)
-        self.projector = nn.Sequential(
-            nn.Linear(self._get_output_dim(), embed_dim),
-            nn.ReLU(),
-            nn.Linear(embed_dim, embed_dim)
-        )
-    
-    def _get_output_dim(self):
-        """Infer feature dimension from backbone"""
-        with torch.no_grad():
-            dummy_rgb = torch.randn(1, 3, 224, 224)
-            dummy_event = torch.randn(1, 3, 224, 224)
-            return self.rgb_backbone(dummy_rgb).shape[-1] + self.event_backbone(dummy_event).shape[-1]
-
-    def forward(self, rgb, event):
-        """
-        Args:
-            rgb: (B, 3, H, W)
-            event: (B, 5, H, W) - Voxel grid or time-binned tensor
-        Returns:
-            (rgb_proj, event_proj): Projected features in shared space
-        """
-        rgb_feat = self.rgb_backbone(rgb)
-        event_feat = self.event_backbone(event)
-        
-        # Concatenate features
-        combined = torch.cat([rgb_feat, event_feat], dim=1)
-        projected = self.projector(combined)
-        
-        split_idx = projected.shape[1] // 2
-        return projected[:, :split_idx], projected[:, split_idx:]
 
 
 # TODO: Add modality-specific augmentations later
@@ -76,33 +16,7 @@ def get_augmentation(modality):
     """Placeholder for future augmentation pipeline"""
     return lambda x: x  # Identity for now
 
-# Training Loop
-def train_epoch(model, dataloader, optimizer, criterion, device):
-    model.train()
-    total_loss = 0
-    pbar = tqdm(total=len(dataloader),desc=f"Training net, loss:{0}")
-    for batch in dataloader:
-        #batch_t =  TODO
-        rgbs = torch.stack([batch[i]["image"]for i in range(len(batch))]).to(device)
-        events = torch.stack([ batch[i]["events_vg"] for i in range(len(batch))]).to(device)
-        # Forward pass
-        #print(events.size())
-        rgb_proj, event_proj = model(rgbs, events)
-        
-        # Compute loss
-        loss = criterion(rgb_proj, event_proj)
-        
-        # Backward
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
 
-        pbar.set_description(f"Training net, loss:{loss.item()}")
-        total_loss += loss.item()
-
-        pbar.update(1)
-    
-    return total_loss / len(dataloader)
 
 def collate_fn(batch):
     return batch
@@ -143,6 +57,6 @@ if __name__ == "__main__":
     print(device)
     model.to(device)    
     
-    for epoch in range(100):
-        loss = train_epoch(model, dataloader, optimizer, criterion, device)
+    for epoch in range(1):
+        loss = train_ssl(model, dataloader, optimizer, criterion, device)
         print(f"Epoch {epoch}, Loss: {loss:.4f}")
