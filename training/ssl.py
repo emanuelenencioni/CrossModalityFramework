@@ -6,7 +6,8 @@ from torch.utils.data import DataLoader, Dataset
 from torchvision import models
 from tqdm import tqdm
 from model.first_model import model
-
+from helpers import DEBUG, Timing
+import time
 
 
 
@@ -60,15 +61,19 @@ def train_ssl(model, dataloader, optimizer, criterion, device, epochs=1):
         pbar = tqdm(total=len(dataloader),desc=f"Training net, loss:{loss}")
         for batch in dataloader:
             #batch_t =  TODO
+            if(DEBUG>1): start_tm = time.perf_counter()# Timing
             rgbs = torch.stack([item["image"] for item in batch]).to(device)
             events = torch.stack([item["events_vg"] for item in batch]).to(device)
+            if(DEBUG>1): print(f"loading frames: {((time.perf_counter()-start_tm)*1000).__round__(3)} ms")
             # Forward pass
             #print(events.size())
+            if(DEBUG>1): start_tm = time.perf_counter()# Timing
             rgb_proj, event_proj = model(rgbs, events)
-            
+            if(DEBUG>1): print(f"inference time: {((time.perf_counter()-start_tm)*1000).__round__(3)} ms")
             # Compute loss
+            if(DEBUG>1): start_tm = time.perf_counter()
             loss = criterion(rgb_proj, event_proj)
-            
+            if(DEBUG>1): print(f"calculating loss: {((time.perf_counter()-start_tm)*1000).__round__(3)} ms")
             # Backward
             optimizer.zero_grad()
             loss.backward()
