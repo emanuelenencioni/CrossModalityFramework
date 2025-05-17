@@ -60,11 +60,12 @@ def train_ssl(model, dataloader, optimizer, criterion, device, epochs=1):
     for i in range(epochs):
         pbar = tqdm(total=len(dataloader),desc=f"Training net, loss:{loss}")
         for batch in dataloader:
+             if(DEBUG>1): print(f"batch loading: {((time.perf_counter()-start_tm)*1000).__round__(3)} ms")
             #batch_t =  TODO
             if(DEBUG>1): start_tm = time.perf_counter()# Timing
             rgbs = torch.stack([item["image"] for item in batch]).to(device)
             events = torch.stack([item["events_vg"] for item in batch]).to(device)
-            if(DEBUG>1): print(f"loading frames: {((time.perf_counter()-start_tm)*1000).__round__(3)} ms")
+            if(DEBUG>1): print(f"frame extraction: {((time.perf_counter()-start_tm)*1000).__round__(3)} ms")
             # Forward pass
             #print(events.size())
             if(DEBUG>1): start_tm = time.perf_counter()# Timing
@@ -83,5 +84,6 @@ def train_ssl(model, dataloader, optimizer, criterion, device, epochs=1):
             total_loss += loss.item()
 
             pbar.update(1)
+            if(DEBUG>1): start_tm = time.perf_counter()# Timing
     
     return total_loss / len(dataloader)
