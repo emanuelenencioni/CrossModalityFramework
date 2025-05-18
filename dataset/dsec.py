@@ -18,6 +18,8 @@ from torch.utils.data import Dataset
 import torch.nn.functional as F
 import torch
 import sys
+from helpers import DEBUG
+
 if __name__ == "__main__":
     from builder import DATASETS
 else:
@@ -123,6 +125,14 @@ def events_norm(events, clip_range=1.0, final_range=1.0, enforce_no_events_zero=
         events = events / clip_range * final_range
     return events
 
+def collate_ssl(batch):
+        if(DEBUG>1): start_tm = time.perf_counter()# Timing
+        rgbs = torch.stack([item["image"] for item in batch]).to(device)
+        events = torch.stack([item["events_vg"] for item in batch]).to(device)
+        if(DEBUG>1): print(f"frame extraction: {((time.perf_counter()-start_tm)*1000).__round__(3)} ms")
+        return rgbs, events
+
+#TODO: Collate function for supervised
 
 @DATASETS.register_module() # to be registered in DATASETS registry
 class DSECDataset(Dataset):
