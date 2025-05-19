@@ -310,12 +310,13 @@ class DSECDataset(Dataset):
         if 'events_vg' in self.outputs:
             if events_h5_path not in self.cached_h5:
                 self.cached_h5[events_h5_path] = h5py.File(events_h5_path, 'r')
-                if self.hard_cache:
-                    if events_h5_path not in self.hard_cached_h5:
-                        self.hard_cached_h5[events_h5_path] = [self.events_h5['events/{}'.format(x)][:] for x in {'t','x','y','p'}]
-                    
-                    self.current_hard_cached = self.hard_cached_h5[events_h5_path]
+                
             self.events_h5 = self.cached_h5[events_h5_path]
+            if self.hard_cache:
+                if events_h5_path not in self.hard_cached_h5:
+                    self.hard_cached_h5[events_h5_path] = [self.events_h5['events/{}'.format(x)][:] for x in {'t','x','y','p'}]
+                
+                self.current_hard_cached = self.hard_cached_h5[events_h5_path]
 
             if self.rectify_events:
                 rectify_map_path = image_path.replace('images', 'events')[:-20] + 'rectify_map.h5'
