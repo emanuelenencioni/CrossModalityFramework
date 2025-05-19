@@ -64,25 +64,42 @@ def train_ssl(model, dataloader, optimizer, criterion, device, epochs=1, wandb_l
         pbar = tqdm(total=len(dataloader),desc=f"Training net, loss:{loss}")
         start_tm = time.perf_counter()
         for batch in dataloader:
-            if(DEBUG>1): print(f"batch loading: {((time.perf_counter()-start_tm)*1000).__round__(3)} ms")
+            if(DEBUG>1):
+                end_tm = time.perf_counter()-start_tm
+                print(f"batch loading: {((end_tm)*1000).__round__(3)} ms")
+                if(wandb_log): wadb.log({"batch_loading_time":(end_tm*1000).__round__(3)})
             
             if(DEBUG>1): start_tm = time.perf_counter()# Timing
             rgbs = torch.stack([item["image"] for item in batch]).to(device)
             events = torch.stack([item["events_vg"] for item in batch]).to(device)
-            if(DEBUG>1): print(f"frame extraction: {((time.perf_counter()-start_tm)*1000).__round__(3)} ms")
+            if(DEBUG>1): 
+                end_tm = time.perf_counter()-start_tm
+                print(f"frame extraction: {(end_tm*1000).__round__(3)} ms")
+                if(wandb_log): wadb.log({"frame_extraction_time":(end_tm*1000).__round__(3)})
+
 
             if(DEBUG>1): start_tm = time.perf_counter()# Timing
             rgb_proj, event_proj = model(rgbs, events)
-            if(DEBUG>1): print(f"inference time: {((time.perf_counter()-start_tm)*1000).__round__(3)} ms")
+            if(DEBUG>1): 
+                end_tm = time.perf_counter()-start_tm
+                print(f"inference time: {((end_tm)*1000).__round__(3)} ms")
+                if(wandb_log): wadb.log({"inference_time":(end_tm*1000).__round__(3)})
+
             # Compute loss
             if(DEBUG>1): start_tm = time.perf_counter()
             loss = criterion(rgb_proj, event_proj)
-            if(DEBUG>1): print(f"calculating loss: {((time.perf_counter()-start_tm)*1000).__round__(3)} ms")
+            if(DEBUG>1): 
+                end_tm = time.perf_counter()-start_tm
+                print(f"calculating loss: {((end_tm)*1000).__round__(3)} ms")
+                if(wandb_log): wadb.log({"loss_time":(end_tm*1000).__round__(3)})
             # Backward
             optimizer.zero_grad()
             if(DEBUG>1): start_tm = time.perf_counter()# Timing
             loss.backward()
-            if(DEBUG>1): print(f"bacprop time: {((time.perf_counter()-start_tm)*1000).__round__(3)} ms")
+            if(DEBUG>1): 
+                end_tm = time.perf_counter()-start_tm
+                print(f"backprop time: {((end_tm)*1000).__round__(3)} ms")
+                if(wandb_log): wadb.log({"backprop_time":(end_tm*1000).__round__(3)})
             optimizer.step()
 
             pbar.set_description(f"Training net, loss:{loss.item()}")
