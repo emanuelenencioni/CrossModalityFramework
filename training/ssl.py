@@ -40,7 +40,8 @@ class ContrastiveImageDataset(Dataset):
         return x1, x2
 
 # Training Loop
-def train_ssl(model, dataloader, optimizer, criterion, device, epochs=1):
+import wandb
+def train_ssl(model, dataloader, optimizer, criterion, device, epochs=1, wandb_log=False):
     """
     # Training Loop
     # Args:
@@ -50,21 +51,26 @@ def train_ssl(model, dataloader, optimizer, criterion, device, epochs=1):
     #   criterion: The loss function to use.
     #   device: The device to train on.
     #   epochs: The number of epochs to train for.
-    #
+    #   wandb_log: If True, log metrics to wandb.
     # Returns:
     #   The average loss over all batches.
     """
+    if wandb_log: assert wandb.run is not None, "Wandb run must be initialized before setting wandb_log to True"
+
     model.train()
     total_loss = 0
     loss = 0
     for i in range(epochs):
         pbar = tqdm(total=len(dataloader),desc=f"Training net, loss:{loss}")
         start_tm = time.perf_counter()
-        for rgbs, events in dataloader:
+        for batch in dataloader:
             if(DEBUG>1): print(f"batch loading: {((time.perf_counter()-start_tm)*1000).__round__(3)} ms")
+            
+            if(DEBUG>1): start_tm = time.perf_counter()# Timing
+            rgbs = torch.stack([item["image"] for item in batch]).to(device)
+            events = torch.stack([item["events_vg"] for item in batch]).to(device)
+            if(DEBUG>1): print(f"frame extraction: {((time.perf_counter()-start_tm)*1000).__round__(3)} ms")
 
-            # Forward pass
-            #print(events.size())
             if(DEBUG>1): start_tm = time.perf_counter()# Timing
             rgb_proj, event_proj = model(rgbs, events)
             if(DEBUG>1): print(f"inference time: {((time.perf_counter()-start_tm)*1000).__round__(3)} ms")
@@ -82,7 +88,23 @@ def train_ssl(model, dataloader, optimizer, criterion, device, epochs=1):
             pbar.set_description(f"Training net, loss:{loss.item()}")
             total_loss += loss.item()
 
+            if wandb_log:
+                wandb.log({"batch_loss": loss.item()})
+
+                rgb_n, event_n = model.get_grad_norm()
+                wandb.log({"rgb_grad_norm": rgb_n})
+                wandb.log({"event_grad_norm": event_n})
+
+                rgb_n, event_n = model.get_weights_norm()
+                wandb.log({"rgb_weight_norm": rgb_n})
+                wandb.log({"event_weight_norm": event_n})
+
             pbar.update(1)
             if(DEBUG>1): start_tm = time.perf_counter()# Timing
     
-    return total_loss / len(dataloader)
+    avg_loss = total_loss / len(dataloader)
+
+    if wandb_log:
+        wandb.log({"average_loss": avg_loss})
+
+    return avg_loss

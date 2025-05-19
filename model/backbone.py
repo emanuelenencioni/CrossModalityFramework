@@ -108,7 +108,28 @@ class DualModalityBackbone(nn.Module):
         split_idx = projected.shape[1] // 2
         return projected[:, :split_idx], projected[:, split_idx:]
 
+    def get_grad_norm(self):
+        """
+        Returns the L2 norm of the gradients of the RGB and Event backbones.
+        """
+        rgb_grad_norm = torch.norm(torch.stack([torch.norm(p.grad.detach())
+                                     for p in self.rgb_backbone.parameters()
+                                     if p.grad is not None]))
+        event_grad_norm = torch.norm(torch.stack([torch.norm(p.grad.detach())
+                                     for p in self.event_backbone.parameters()
+                                     if p.grad is not None]))
+        return rgb_grad_norm, event_grad_norm
 
+
+    def get_weights_norm(self):
+        """
+        Returns the L2 norm of the weights of the RGB and Event backbones.
+        """
+        rgb_weights_norm = torch.norm(torch.stack([torch.norm(p.detach())
+                                     for p in self.rgb_backbone.parameters()]))
+        event_weights_norm = torch.norm(torch.stack([torch.norm(p.detach())
+                                     for p in self.event_backbone.parameters()]))
+        return rgb_weights_norm, event_weights_norm
 
 
 

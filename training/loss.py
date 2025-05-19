@@ -26,3 +26,17 @@ class CLIP_loss(nn.Module):
         loss_i2t = F.cross_entropy(logits, labels)
         loss_t2i = F.cross_entropy(logits.t(), labels)
         return (loss_i2t + loss_t2i) / 2
+
+
+def build_from_config(criterion):
+    """
+    Factory method. Return the loss criterion, based on the configuration file
+    Args:
+        criterion (str): loss criterion name
+    Returns:
+        The loss criterion, and a boolean value indicating whether the loss criterion have learnable parameters
+    """
+    if criterion == "CLIP":
+        return CLIP_loss(), True
+    else:
+        raise ValueError("Criterion name mispelled or missing implementation")

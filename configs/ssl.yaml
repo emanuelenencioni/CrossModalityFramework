@@ -1,0 +1,49 @@
+# General training parameters
+experiment_name: simpleCLIPTrain
+seed: 42
+device: cuda  # or cpu
+
+# Data parameters
+dataset:
+  name: DSEC_Night
+  data_dir: ./data
+  batch_size: 64
+  num_workers: 4
+  train_type: "ssl"
+
+# Model parameters TODO
+model:
+  name: SimpleCRossBackbones
+  num_classes: 10
+  dropout: 0.25
+
+# Optimizer parameters
+optimizer:
+  name: Adam
+  lr: 0.001
+  wd: 0.0005
+
+# Loss function parameters
+loss:
+  name: CLIP
+
+# Training loop parameters
+trainer:
+  epochs: 10
+  log_interval: 100 # steps
+  val_interval: 500 # steps
+  checkpoint_interval: 1 # epochs
+
+# Scheduler parameters (optional)
+scheduler:
+  name: ReduceLROnPlateau
+  factor: 0.1
+  patience: 3
+  monitor: val_loss
+  mode: min
+
+# Logging parameters
+logger:
+  name: TensorBoard
+  log_dir: ./runs
+  use_wandb: True

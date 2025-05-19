@@ -126,11 +126,7 @@ def events_norm(events, clip_range=1.0, final_range=1.0, enforce_no_events_zero=
     return events
 
 def collate_ssl(batch):
-        if(DEBUG>1): start_tm = time.perf_counter()# Timing
-        rgbs = torch.stack([item["image"] for item in batch]).to(device)
-        events = torch.stack([item["events_vg"] for item in batch]).to(device)
-        if(DEBUG>1): print(f"frame extraction: {((time.perf_counter()-start_tm)*1000).__round__(3)} ms")
-        return rgbs, events
+        return batch
 
 #TODO: Collate function for supervised
 
