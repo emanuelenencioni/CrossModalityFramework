@@ -1,0 +1,53 @@
+# General training parameters
+experiment_name: simpleCLIPTrain
+seed: 42
+device: cuda  # or cpu
+
+# Data parameters
+dataset:
+  name: DSEC_Night
+  data_dir: ./data
+  batch_size: 8
+  num_workers: 16
+  train_type: "supervised" # can be ssl, supervised
+  train_split: train
+  val_split: val
+  test_split: test
+  hard_cache: True #Try to load whole event dataset in ram.
+
+# Model parameters
+model:
+  name: SimpleCRossBackbones
+  num_classes: 10
+  dropout: 0.25
+
+# Optimizer parameters
+optimizer:
+  name: Adam
+  lr: 0.001
+  wd: 0.0005
+
+# Loss function parameters
+loss:
+  name: CLIP
+
+# Training loop parameters
+trainer:
+  epochs: 10
+  log_interval: 100 # steps
+  val_interval: 500 # steps
+  checkpoint_interval: 1 # epochs
+
+# Scheduler parameters (optional)
+scheduler:
+  name: ReduceLROnPlateau
+  factor: 0.1
+  patience: 3
+  monitor: val_loss
+  mode: min
+
+# Logging parameters
+logger:
+  name: debug
+  project: Cross_Modality_Framework  # Replace with your wandb project name
+  entity: TwoGuysOneCode
