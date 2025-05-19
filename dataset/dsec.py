@@ -18,7 +18,6 @@ from torch.utils.data import Dataset
 import torch.nn.functional as F
 import torch
 import sys
-from helpers import DEBUG
 
 if __name__ == "__main__":
     from builder import DATASETS
@@ -191,6 +190,9 @@ class DSECDataset(Dataset):
         self.shift_type = shift_type
         assert self.shift_type in {'all', 'random', 'rightdown'}
 
+        self.cached_h5 = {}
+        self.cached_rectify_map_h5 = {}
+
     def __len__(self):
         """Total number of samples of data."""
         return self.dataset_txt.shape[0]
@@ -303,10 +305,15 @@ class DSECDataset(Dataset):
             output['BB'] = bounding_boxes[mask]
 
         if 'events_vg' in self.outputs:
-            self.events_h5 = h5py.File(events_h5_path, 'r')
+            if events_h5_path not in self.cached_h5:
+                self.cached_h5[events_h5_path] = h5py.File(events_h5_path, 'r')
+            self.events_h5 = self.cached_h5[events_h5_path]
+            
             if self.rectify_events:
                 rectify_map_path = image_path.replace('images', 'events')[:-20] + 'rectify_map.h5'
-                rectify_map = h5py.File(rectify_map_path, 'r')
+                if rectify_map_path not in self.cached_rectify_map_h5:
+                    self.cached_rectify_map_h5[rectify_map_path] = h5py.File(rectify_map_path, 'r')
+                rectify_map = self.cached_rectify_map_h5[rectify_map_path]
                 self.rectify_map = np.asarray(rectify_map['rectify_map'])
             images_to_events_index = np.loadtxt(image_path.split('left/rectified')[0] + 'images_to_events_index.txt',
                                                 dtype=str, encoding='utf-8')
@@ -508,7 +515,7 @@ if __name__ == '__main__':
     #testing BB
     print(dataset[1]['BB'])
     print(len(dataset))
-    print(dataset[1]['image'])
+    print(dataset[45]['image'])
     gif_img = []
     # for i in tqdm(range(45)):
     #     data_0 = dataset[i]
