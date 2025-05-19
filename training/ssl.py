@@ -67,7 +67,7 @@ def train_ssl(model, dataloader, optimizer, criterion, device, epochs=1, wandb_l
             if(DEBUG>1):
                 end_tm = time.perf_counter()-start_tm
                 print(f"batch loading: {((end_tm)*1000).__round__(3)} ms")
-                if(wandb_log): wadb.log({"batch_loading_time":(end_tm*1000).__round__(3)})
+                if(wandb_log): wandb.log({"batch_loading_time":(end_tm*1000).__round__(3)})
             
             if(DEBUG>1): start_tm = time.perf_counter()# Timing
             rgbs = torch.stack([item["image"] for item in batch]).to(device)
@@ -75,7 +75,7 @@ def train_ssl(model, dataloader, optimizer, criterion, device, epochs=1, wandb_l
             if(DEBUG>1): 
                 end_tm = time.perf_counter()-start_tm
                 print(f"frame extraction: {(end_tm*1000).__round__(3)} ms")
-                if(wandb_log): wadb.log({"frame_extraction_time":(end_tm*1000).__round__(3)})
+                if(wandb_log): wandb.log({"frame_extraction_time":(end_tm*1000).__round__(3)})
 
 
             if(DEBUG>1): start_tm = time.perf_counter()# Timing
@@ -83,7 +83,7 @@ def train_ssl(model, dataloader, optimizer, criterion, device, epochs=1, wandb_l
             if(DEBUG>1): 
                 end_tm = time.perf_counter()-start_tm
                 print(f"inference time: {((end_tm)*1000).__round__(3)} ms")
-                if(wandb_log): wadb.log({"inference_time":(end_tm*1000).__round__(3)})
+                if(wandb_log): wandb.log({"inference_time":(end_tm*1000).__round__(3)})
 
             # Compute loss
             if(DEBUG>1): start_tm = time.perf_counter()
@@ -91,7 +91,7 @@ def train_ssl(model, dataloader, optimizer, criterion, device, epochs=1, wandb_l
             if(DEBUG>1): 
                 end_tm = time.perf_counter()-start_tm
                 print(f"calculating loss: {((end_tm)*1000).__round__(3)} ms")
-                if(wandb_log): wadb.log({"loss_time":(end_tm*1000).__round__(3)})
+                if(wandb_log): wandb.log({"loss_time":(end_tm*1000).__round__(3)})
             # Backward
             optimizer.zero_grad()
             if(DEBUG>1): start_tm = time.perf_counter()# Timing
@@ -99,7 +99,7 @@ def train_ssl(model, dataloader, optimizer, criterion, device, epochs=1, wandb_l
             if(DEBUG>1): 
                 end_tm = time.perf_counter()-start_tm
                 print(f"backprop time: {((end_tm)*1000).__round__(3)} ms")
-                if(wandb_log): wadb.log({"backprop_time":(end_tm*1000).__round__(3)})
+                if(wandb_log): wandb.log({"backprop_time":(end_tm*1000).__round__(3)})
             optimizer.step()
 
             pbar.set_description(f"Training net, loss:{loss.item()}")
