@@ -145,7 +145,7 @@ class DSECDataset(Dataset):
     def __init__(self, dataset_txt_path, events_num=-1, events_bins=5, events_clip_range=None, crop_size=(400, 400),
                  after_crop_resize_size=(512, 512), image_change_range=1, outputs={'events_vg', 'image'}, output_num=1,
                  classes=CLASSES, palette=PALETTE, isr_shift_pixel=4, test_mode=False, events_bins_5_avg_1=False,
-                 isr_parms='', isr_type='real_time', enforce_3_channels=True, shift_type='rightdown'):
+                 isr_parms='', isr_type='real_time', enforce_3_channels=True, shift_type='rightdown', hard_cache=False):
         
         self.dataset_txt_path = dataset_txt_path
         self.events_num = events_num
@@ -192,6 +192,9 @@ class DSECDataset(Dataset):
 
         self.cached_h5 = {}
         self.cached_rectify_map_h5 = {}
+        self.hard_cache = hard_cache
+        self.hard_cached_h5 = {}
+        self.current_hard_cached = None
 
     def __len__(self):
         """Total number of samples of data."""
@@ -307,8 +310,13 @@ class DSECDataset(Dataset):
         if 'events_vg' in self.outputs:
             if events_h5_path not in self.cached_h5:
                 self.cached_h5[events_h5_path] = h5py.File(events_h5_path, 'r')
+                if self.hard_cache:
+                    if events_h5_path not in self.hard_cached_h5:
+                        self.hard_cached_h5[events_h5_path] = [self.events_h5['events/{}'.format(x)][:] for x in {'t','x','y','p'}]
+                    
+                    self.current_hard_cached = self.hard_cached_h5[events_h5_path]
             self.events_h5 = self.cached_h5[events_h5_path]
-            
+
             if self.rectify_events:
                 rectify_map_path = image_path.replace('images', 'events')[:-20] + 'rectify_map.h5'
                 if rectify_map_path not in self.cached_rectify_map_h5:
@@ -365,10 +373,16 @@ class DSECDataset(Dataset):
         return output
 
     def get_events_vg(self, events_finish_index, events_start_index):
-        events_t = np.asarray(self.events_h5['events/{}'.format('t')][events_start_index: events_finish_index + 1])
-        events_x = np.asarray(self.events_h5['events/{}'.format('x')][events_start_index: events_finish_index + 1])
-        events_y = np.asarray(self.events_h5['events/{}'.format('y')][events_start_index: events_finish_index + 1])
-        events_p = np.asarray(self.events_h5['events/{}'.format('p')][events_start_index: events_finish_index + 1])
+        if self.hard_cache:
+            events_t = np.asarray(self.current_hard_cached[0][events_start_index: events_finish_index + 1])
+            events_x = np.asarray(self.current_hard_cached[1][events_start_index: events_finish_index + 1])
+            events_y = np.asarray(self.current_hard_cached[2][events_start_index: events_finish_index + 1])
+            events_p = np.asarray(self.current_hard_cached[3][events_start_index: events_finish_index + 1])
+        else:
+            events_t = np.asarray(self.events_h5['events/{}'.format('t')][events_start_index: events_finish_index + 1])
+            events_x = np.asarray(self.events_h5['events/{}'.format('x')][events_start_index: events_finish_index + 1])
+            events_y = np.asarray(self.events_h5['events/{}'.format('y')][events_start_index: events_finish_index + 1])
+            events_p = np.asarray(self.events_h5['events/{}'.format('p')][events_start_index: events_finish_index + 1])
 
         events_t = (events_t - events_t[0]).astype('float32')
         events_t = torch.from_numpy((events_t / events_t[-1]))
