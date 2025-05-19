@@ -55,9 +55,9 @@ if __name__ == "__main__":
     run = None
     if(cfg['logger']['name'] == 'wandb'):
         wandb_cfg = cfg['logger']
-        wandb.init(project=wandb_cfg['project'], entity=wandb_cfg['entity'], config=cfg['model'],settings=wandb.Settings(init_timeout=600))
+        wandb.init(project=wandb_cfg['project'], entity=wandb_cfg['entity'], config=cfg,settings=wandb.Settings(init_timeout=600))
         # Log model architecture
-        #wandb.watch(model)
+        wandb.watch(model)
         wandb_log = True
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
