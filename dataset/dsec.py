@@ -8,10 +8,10 @@ from PIL import Image
 import random
 import functools
 
-import mmcv
+#import mmcv
 import numpy as np
-from mmcv.utils import print_log
-from mmcv.parallel.data_container import DataContainer
+# from mmcv.utils import print_log
+#from mmcv.parallel.data_container import DataContainer
 from prettytable import PrettyTable
 import torchvision.transforms as standard_transforms
 from torch.utils.data import Dataset
@@ -19,10 +19,10 @@ import torch.nn.functional as F
 import torch
 import sys
 
-if __name__ == "__main__":
-    from builder import DATASETS
-else:
-    from dataset.builder import DATASETS
+# if __name__ == "__main__":
+#     from builder import DATASETS
+# else:
+#     from dataset.builder import DATASETS
 from tqdm import tqdm
 
 
@@ -129,7 +129,7 @@ def collate_ssl(batch):
 
 #TODO: Collate function for supervised
 
-@DATASETS.register_module() # to be registered in DATASETS registry
+#@DATASETS.register_module() # to be registered in DATASETS registry
 class DSECDataset(Dataset):
     CLASSES = ('road', 'sidewalk', 'building', 'wall', 'fence', 'pole',
                'traffic light', 'traffic sign', 'vegetation', 'terrain', 'sky',
@@ -369,7 +369,7 @@ class DSECDataset(Dataset):
             output['img_metas']['flip'] = False
             if output['img_metas']['flip']:
                 output['img_metas']['flip_direction'] = 'horizontal'
-            output['img_metas'] = DataContainer(output['img_metas'], cpu_only=True)
+            #output['img_metas'] = DataContainer(output['img_metas'], cpu_only=True)
 
         return output
 
@@ -489,10 +489,10 @@ class DSECDataset(Dataset):
             else:
                 summary_table_data.add_column('m' + key, [val])
 
-        print_log('per class results:', logger)
-        print_log('\n' + class_table_data.get_string(), logger=logger)
-        print_log('Summary:', logger)
-        print_log('\n' + summary_table_data.get_string(), logger=logger)
+        # print_log('per class results:', logger)
+        # print_log('\n' + class_table_data.get_string(), logger=logger)
+        # print_log('Summary:', logger)
+        # print_log('\n' + summary_table_data.get_string(), logger=logger)
 
         # each metric dict
         for key, value in ret_metrics_summary.items():
@@ -508,9 +508,9 @@ class DSECDataset(Dataset):
                 for idx, name in enumerate(class_names)
             })
 
-        if mmcv.is_list_of(results, str):
-            for file_name in results:
-                os.remove(file_name)
+        # if mmcv.is_list_of(results, str):
+        #     for file_name in results:
+        #         os.remove(file_name)
         return eval_results
 
 
