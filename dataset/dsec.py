@@ -190,11 +190,14 @@ class DSECDataset(Dataset):
         self.shift_type = shift_type
         assert self.shift_type in {'all', 'random', 'rightdown'}
 
-        self.cached_h5 = {}
-        self.cached_rectify_map_h5 = {}
-        self.hard_cache = hard_cache
-        self.hard_cached_h5 = {}
-        self.current_hard_cached = None
+        ### check if there are events saved in npy form.
+        image_path = self.dataset_txt[0][0]
+        events_h5_path = image_path.replace('images', 'events')[:-20].split('lef')[0]
+        self.cached_vg = False
+        if os.path.isdir(events_h5_path + 'events_vg'):
+            if(os.listdir(events_h5_path + 'events_vg')):
+                self.cached_vg = True
+        
 
     def __len__(self):
         """Total number of samples of data."""
@@ -308,46 +311,41 @@ class DSECDataset(Dataset):
             output['BB'] = bounding_boxes[mask]
 
         if 'events_vg' in self.outputs:
-            if events_h5_path not in self.cached_h5:
-                self.cached_h5[events_h5_path] = h5py.File(events_h5_path, 'r')
+            if self.cached_vg:
+                events_vg_path_dir = image_path.replace('images', 'events')[:-20].split('lef')[0] + "events_vg/"
+                events_vg_path = events_vg_path_dir + image_path.split('rectified/')[1].replace('png','npy')
+                events_vg = torch.from_numpy(np.load(events_vg_path, 'r'))
+            else:
+                events_h5_path = h5py.File(events_h5_path, 'r')
                 
-            self.events_h5 = self.cached_h5[events_h5_path]
-            if self.hard_cache:
-                if events_h5_path not in self.hard_cached_h5:
-                    self.hard_cached_h5[events_h5_path] = [self.events_h5['events/{}'.format(x)][:] for x in {'t','x','y','p'}]
-                
-                self.current_hard_cached = self.hard_cached_h5[events_h5_path]
-
-            if self.rectify_events:
-                rectify_map_path = image_path.replace('images', 'events')[:-20] + 'rectify_map.h5'
-                if rectify_map_path not in self.cached_rectify_map_h5:
-                    self.cached_rectify_map_h5[rectify_map_path] = h5py.File(rectify_map_path, 'r')
-                rectify_map = self.cached_rectify_map_h5[rectify_map_path]
-                self.rectify_map = np.asarray(rectify_map['rectify_map'])
-            images_to_events_index = np.loadtxt(image_path.split('left/rectified')[0] + 'images_to_events_index.txt',
-                                                dtype=str, encoding='utf-8')
-            events_vg = torch.zeros((self.output_num, self.events_bins, self.events_height, self.events_width))
-            for i in range(self.output_num):
-                events_finish_index = int(images_to_events_index[now_image_index - i])
-                if self.events_num != -1:
-                    events_start_index = events_finish_index - self.events_num + 1
-                else:
-                    events_start_index = int(images_to_events_index[now_image_index - self.image_change_range - i])
-                if events_start_index > events_finish_index:
-                    return None
-                events_vg[self.output_num - 1 - i, :] = self.get_events_vg(events_finish_index, events_start_index)
+                if self.rectify_events:
+                    rectify_map_path = image_path.replace('images', 'events')[:-20] + 'rectify_map.h5'
+                    rectify_map = h5py.File(rectify_map_path, 'r')
+                    self.rectify_map = np.asarray(rectify_map['rectify_map'])
+                images_to_events_index = np.loadtxt(image_path.split('left/rectified')[0] + 'images_to_events_index.txt',
+                                                    dtype=str, encoding='utf-8')
+                events_vg = torch.zeros((self.output_num, self.events_bins, self.events_height, self.events_width))
+                for i in range(self.output_num):
+                    events_finish_index = int(images_to_events_index[now_image_index - i])
+                    if self.events_num != -1:
+                        events_start_index = events_finish_index - self.events_num + 1
+                    else:
+                        events_start_index = int(images_to_events_index[now_image_index - self.image_change_range - i])
+                    if events_start_index > events_finish_index:
+                        return None
+                    events_vg[self.output_num - 1 - i, :] = self.get_events_vg(events_finish_index, events_start_index)
+            
             if self.events_bins_5_avg_1:
                 events_vg = torch.mean(events_vg, dim=1, keepdim=True)
             if self.output_num == 1:
                 events_vg = events_vg[0]
-
             if 'label' not in self.outputs:  # do Data Augmentation
                 events_vg = events_vg[:, y: y + self.crop_size[1], x: x + self.crop_size[0]]
                 if flip_flag:
                     events_vg = self.HorizontalFlip(events_vg)
                 height_weight = (self.after_crop_resize_size[1], self.after_crop_resize_size[0])
                 events_vg = F.interpolate(events_vg[None], size=height_weight, mode='bilinear',
-                                          align_corners=False)[0]
+                                        align_corners=False)[0]
             else:  # test mode
                 events_vg = events_vg[:, :440, :]
             if self.enforce_3_channels:
