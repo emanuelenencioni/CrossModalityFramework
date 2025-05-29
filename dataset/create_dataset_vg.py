@@ -7,6 +7,7 @@ from tqdm import tqdm
 import argparse
 import torch
 # This script creates the vg files in npy format for faster opening.
+# TODO: make this script indipendent from the type of event representation, so not only VGs.
  
 # params TODO: create yaml file for these.
 IMAGE_CHANGE_RANGE = 1
