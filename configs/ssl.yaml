@@ -7,7 +7,7 @@ device: cuda  # or cpu
 dataset:
   name: DSEC_Night
   data_dir: ./data
-  batch_size: 64
+  batch_size: 8 
   num_workers: 4
   train_type: "ssl"
 
@@ -44,6 +44,6 @@ scheduler:
 
 # Logging parameters
 logger:
-  name: TensorBoard
-  log_dir: ./runs
-  use_wandb: True
+  name: wandb 
+  project: Cross_Modality_Framework  # Replace with your wandb project name
+  entity: TwoGuysOneCode
