@@ -26,13 +26,21 @@ if __name__ == "__main__":
         img_size=512
     )
 
-    # Loss
+    # Trainer
+    assert 'trainer' in cfg.keys(), "'trainer' params list missing from config file "
+    assert 'epochs' in cfg['trainer'].keys(), " specify 'epochs' trainer param"
+    epochs = int(cfg['trainer']['epochs'])
+
+    # Loss   
+    assert 'loss' in cfg.keys(), "loss params list missing in yaml file"
+    assert 'name' in cfg['loss'].keys(), "specify 'name' loss param"
     criterion, learnable = loss.build_from_config(cfg['loss']['name'])
+
     if learnable:
         params = list(model.parameters()) + list(criterion.parameters())
     else:
         params = model.parameters()
-
+    assert 'loss' in cfg.keys(), "'optimizer' params list missing in yaml file"
     opti = optimizer.build_from_config(params, cfg['optimizer'])
     # Dataloader (CMDA)
     events_bins_5_avg_1 = False
@@ -49,21 +57,26 @@ if __name__ == "__main__":
                            events_bins_5_avg_1=events_bins_5_avg_1)
     
     # Dataloader (CMDA)
+    assert 'dataset' in cfg.keys(), " 'dataset' params list missing from config file"
+    assert 'batch_size' in cfg['dataset'].keys(), " specify 'batch_size' dataset param"
     dataloader = DataLoader(dataset, batch_size=cfg['dataset']['batch_size'], shuffle=True, collate_fn=collate_ssl)
     
     wandb_log = False
     run = None
-    if(cfg['logger']['name'] == 'wandb'):
-        wandb_cfg = cfg['logger']
-        wandb.init(project=wandb_cfg['project'], entity=wandb_cfg['entity'], config=cfg,settings=wandb.Settings(init_timeout=600))
-        # Log model architecture
-        wandb.watch(model)
-        wandb_log = True
+    if 'logger' in cfg.keys() and 'name' in cfg['logger'].keys():
+        if(cfg['logger']['name'] == 'wandb'):
+            wandb_cfg = cfg['logger']
+            assert 'project' in wandb_cfg.keys(), "specify 'project' wandb param"
+            assert 'entity' in wandb_cfg.keys(), "specify 'entity' wandb param"
+            wandb.init(project=wandb_cfg['project'], entity=wandb_cfg['entity'], config=cfg,settings=wandb.Settings(init_timeout=600))
+            # Log model architecture
+            wandb.watch(model)
+            wandb_log = True
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(device)
     model.to(device)    
-
-    for epoch in range(1):
+    
+    for epoch in range(epochs):
         loss_v = train_ssl(model, dataloader, opti, criterion, device, wandb_log=wandb_log)
         print(f"Epoch {epoch}, Loss: {loss_v:.4f}")
