@@ -36,6 +36,7 @@ class TrainSSL:
     def train(self):
         self.model.train()
         for i in range(self.epochs):    
+            self.total_loss = 0
             pbar = tqdm(total=len(self.dataloader),desc=f"Training net, loss:{self.loss}")
             start_tm = time.perf_counter()
             for batch in self.dataloader:
@@ -80,7 +81,6 @@ class TrainSSL:
                     print(f"backprop time: {((end_tm)*1000).__round__(3)} ms")
                     if(self.wandb_log): wandb.log({"backprop_time":(end_tm*1000).__round__(3)})
                 self.optimizer.step()
-                if self.scheduler is not None: self.scheduler.step()
                 
                 pbar.set_description(f"Training net, loss:{self.loss.item()}")
                 self.total_loss += self.loss.item()
@@ -100,15 +100,19 @@ class TrainSSL:
                 pbar.update(1)
                 if(DEBUG>1): start_tm = time.perf_counter()# Timing
     
-        avg_loss = self.total_loss / len(self.dataloader)
-        if avg_loss < self.best_lost: #TODO: save model weights, opti, cfg, scheduler...
-            self.best_loss = avg_los
-            self.counter = 0
-        if self.counter >= self.patience: #If the counter exceeds the patience value
-                print("Early stopping triggered")
-                return #Stop the training loop
+            epoch_loss = self.total_loss / len(self.dataloader)
+            if epoch_loss < self.best_loss: #TODO: save model weights, opti, cfg, scheduler...
+                self.best_loss = epoch_loss
+                self.counter = 0
+            else: self.counter+=1
+            if self.counter >= self.patience: #If the counter exceeds the patience value
+                    print("Early stopping triggered")
+                    return #Stop the training loop
 
-        if self.wandb_log:
-            wandb.log({"average_loss": avg_loss})
+            if self.wandb_log:
+                wandb.log({"average_loss": epoch_loss})
 
+            if self.scheduler is not None: self.scheduler.step()
+
+        wandb.finish()
         print("training finished")
