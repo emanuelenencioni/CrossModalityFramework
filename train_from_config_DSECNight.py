@@ -2,7 +2,7 @@ import yaml
 import sys
 import os
 from training import optimizer,loss
-from training.ssl import train_ssl
+from training.ssl import TrainSSL
 from model.backbone import DualModalityBackbone
 from torch.utils.data import DataLoader
 from dataset.dsec import DSECDataset, collate_ssl
@@ -76,7 +76,6 @@ if __name__ == "__main__":
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(device)
     model.to(device)    
-    
-    for epoch in range(epochs):
-        loss_v = train_ssl(model, dataloader, opti, criterion, device, wandb_log=wandb_log)
-        print(f"Epoch {epoch}, Loss: {loss_v:.4f}")
+
+    trainer = TrainSSL(model, dataloader, opti, criterion, device, epochs=epochs, wandb_log=wandb_log)
+    trainer.train()
