@@ -216,7 +216,7 @@ if __name__ == '__main__':
     # root path of the DSEC_Night dataset
 
     dir_path = os.path.dirname(os.path.realpath(__file__))
-    root_dir = dir_path.split("dataset")[0] + "/data/DSEC_Night/"
+    root_dir = dir_path.split("dataset")[0] + "data/DSEC_Night/"
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--root_dir', type=str, default=root_dir)
