@@ -233,6 +233,7 @@ class DSECDataset(Dataset):
 
         now_image_index = int(image_path.split('/')[-1].split('.')[0])
         if 'image' in self.outputs:
+            if DEBUG>2: start_time= time.perf_counter()
             image = Image.open(image_path).convert('RGB')
             _resize_size = (960, 720)  # (720, 540)
             image = image.resize(size=_resize_size, resample=Image.BILINEAR)
@@ -243,6 +244,7 @@ class DSECDataset(Dataset):
                 image = self.HorizontalFlip(image)
             image = self.image_transform(image)
             output['image'] = image
+            if DEBUG>2: print(f"image loading: {((time.perf_counter()-start_time)*1000).__round__(3)} ms")
 
         if 'warp_image' in self.outputs:
             warp_image_name = image_path.replace('images/left/rectified', 'warp_images')
