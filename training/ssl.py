@@ -32,14 +32,11 @@ class TrainSSL:
         self.patience=patience
         self.best_loss = float('inf')
         self.counter = 0
-        
-    def train(self):
-        self.model.train()
-        for i in range(self.epochs):    
-            self.total_loss = 0
-            pbar = tqdm(total=len(self.dataloader),desc=f"Training net, loss:{self.loss}")
-            start_tm = time.perf_counter()
-            for batch in self.dataloader:
+
+    def _train_epoch(self, pbar=None):
+        start_tm = time.perf_counter()
+
+        for batch in self.dataloader:
                 if(DEBUG>1):
                     end_tm = time.perf_counter()-start_tm
                     print(f"batch loading: {((end_tm)*1000).__round__(3)} ms")
@@ -50,13 +47,11 @@ class TrainSSL:
                 rgbs = torch.stack([item["image"] for item in batch]).to(self.device)
                 events = torch.stack([item["events_vg"] for item in batch]).to(self.device)
                 if(DEBUG>1): 
-                    end_tm = time.perf_counter()-start_tm
-                    print(f"frame extraction: {(end_tm*1000).__round__(3)} ms")
-                    if(self.wandb_log): wandb.log({"frame_extraction_time":(end_tm*1000).__round__(3)})
-
+                    end_tm = ((time.perf_counter()-start_tm)*1000).__round__(3)
+                    print(f"frame extraction: {end_tm} ms")
+                    if(self.wandb_log): wandb.log({"frame_extraction_time":end_tm})
 
                 if(DEBUG>1): start_tm = time.perf_counter()# Timing
-                
                 rgb_proj, event_proj = self.model(rgbs, events)
                 if(DEBUG>1): 
                     end_tm = time.perf_counter()-start_tm
@@ -82,7 +77,7 @@ class TrainSSL:
                     if(self.wandb_log): wandb.log({"backprop_time":(end_tm*1000).__round__(3)})
                 self.optimizer.step()
                 
-                pbar.set_description(f"Training net, loss:{self.loss.item()}")
+                if pbar is not None: pbar.set_description(f"Training net, loss:{self.loss.item()}")
                 self.total_loss += self.loss.item()
 
                 if self.wandb_log:
@@ -97,22 +92,42 @@ class TrainSSL:
                     wandb.log({"event_weight_norm": event_n})
 
 
-                pbar.update(1)
+                if pbar is not None: pbar.update(1)
                 if(DEBUG>1): start_tm = time.perf_counter()# Timing
-    
-            epoch_loss = self.total_loss / len(self.dataloader)
-            if epoch_loss < self.best_loss: #TODO: save model weights, opti, cfg, scheduler...
-                self.best_loss = epoch_loss
-                self.counter = 0
-            else: self.counter+=1
-            if self.counter >= self.patience: #If the counter exceeds the patience value
-                    print("Early stopping triggered")
-                    return #Stop the training loop
+        
+    def train(self):
+        self.model.train()
+        if DEBUG>2:
+            self._train_debug()
+        else:
+            for i in range(self.epochs):  
+                
+                self.total_loss = 0
+                pbar = tqdm(total=len(self.dataloader),desc=f"Training net, loss:{self.loss}")
+                self._train_epoch(pbar)
+                epoch_loss = self.total_loss / len(self.dataloader)
+                if epoch_loss < self.best_loss: #TODO: save model weights, opti, cfg, scheduler...
+                    self.best_loss = epoch_loss
+                    self.counter = 0
+                else: self.counter+=1
+                if self.counter >= self.patience: #If the counter exceeds the patience value
+                        print("Early stopping triggered")
+                        return #Stop the training loop
 
-            if self.wandb_log:
-                wandb.log({"average_loss": epoch_loss})
+                if self.wandb_log:
+                    wandb.log({"average_loss": epoch_loss})
 
-            if self.scheduler is not None: self.scheduler.step()
+                if self.scheduler is not None: self.scheduler.step()
 
-        wandb.finish()
-        print("training finished")
+            wandb.finish()
+            print("training finished")
+
+    def _train_debug(self):
+        from torch.profiler import profile, record_function, ProfilerActivity
+        activties = [ProfilerActivity.CPU, ProfilerActivity.CUDA]
+        if self.wandb_log: sys.exit("ERROR - wandb logger not yet available in debug mode, please deactivate it")
+        with profile(activities=activties) as prof:
+            self._train_epoch()
+        print(prof.key_averages(group_by_input_shape=True).table(sort_by="cpu_time_total", row_limit=20))
+        
+
