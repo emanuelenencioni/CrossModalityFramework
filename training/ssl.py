@@ -96,7 +96,7 @@ class TrainSSL:
             self.total_loss += self.loss.item()
 
             if self.wandb_log:
-                wandb.log({"batch_loss": self.loss.item()})
+                wandb.log({"batch_loss": self.loss.item()}, step=self.current_step)
 
                 rgb_n, event_n = self.model.get_grad_norm()
                 wandb.log({"rgb_grad_norm": rgb_n}, step=self.current_step)
