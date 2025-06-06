@@ -32,6 +32,7 @@ class TrainSSL:
         self.patience=patience
         self.best_loss = float('inf')
         self.counter = 0
+        self.current_step = 0
 
     def _train_step(self, batch):
             rgbs = torch.stack([item["image"] for item in batch]).to(self.device)
@@ -50,14 +51,14 @@ class TrainSSL:
         if(DEBUG>1): 
             end_tm = ((time.perf_counter()-start_tm)*1000).__round__(3)
             print(f"frame extraction: {end_tm} ms")
-            if(self.wandb_log): wandb.log({"frame_extraction_time":end_tm})
+            if(self.wandb_log): wandb.log({"frame_extraction_time":end_tm},step=self.current_step)
 
         if(DEBUG>1): start_tm = time.perf_counter()# Timing
         rgb_proj, event_proj = self.model(rgbs, events)
         if(DEBUG>1): 
             end_tm = time.perf_counter()-start_tm
             print(f"inference time: {((end_tm)*1000).__round__(3)} ms")
-            if(self.wandb_log): wandb.log({"inference_time":(end_tm*1000).__round__(3)})
+            if(self.wandb_log): wandb.log({"inference_time":(end_tm*1000).__round__(3)}, step=self.current_step)
 
         # Compute loss
         if(DEBUG>1): start_tm = time.perf_counter()
@@ -66,7 +67,7 @@ class TrainSSL:
         if(DEBUG>1): 
             end_tm = time.perf_counter()-start_tm
             print(f"calculating loss: {((end_tm)*1000).__round__(3)} ms")
-            if(self.wandb_log): wandb.log({"loss_time":(end_tm*1000).__round__(3)})
+            if(self.wandb_log): wandb.log({"loss_time":(end_tm*1000).__round__(3)}, step=self.current_step)
         # Backward
         self.optimizer.zero_grad()
         if(DEBUG>1): start_tm = time.perf_counter()# Timing
@@ -75,7 +76,7 @@ class TrainSSL:
         if(DEBUG>1): 
             end_tm = time.perf_counter()-start_tm
             print(f"backprop time: {((end_tm)*1000).__round__(3)} ms")
-            if(self.wandb_log): wandb.log({"backprop_time":(end_tm*1000).__round__(3)})
+            if(self.wandb_log): wandb.log({"backprop_time":(end_tm*1000).__round__(3)}, step=self.current_step)
         self.optimizer.step()        
         pass
 
@@ -86,9 +87,9 @@ class TrainSSL:
             if(DEBUG>1):
                 end_tm = time.perf_counter()-start_tm
                 print(f"batch loading: {((end_tm)*1000).__round__(3)} ms")
-                if(self.wandb_log): wandb.log({"batch_loading_time":(end_tm*1000).__round__(3)})
+                if(self.wandb_log): wandb.log({"batch_loading_time":(end_tm*1000).__round__(3)}, step=self.current_step)
 
-            if DEBUG>0: self._debug_train_step(batch)
+            if DEBUG>0: self._train_step_debug(batch)
             else: self._train_step(batch)
             
             if pbar is not None: pbar.set_description(f"Training backbones, loss:{self.loss.item()}")
@@ -98,19 +99,21 @@ class TrainSSL:
                 wandb.log({"batch_loss": self.loss.item()})
 
                 rgb_n, event_n = self.model.get_grad_norm()
-                wandb.log({"rgb_grad_norm": rgb_n})
-                wandb.log({"event_grad_norm": event_n})
+                wandb.log({"rgb_grad_norm": rgb_n}, step=self.current_step)
+                wandb.log({"event_grad_norm": event_n}, step=self.current_step)
 
                 rgb_n, event_n = self.model.get_weights_norm()
-                wandb.log({"rgb_weight_norm": rgb_n})
-                wandb.log({"event_weight_norm": event_n})
-
+                wandb.log({"rgb_weight_norm": rgb_n}, step=self.current_step)
+                wandb.log({"event_weight_norm": event_n}, step=self.current_step)
+            
+            self.current_step += 1
 
             if pbar is not None: pbar.update(1)
             if(DEBUG>1): start_tm = time.perf_counter()# Timing
 
         
     def train(self):
+        self.current_step = 0
         self.model.train()
         if DEBUG>2:
             self._train_debug()
@@ -129,7 +132,7 @@ class TrainSSL:
                     return #Stop the training loop
 
                 if self.wandb_log:
-                    wandb.log({"average_loss": epoch_loss})
+                    wandb.log({"average_loss": epoch_loss}, step=self.current_step)
 
                 if self.scheduler is not None: self.scheduler.step()
 
@@ -146,8 +149,8 @@ class TrainSSL:
             else:
                 for i, batch in enumerate(self.dataloader):
                     self._train_step_debug(batch)
+                    self.current_step += 1
                     if i >= 25:
                         break
         print(prof.key_averages(group_by_input_shape=True).table(sort_by="cpu_time_total", row_limit=20))
-        
 
