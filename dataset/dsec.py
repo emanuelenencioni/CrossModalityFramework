@@ -323,7 +323,7 @@ class DSECDataset(Dataset):
                 events_vg_path = events_vg_path_dir + image_path.split('rectified/')[1].replace('png','npy')
                 events_vg = torch.from_numpy(np.load(events_vg_path, 'r'))
             else:
-                events_h5_path = h5py.File(events_h5_path, 'r')
+                self.events_h5 = h5py.File(events_h5_path, 'r')
                 
                 if self.rectify_events:
                     rectify_map_path = image_path.replace('images', 'events')[:-20] + 'rectify_map.h5'
@@ -380,16 +380,11 @@ class DSECDataset(Dataset):
         return output
 
     def get_events_vg(self, events_finish_index, events_start_index):
-        if self.hard_cache:
-            events_t = np.asarray(self.current_hard_cached[0][events_start_index: events_finish_index + 1])
-            events_x = np.asarray(self.current_hard_cached[1][events_start_index: events_finish_index + 1])
-            events_y = np.asarray(self.current_hard_cached[2][events_start_index: events_finish_index + 1])
-            events_p = np.asarray(self.current_hard_cached[3][events_start_index: events_finish_index + 1])
-        else:
-            events_t = np.asarray(self.events_h5['events/{}'.format('t')][events_start_index: events_finish_index + 1])
-            events_x = np.asarray(self.events_h5['events/{}'.format('x')][events_start_index: events_finish_index + 1])
-            events_y = np.asarray(self.events_h5['events/{}'.format('y')][events_start_index: events_finish_index + 1])
-            events_p = np.asarray(self.events_h5['events/{}'.format('p')][events_start_index: events_finish_index + 1])
+      
+        events_t = np.asarray(self.events_h5['events/{}'.format('t')][events_start_index: events_finish_index + 1])
+        events_x = np.asarray(self.events_h5['events/{}'.format('x')][events_start_index: events_finish_index + 1])
+        events_y = np.asarray(self.events_h5['events/{}'.format('y')][events_start_index: events_finish_index + 1])
+        events_p = np.asarray(self.events_h5['events/{}'.format('p')][events_start_index: events_finish_index + 1])
 
         events_t = (events_t - events_t[0]).astype('float32')
         events_t = torch.from_numpy((events_t / events_t[-1]))
