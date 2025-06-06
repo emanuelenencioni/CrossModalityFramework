@@ -25,6 +25,9 @@ import sys
 #     from dataset.builder import DATASETS
 from tqdm import tqdm
 
+from helpers import DEBUG
+import time
+
 
 
 def events_to_voxel_grid(time, x, y, pol, width, height, num_bins, normalize_flag=False):
@@ -197,6 +200,7 @@ class DSECDataset(Dataset):
         if os.path.isdir(events_h5_path + 'events_vg'):
             if(os.listdir(events_h5_path + 'events_vg')):
                 self.cached_vg = True
+                print("Found cached voxel grids...")
         
 
     def __len__(self):
@@ -311,6 +315,7 @@ class DSECDataset(Dataset):
             output['BB'] = bounding_boxes[mask]
 
         if 'events_vg' in self.outputs:
+            if DEBUG>2: start_time= time.perf_counter()
             if self.cached_vg:
                 events_vg_path_dir = image_path.replace('images', 'events')[:-20].split('lef')[0] + "events_vg/"
                 events_vg_path = events_vg_path_dir + image_path.split('rectified/')[1].replace('png','npy')
@@ -334,6 +339,7 @@ class DSECDataset(Dataset):
                     if events_start_index > events_finish_index:
                         return None
                     events_vg[self.output_num - 1 - i, :] = self.get_events_vg(events_finish_index, events_start_index)
+            if DEBUG>2: print(f"events_vg loading: {((time.perf_counter()-start_time)*1000).__round__(3)} ms")
             
             if self.events_bins_5_avg_1:
                 events_vg = torch.mean(events_vg, dim=1, keepdim=True)
