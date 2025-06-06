@@ -42,7 +42,7 @@ class TrainSSL:
             self.loss.backward()
             self.optimizer.step()
 
-    def _debug_train_step(self, batch):   
+    def _train_step_debug(self, batch):   
         if(DEBUG>1): start_tm = time.perf_counter()# Timing
         
         rgbs = torch.stack([item["image"] for item in batch]).to(self.device)
@@ -145,7 +145,7 @@ class TrainSSL:
                 self._train_epoch()
             else:
                 for i, batch in enumerate(self.dataloader):
-                    self._train_debug(batch)
+                    self._train_step_debug(batch)
                     if i >= 25:
                         break
         print(prof.key_averages(group_by_input_shape=True).table(sort_by="cpu_time_total", row_limit=20))
