@@ -52,14 +52,17 @@ if __name__ == "__main__":
         events_clip_range = None
     dir_path = os.path.dirname(os.path.realpath(__file__))
     dataset = DSECDataset(dataset_txt_path=dir_path+'/dataset/night_dataset.txt',
-                           outputs={'events_vg', 'img_metas','image'},
+                           outputs={'events_vg','image'},
                            events_bins=events_bins, events_clip_range=events_clip_range,
                            events_bins_5_avg_1=events_bins_5_avg_1)
     
     # Dataloader (CMDA)
     assert 'dataset' in cfg.keys(), " 'dataset' params list missing from config file"
     assert 'batch_size' in cfg['dataset'].keys(), " specify 'batch_size' dataset param"
-    dataloader = DataLoader(dataset, batch_size=cfg['dataset']['batch_size'], shuffle=True, collate_fn=collate_ssl)
+    num_workers=2
+    if 'num_workers' in cfg['dataset'].keys(): 
+        num_workers = int(cfg['dataset']['num_workers'])
+    dataloader = DataLoader(dataset, batch_size=cfg['dataset']['batch_size'], num_workers=num_workers, shuffle=False, collate_fn=collate_ssl, pin_memory=True)
     
     wandb_log = False
     run = None
