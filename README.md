@@ -21,7 +21,6 @@ TODO
 - [X] finish train_from_config
 - [X] wandb integration
 
-- [ ] Understand what happens in create_dataset_txt.py
 - [ ] Add frame as voxel_grid alternative. (maybe a model that can use both? or any event representation? can it be adaptable?)
 
 - [ ] Add the heads and watch what happens.

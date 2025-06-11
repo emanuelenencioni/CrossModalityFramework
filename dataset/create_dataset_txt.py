@@ -66,6 +66,19 @@ def images_to_events_index_all(dst_path):
 def create_dsec_dataset(dst_path, dataset_txt_path, events_num, image_change_num=1,
                         labels_txt=False, labels_range=None, warp_images_flag=False):
 
+    """
+    Creates a dataset text file for training or testing. Each line in the text file contains the path to an image and the index of the corresponding event.
+    Attention: not all the images has the label. So this is only to use in supervised learning.
+    Args:
+        dst_path (str): Path to the root directory of the DSEC dataset.
+        dataset_txt_path (str): Path to the output dataset text file.
+        events_num (int): Minimum number of events required before an image is included in the dataset.
+        image_change_num (int, optional): Minimum image index. Defaults to 1.
+        labels_txt (bool, optional): If True, only images with corresponding labels are included in the dataset. Defaults to False.
+        labels_range (dict, optional): A dictionary specifying a range of image indices to exclude for each city. Defaults to None.
+        warp_images_flag (bool, optional): If True, paths to warped images will be created. Defaults to False.
+    """
+
     assert not (labels_txt and labels_range is not None)
     file_list = os.listdir(dst_path)
     file_list.sort()
@@ -139,7 +152,7 @@ if __name__ == '__main__':
     labels_range = {'09_a': (0, 794), '09_b': (0, 162 - 13), '09_c': (0, 594 - 13),
                     '09_d': (0, 756 - 13), '09_e': (0, 378 - 13)}
 
-    images_to_events_index_all(opt.root_dir)
+    images_to_events_index_all(opt.root_dir)    
     create_dsec_dataset(dst_path=opt.root_dir,
                         dataset_txt_path=dir_path + '/night_dataset.txt',
                         events_num=0, labels_txt=False, labels_range=labels_range, image_change_num=1,
