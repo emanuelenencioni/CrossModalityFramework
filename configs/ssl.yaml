@@ -1,21 +1,25 @@
 # General training parameters
 experiment_name: simpleCLIPTrain
-seed: 42
+seed: 42 #TODO
 device: cuda  # or cpu
 
 # Data parameters
 dataset:
   name: DSEC_Night
   data_dir: ./data
-  batch_size: 8 
-  num_workers: 4
+  batch_size: 8
+  num_workers: 8
   train_type: "ssl"
 
 # Model parameters TODO
-model:
-  name: SimpleCRossBackbones
-  num_classes: 10
-  dropout: 0.25
+backbone:
+  name: '' # if name is empty -> stack of the two backbone will be used
+  rgb_backbone: resnet50
+  event_backbone: vit_base_patch14_dinov2.lvd142m # from timm
+  embed_dim: 128
+  input_size: 512
+  #num_classes: 10
+  #dropout: 0.25
 
 # Optimizer parameters
 optimizer:
@@ -29,7 +33,7 @@ loss:
 
 # Training loop parameters
 trainer:
-  epochs: 10
+  epochs: 50
   log_interval: 100 # steps
   val_interval: 500 # steps
   checkpoint_interval: 1 # epochs
@@ -44,6 +48,6 @@ scheduler:
 
 # Logging parameters
 logger:
-  name: wandb 
+  name: wandb
   project: Cross_Modality_Framework  # Replace with your wandb project name
   entity: TwoGuysOneCode
