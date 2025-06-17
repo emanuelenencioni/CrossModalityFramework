@@ -8,23 +8,48 @@ from tqdm import tqdm
 from model.first_model import model
 from helpers import DEBUG, Timing
 import time
+from datetime import datetime
 import sys
-
+import os
 # Training Loop
 import wandb
 
 
 
 class TrainSSL:
-    def __init__(self, model, dataloader, optimizer, criterion, device, epochs=1, wandb_log=False, scheduler = None, patience=sys.maxsize):
+    def __init__(self, model, dataloader, optimizer, criterion, device, cfg, root_folder, wandb_log=False, scheduler = None, patience=sys.maxsize):
+        
+
         self.model = model
         self.dataloader = dataloader
         self.optimizer = optimizer
         self.criterion = criterion
         self.device = device
-        self.epochs = epochs
+
+        self.epochs = int(cfg['epochs'])
+        assert 'epochs' in cfg.keys(), " specify 'epochs' trainer param" # The cfg Must be the sub dict relative to 'trainer'
+        #assert 'log_interval' in cfg.keys(), "specify 'log_interval' trainer param"
+        #assert 'val_interval' in cfg.keys(), "specify 'val_interval' trainer param"
+
+        self.checkpoint_interval = int(cfg['checkpoint_interval']) if 'checkpoint_interval' in cfg.keys() else 0
+
+        
         self.wandb_log = wandb_log
         if self.wandb_log: assert wandb.run is not None, "Wandb run must be initialized before setting wandb_log to True"
+        self.save_folder = root_folder +"/"+ cfg['save_folder'] if 'save_folder' in cfg.keys() and cfg['save_folder'] is not None else None
+        
+        self.save_name = None
+        self.save_best_dir = None
+        if self.save_folder is not None:
+            if self.save_folder[-1] != '/':
+                self.save_folder = self.save_folder + '/'
+            self.save_best_dir = f"{self.save_folder}best/"
+            if not os.path.isdir(self.save_best_dir): os.makedirs(self.save_best_dir)
+
+            self.save_name = wandb.run.name if self.wandb_log else f"{self.model.name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        else:
+            print("\033[93m"+"WARNING: the model will not be saved"+"\033[0m")
+
         self.total_loss = 0
         self.loss = 0
         self.scheduler = scheduler 
@@ -34,6 +59,7 @@ class TrainSSL:
         self.counter = 0
         self.current_step = 0
 
+        
     def _train_step(self, batch):
             rgbs = torch.stack([item["image"] for item in batch]).to(self.device)
             events = torch.stack([item["events_vg"] for item in batch]).to(self.device)
@@ -94,7 +120,17 @@ class TrainSSL:
             
             if pbar is not None: pbar.set_description(f"Training backbones, loss:{self.loss.item()}")
             self.total_loss += self.loss.item()
-
+            if self.current_step % self.checkpoint_interval == 0 and self.current_step > 0 and self.save_folder is not None:
+                checkpoint_path = f"{self.save_folder}{self.save_name}_checkpoint_step_{self.current_step}.pth"
+                torch.save({
+                    'step': self.current_step,
+                    'model_state_dict': self.model.state_dict(),
+                    'optimizer_state_dict': self.optimizer.state_dict(),
+                    'loss': self.loss,
+                    # Optionally save scheduler state too
+                    'scheduler_state_dict': self.scheduler.state_dict() if self.scheduler else None
+                }, checkpoint_path)
+                print(f"Checkpoint saved at step {self.current_step} to {checkpoint_path}")
             if self.wandb_log:
                 wandb.log({"batch_loss": self.loss.item()}, step=self.current_step)
 
@@ -126,6 +162,7 @@ class TrainSSL:
                 if epoch_loss < self.best_loss: #TODO: save model weights, opti, cfg, scheduler...
                     self.best_loss = epoch_loss
                     self.counter = 0
+                    if self.save_folder is not None: self.save_best()
                 else: self.counter+=1
                 if self.counter >= self.patience: #If the counter exceeds the patience value
                     print("Early stopping triggered")
@@ -154,3 +191,14 @@ class TrainSSL:
                         break
         print(prof.key_averages(group_by_input_shape=True).table(sort_by="cpu_time_total", row_limit=20))
 
+    def save_best(self):
+            save_path = f"{self.save_best_dir}{self.save_name}_best.pth"
+            torch.save({
+                    'epoch': self.epochs,
+                    'model_state_dict': self.model.state_dict(),
+                    'optimizer_state_dict': self.optimizer.state_dict(),
+                    'loss': self.loss,
+                    # Optionally save scheduler state too
+                    'scheduler_state_dict': self.scheduler.state_dict() if self.scheduler else None
+                }, save_path)
+            print(f"saved best model to {save_path}")

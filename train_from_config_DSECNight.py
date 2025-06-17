@@ -6,6 +6,7 @@ from training.ssl import TrainSSL
 from model.backbone import DualModalityBackbone
 from torch.utils.data import DataLoader
 from dataset.dsec import DSECDataset, collate_ssl
+from datetime import datetime
 import torch
 import wandb
 
@@ -32,11 +33,6 @@ if __name__ == "__main__":
                 embed_dim=cfg['backbone']['embed_dim'],
                 img_size=cfg['backbone']['input_size']
     )
-
-    # Trainer
-    assert 'trainer' in cfg.keys(), "'trainer' params list missing from config file "
-    assert 'epochs' in cfg['trainer'].keys(), " specify 'epochs' trainer param"
-    epochs = int(cfg['trainer']['epochs'])
 
     # Loss   
     assert 'loss' in cfg.keys(), "loss params list missing in yaml file"
@@ -73,7 +69,7 @@ if __name__ == "__main__":
     
     wandb_log = False
     run_name = cfg['backbone']['name'] if ('name' in cfg['backbone'].keys() and cfg['backbone']['name'] != '') else model.get_model_name()
-
+    run_name = f"{run_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     if 'logger' in cfg.keys() and 'name' in cfg['logger'].keys():
         if(cfg['logger']['name'] == 'wandb'):
             wandb_cfg = cfg['logger']
@@ -87,6 +83,8 @@ if __name__ == "__main__":
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(device)
     model.to(device)    
-
-    trainer = TrainSSL(model, dataloader, opti, criterion, device, epochs=epochs, wandb_log=wandb_log)
+    # Trainer
+    assert 'trainer' in cfg.keys(), "'trainer' params list missing from config file "
+    
+    trainer = TrainSSL(model, dataloader, opti, criterion, device, cfg['trainer'], root_folder=dir_path, wandb_log=wandb_log)
     trainer.train()
