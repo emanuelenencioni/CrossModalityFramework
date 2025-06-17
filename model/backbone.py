@@ -45,7 +45,7 @@ class DualModalityBackbone(nn.Module):
                  rgb_backbone=None, 
                  event_backbone=None, 
                  pretrained=True,
-                 embed_dim=256, img_size=224):
+                 embed_dim=256, img_size=224, model_name=''):
         """
         Args:
             rgb_backbone: Timm model name or custom module
@@ -53,7 +53,10 @@ class DualModalityBackbone(nn.Module):
             embed_dim: Shared latent space dimension
         """
         super().__init__()
-
+        if model_name == '':
+            self.name = "rgb_"+ rgb_backbone +"_events_"+ event_backbone
+        else:
+            self.name = model_name
         self.img_size = img_size
         # RGB Backbone
         if isinstance(rgb_backbone, str):
@@ -131,7 +134,8 @@ class DualModalityBackbone(nn.Module):
                                      for p in self.event_backbone.parameters()]))
         return rgb_weights_norm, event_weights_norm
 
-
+    def get_model_name(self):
+        return self.name
 
 
 
