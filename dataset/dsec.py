@@ -321,7 +321,7 @@ class DSECDataset(Dataset):
             if self.cached_vg:
                 events_vg_path_dir = image_path.replace('images', 'events')[:-20].split('lef')[0] + "events_vg/"
                 events_vg_path = events_vg_path_dir + image_path.split('rectified/')[1].replace('png','npy')
-                events_vg = torch.from_numpy(np.load(events_vg_path, 'r'))
+                events_vg = torch.from_numpy(np.load(events_vg_path, 'r').copy())
             else:
                 self.events_h5 = h5py.File(events_h5_path, 'r')
                 
