@@ -9,6 +9,13 @@ from dataset.dsec import DSECDataset, collate_ssl
 import torch
 import wandb
 
+def check_backbone_params(cfg):
+    assert 'backbone' in cfg.keys(), "Error - specify the backbone"
+    assert 'name' in cfg['backbone'].keys(), "Error - specify the backbone name"
+    assert 'rgb_backbone' in cfg['backbone'].keys(), "Error - specify the rgb_backbone"
+    assert 'event_backbone' in cfg['backbone'].keys(), "Error - specify the event_backbone"
+    assert 'embed_dim' in cfg['backbone'].keys(), "Error - specify the embed_dim"
+    assert 'input_size' in cfg['backbone'].keys(), "Error - specify the input_size"
 
 
 if __name__ == "__main__":
@@ -19,11 +26,12 @@ if __name__ == "__main__":
     assert file != None, "Error opening file - file not found"
 
     # Configuration
+    check_backbone_params(cfg)
     model = DualModalityBackbone(
-        rgb_backbone='resnet18',
-        event_backbone='resnet18',  # Could use 'vit_tiny_patch16_224' for asymmetry
-        embed_dim=128,
-        img_size=512
+                rgb_backbone=cfg['backbone']['rgb_backbone'],
+                event_backbone=cfg['backbone']['event_backbone'],
+                embed_dim=cfg['backbone']['embed_dim'],
+                img_size=cfg['backbone']['input_size']
     )
 
     # Trainer
