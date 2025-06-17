@@ -11,7 +11,6 @@ import wandb
 
 def check_backbone_params(cfg):
     assert 'backbone' in cfg.keys(), "Error - specify the backbone"
-    assert 'name' in cfg['backbone'].keys(), "Error - specify the backbone name"
     assert 'rgb_backbone' in cfg['backbone'].keys(), "Error - specify the rgb_backbone"
     assert 'event_backbone' in cfg['backbone'].keys(), "Error - specify the event_backbone"
     assert 'embed_dim' in cfg['backbone'].keys(), "Error - specify the embed_dim"
@@ -73,13 +72,14 @@ if __name__ == "__main__":
     dataloader = DataLoader(dataset, batch_size=cfg['dataset']['batch_size'], num_workers=num_workers, shuffle=False, collate_fn=collate_ssl, pin_memory=True)
     
     wandb_log = False
-    run = None
+    run_name = cfg['backbone']['name'] if ('name' in cfg['backbone'].keys() and cfg['backbone']['name'] != '') else model.get_model_name()
+
     if 'logger' in cfg.keys() and 'name' in cfg['logger'].keys():
         if(cfg['logger']['name'] == 'wandb'):
             wandb_cfg = cfg['logger']
             assert 'project' in wandb_cfg.keys(), "specify 'project' wandb param"
             assert 'entity' in wandb_cfg.keys(), "specify 'entity' wandb param"
-            wandb.init(project=wandb_cfg['project'], entity=wandb_cfg['entity'], config=cfg,settings=wandb.Settings(init_timeout=600))
+            wandb.init(project=wandb_cfg['project'], entity=wandb_cfg['entity'], name=run_name, config=cfg,settings=wandb.Settings(init_timeout=600))
             # Log model architecture
             wandb.watch(model)
             wandb_log = True
