@@ -11,7 +11,14 @@ TODO
 - [Contributing](#contributing)
 - [License](#license)
 
-## Installation
+## Installation 
+For installation, you can use the following commands:
+```bash
+conda create -n CMF python=3.13.2 # Create a new conda environment
+conda activate CMF
+sh install_req.sh
+```
+It doesn't need to work specifically with python 3.13.2, but is what i used for the development.
 
 ## TODO
 - [X] Handling DSEC_Night object detection
