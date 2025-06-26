@@ -19,7 +19,7 @@ def check_backbone_params(cfg):
 
 
 if __name__ == "__main__":
-    if(len(sys.argv) < 2):sys.exit("Error - use python train_from_config.py path_to_yaml_file")
+    assert len(sys.argv) >= 2, "Error - use python train_from_config.py path_to_yaml_file"
 
     with open(sys.argv[1]) as file:
         cfg = yaml.safe_load(file)
@@ -36,8 +36,7 @@ if __name__ == "__main__":
 
     # Loss   
     assert 'loss' in cfg.keys(), "loss params list missing in yaml file"
-    assert 'name' in cfg['loss'].keys(), "specify 'name' loss param"
-    criterion, learnable = loss.build_from_config(cfg['loss']['name'])
+    criterion, learnable = loss.build_from_config(cfg['loss'])
 
     if learnable:
         params = list(model.parameters()) + list(criterion.parameters())

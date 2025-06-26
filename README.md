@@ -24,7 +24,7 @@ TODO
 - [ ] Add frame as voxel_grid alternative. (maybe a model that can use both? or any event representation? can it be adaptable?)
 
 
-- [ ] put config in the  loss function build
+- [X] put config in the  loss function build
 - [ ] one of the backbone = None -> unimodal training
 - [ ] create framework for domain adaptation -> (fare codice per fare domain adaptation cioe in cui si traina il new model e con anche l'old model)
 - [ ] implement argparsing for the hyperparams (override of .yaml)
