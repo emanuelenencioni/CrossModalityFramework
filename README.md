@@ -6,19 +6,21 @@ TODO
 
 ## Table of Contents
     TODO
-- [Installation](#installation)
+- [Dependencies Installation](#dependencies-installation)
 - [Usage](#usage)
 - [Contributing](#contributing)
 - [License](#license)
 
-## Installation 
-For installation, you can use the following commands:
+## Dependencies Installation 
+Use the following commands:
 ```bash
 conda create -n CMF python=3.13.2 # Create a new conda environment
-conda activate CMF
-sh install_req.sh
 ```
 It doesn't need to work specifically with python 3.13.2, but is what i used for the development.
+U can use `install_req.sh` to install all the dependencies:
+```bash
+conda activate CMF && sh install_req.sh
+```
 
 ## TODO
 - [X] Handling DSEC_Night object detection
