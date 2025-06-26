@@ -21,6 +21,7 @@ U can use `install_req.sh` to install all the dependencies:
 ```bash
 conda activate CMF && sh install_req.sh
 ```
+Pytorch 2.7.0 with cuda 12.6 is installed with the script.
 
 ## TODO
 - [X] Handling DSEC_Night object detection
