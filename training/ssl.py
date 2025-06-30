@@ -5,7 +5,7 @@ import torch.optim as optim
 from torch.utils.data import DataLoader, Dataset
 from torchvision import models
 from tqdm import tqdm
-from model.first_model import model
+
 from helpers import DEBUG, Timing
 import time
 from datetime import datetime
@@ -64,7 +64,7 @@ class TrainSSL:
             rgbs = torch.stack([item["image"] for item in batch]).to(self.device)
             events = torch.stack([item["events_vg"] for item in batch]).to(self.device)
             rgb_proj, event_proj = self.model(rgbs, events)
-            self.loss = self.criterion(rgb_proj, event_proj)
+            self.loss = self.criterion(rgb_proj['projected_feat'], event_proj['projected_feat'])
             self.optimizer.zero_grad()
             self.loss.backward()
             self.optimizer.step()
@@ -89,7 +89,7 @@ class TrainSSL:
         # Compute loss
         if(DEBUG>1): start_tm = time.perf_counter()
         
-        self.loss = self.criterion(rgb_proj, event_proj)
+        self.loss = self.criterion(rgb_proj['projected_feat'], event_proj['profected_feat'])
         if(DEBUG>1): 
             end_tm = time.perf_counter()-start_tm
             print(f"calculating loss: {((end_tm)*1000).__round__(3)} ms")
