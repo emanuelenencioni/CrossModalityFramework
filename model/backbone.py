@@ -4,8 +4,8 @@ import torch.nn as nn
 import timm
 
 
-# TODO: gestire modelli esterni a torch -> dare linee guida per struttura basic.
-class BackboneAdapter(nn.Module):
+# TODO: handle extern model from torch or timm ->  Give guidelines to a basic compatible structure
+class Backbone(nn.Module):
     """
     Initializes the Backbone model.
     Args:
@@ -14,38 +14,80 @@ class BackboneAdapter(nn.Module):
         input_dim: squared dim for input frame
         input_ch: input channel
     """
-    def __init__(self, model, input_ch, torch_pretrained=False, custom_weights=""):
+    def __init__(self):
         super().__init__()
-        assert model != None, "Insert a valid model"
-        if torch_pretrained:
-            model_name = model.__class__.__name__.lower()
-            print(model_name)
-            try:
-                
-                self.backbone = getattr(models, model_name)(pretrained=True)
-                
-            except Exception as e:
-                print(f"Error loading torch pretrained weights: {e}")
-                self.backbone = model
+        self.outputs = None
+        self.projector = None
+    def _get_features(self, feat, projector=None):
+        """
+        Processes the feature tensor and returns a dictionary of specified outputs.
+        Args:
+            feat (torch.Tensor): The input feature tensor.
+        Returns:
+            dict: A dictionary containing the specified features. Possible forms of features include:
+                - "preflatten_feat": The feature tensor before flattening.
+                - "flatten_feat": The feature tensor after flattening.
+                - "projected_feat": The feature tensor after being passed through the projector.
+        """
+        out_dict = {}
+        if "preflatten_feat" in self.outputs:
+            out_dict["preflatten_feat"] = feat
+        feat = feat.flatten(start_dim=1)
+        if "flatten_feat" in self.outputs:
+            out_dict['flatten_feat'] = feat
+        if "projected_feat" in self.outputs :
+            if  projector is not None:
+                out_dict["projected_feat"] =  projector(feat)
+            elif self.projector is not None:
+                out_dict["projected_feat"] = self.projector(feat)
+            else:
+                print("\033[93m"+"WARNING: Projector not found"+"\033[0m")
+
+        return out_dict
+
+class unimodalBackbone(Backbone):
+    def __init__(self, backbone=None, pretrained=True,
+                 embed_dim=256, img_size=224, model_name='',outputs=["projector"]):
+        """
+        Args:
+            bacbkone: Timm model name or custom module
+            embed_dim: Shared latent space dimension
+        """
+        super().__init__()
+        if model_name == '':
+            self.name = event_backbone
         else:
-            self.backbone = model
+            self.name = model_name
+        self.img_size = img_size
+        
+        if isinstance(backbone, str):
+            if "vit" in backbone: #TODO: trovare metodo migliore per capire se è un vit.
+                self.backbone = timm.create_model( backbone, img_size=img_size, pretrained=pretrained,
+                    in_chans=3, num_classes=0 )  # Assume 5-channel voxel grid
+            else:
+                self.backbone = timm.create_model(backbone, pretrained=pretrained,
+                    in_chans=3, num_classes=0 )  # Assume 5-channel voxel grid
+        else:
+            self.backbone = backbone
 
-        if hasattr(self.backbone, 'fc'):
-            self.backbone.fc = nn.Identity()
-        if hasattr(self.backbone, 'classifier'):
-            self.backbone.classifier = nn.Identity()
+        # Shared Projector (for contrastive loss) # TODO make the user choose it
+        self.projector = nn.Sequential(
+            nn.Linear(self._get_output_dim(), embed_dim),
+            nn.ReLU(),
+            nn.Linear(embed_dim, embed_dim)
+        )
+        if event_backbone is None or rgb_backbone is None:
+            self.unimodal_training = True
+        else:
+            self.unimodal_training = False
 
-    def forward(self, x):
-        return self.backbone(x)
+        self.outputs = outputs
+    
 
 
-
-class DualModalityBackbone(nn.Module):
-    def __init__(self, 
-                 rgb_backbone=None, 
-                 event_backbone=None, 
-                 pretrained=True,
-                 embed_dim=256, img_size=224, model_name=''):
+class DualModalityBackbone(Backbone):
+    def __init__(self, rgb_backbone=None, event_backbone=None, pretrained=True,
+                 embed_dim=256, img_size=224, model_name='',outputs=['preflatten_feat', 'flatten_feat', 'projected_feat']):
         """
         Args:
             rgb_backbone: Timm model name or custom module
@@ -79,37 +121,42 @@ class DualModalityBackbone(nn.Module):
         else:
             self.event_backbone = event_backbone
 
-        # Shared Projector (for contrastive loss)
-        self.projector = nn.Sequential(
-            nn.Linear(self._get_output_dim(), embed_dim),
+        for i, layer in enumerate(self.event_backbone.parameters()):
+            if isinstance(layer, nn.Flatten):
+                self.event_backbone.model[i] = nn.Identity()
+
+        # Shared Projector (for contrastive loss) # TODO make the user choose it
+        self.rgb_projector = nn.Sequential(
+            nn.Linear(self.rgb_backbone.forward_features(torch.randn(1, 3, self.img_size, self.img_size)).flatten().shape[-1], embed_dim),
             nn.ReLU(),
             nn.Linear(embed_dim, embed_dim)
         )
+        self.event_projector = nn.Sequential( #TODO check for validity of the dummy dim.
+            nn.Linear(self.event_backbone.forward_features(torch.randn(1, 3, self.img_size, self.img_size)).flatten().shape[-1], embed_dim),
+            nn.ReLU(),
+            nn.Linear(embed_dim, embed_dim)
+        )
+        self.outputs = outputs
     
-    def _get_output_dim(self):
+    def _get_output_dim(self):  
         """Infer feature dimension from backbone"""
         with torch.no_grad():
             dummy_rgb = torch.randn(1, 3, self.img_size, self.img_size)
             dummy_event = torch.randn(1, 3, self.img_size, self.img_size)
-            return self.rgb_backbone(dummy_rgb).shape[-1] + self.event_backbone(dummy_event).shape[-1]
-
-    def forward(self, rgb, event):
+            return self.rgb_backbone.forward_features(dummy_rgb).shape[-1]    + self.event_backbone(dummy_event).shape[-1] 
+    def forward(self, rgb, events):
         """
+        Forward pass for the DualModalityBackbone.
         Args:
-            rgb: (B, 3, H, W)
-            event: (B, 5, H, W) - Voxel grid or time-binned tensor
+            rgb (torch.Tensor): Input tensor for the RGB backbone.
+            events (torch.Tensor): Input tensor for the Event backbone.
         Returns:
-            (rgb_proj, event_proj): Projected features in shared space
+            dict: Dictionary containing the features for the RGB backbone.
+            dict: Dictionary containing the features for the Event backbone.
         """
-        rgb_feat = self.rgb_backbone(rgb)
-        event_feat = self.event_backbone(event)
-        
-        # Concatenate features
-        combined = torch.cat([rgb_feat, event_feat], dim=1)
-        projected = self.projector(combined)
-        
-        split_idx = projected.shape[1] // 2
-        return projected[:, :split_idx], projected[:, split_idx:]
+        rgb_feat = self.rgb_backbone.forward_features(rgb)
+        event_feat = self.event_backbone.forward_features(events)
+        return self._get_features(rgb_feat, self.rgb_projector), self._get_features(event_feat, self.event_projector)
 
     def get_grad_norm(self):
         """
