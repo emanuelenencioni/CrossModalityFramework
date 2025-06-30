@@ -11,12 +11,29 @@ import torch
 import wandb
 
 def check_backbone_params(cfg):
+    """
+    Check if the backbone parameters are correctly specified in the configuration file.
+    :param cfg: The configuration dictionary.
+    :return: True if both event and rgb backbones are specified, False otherwise.  Also returns the specified backbone
+    """
     assert 'backbone' in cfg.keys(), "Error - specify the backbone"
-    assert 'rgb_backbone' in cfg['backbone'].keys(), "Error - specify the rgb_backbone"
-    assert 'event_backbone' in cfg['backbone'].keys(), "Error - specify the event_backbone"
-    assert 'embed_dim' in cfg['backbone'].keys(), "Error - specify the embed_dim"
-    assert 'input_size' in cfg['backbone'].keys(), "Error - specify the input_size"
+    cfg_b = cfg['backbone']
 
+    assert 'backbone' in cfg.keys(), "Error - specify the backbone"
+    cfg_b = cfg['backbone']
+    assert 'embed_dim' in cfg_b.keys(), "Error - specify the embed_dim"
+    assert 'input_size' in cfg_b.keys(), "Error - specify the input_size"
+    ev_bb = cfg_b['event_backbone'] if 'event_backbone' in cfg['backbone'].keys() else None
+    rgb_bb = cfg_b['rgb_backbone'] if 'rgb_backbone' in cfg['backbone'].keys() else None
+    
+
+    assert ev_bb != None or rgb_bb != None, "Error - specify at least one backbone: event or rgb"
+    if ev_bb is None:
+        return False, rgb_bb
+    elif rgb_bb is None:
+        return False, ev_bb
+
+    return True, None
 
 if __name__ == "__main__":
     assert len(sys.argv) >= 2, "Error - use python train_from_config.py path_to_yaml_file"
@@ -24,15 +41,18 @@ if __name__ == "__main__":
     with open(sys.argv[1]) as file:
         cfg = yaml.safe_load(file)
     assert file != None, "Error opening file - file not found"
-
+    
     # Configuration
-    check_backbone_params(cfg)
-    model = DualModalityBackbone(
-                rgb_backbone=cfg['backbone']['rgb_backbone'],
-                event_backbone=cfg['backbone']['event_backbone'],
-                embed_dim=cfg['backbone']['embed_dim'],
-                img_size=cfg['backbone']['input_size']
-    )
+    modality, backbone = check_backbone_params(cfg)
+    if modality:
+        model = DualModalityBackbone(rgb_backbone=cfg['backbone']['rgb_backbone'],
+                    event_backbone=cfg['backbone']['event_backbone'],
+                    embed_dim=cfg['backbone']['embed_dim'],
+                    img_size=cfg['backbone']['input_size']
+        )
+    else:
+        model = unimodalBackbone(backbone, embed_dim=cfg['backbone']['embed_dim'],
+                    img_size=cfg['backbone']['input_size'])
 
     # Loss   
     assert 'loss' in cfg.keys(), "loss params list missing in yaml file"
@@ -40,6 +60,7 @@ if __name__ == "__main__":
 
     if learnable:
         params = list(model.parameters()) + list(criterion.parameters())
+        print(criterion.parameters())
     else:
         params = model.parameters()
     assert 'loss' in cfg.keys(), "'optimizer' params list missing in yaml file"
