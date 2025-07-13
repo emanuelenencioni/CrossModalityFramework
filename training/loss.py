@@ -86,5 +86,14 @@ def build_from_config(cfg):
         assert lambda_coeff > 0 and lambda_coeff < 1, "lambda must be in the range (0, 1)"
 
         return BarlowTwinsLoss(lambda_coeff=lambda_coeff), False
+    elif criterion in ["mse", "mse_loss", "l2", "l2_loss"]:
+        return torch.nn.MSELoss(), False
+
+    elif criterion in ["cross_entropy", "crossentropyloss", "cross_entropy_loss"]:
+        return torch.nn.CrossEntropyLoss(), False
+
+    elif criterion in ["bce", "bce_loss", "binary_cross_entropy", "binarycrossentropy"]:
+        return torch.nn.BCEWithLogitsLoss(), False
+
     else:
         raise ValueError("Criterion name mispelled or missing implementation")
