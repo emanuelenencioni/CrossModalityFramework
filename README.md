@@ -35,8 +35,9 @@ Pytorch 2.7.0 with cuda 12.6 is installed with the script.
 
 
 - [X] put config in the  loss function build
-- [ ] one of the backbone = None -> unimodal training
+- [ ] one of the backbone = None -> unimodal training, a questo punto sarebbe ottimo che dual modality non è altro che il training di 2 unimodal backbone.
 - [ ] create framework for domain adaptation -> (fare codice per fare domain adaptation cioe in cui si traina il new model e con anche l'old model)
+- [ ] add train from saved model -> save and load config too.
 - [ ] implement argparsing for the hyperparams (override of .yaml)
 - [ ] encoders must return a dict -> flatten_feat, projected_feat, preflatten_feat.
 - [ ] Add detection head, remember NO flatten -> yolo latest version (with no transformers)
