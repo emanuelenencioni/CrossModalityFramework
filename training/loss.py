@@ -89,7 +89,7 @@ def build_from_config(cfg):
     elif criterion in ["mse", "mse_loss", "l2", "l2_loss"]:
         return torch.nn.MSELoss(), False
 
-    elif criterion in ["cross_entropy", "crossentropyloss", "cross_entropy_loss"]:
+    elif criterion in ["cross_entropy", "crossentropyloss", "cross_entropy_loss", "ce"]:
         return torch.nn.CrossEntropyLoss(), False
 
     elif criterion in ["bce", "bce_loss", "binary_cross_entropy", "binarycrossentropy"]:
