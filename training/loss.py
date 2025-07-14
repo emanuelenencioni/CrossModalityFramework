@@ -64,6 +64,9 @@ class BarlowTwinsLoss(nn.Module):
         
         return total_loss
 
+class IOUloss(nn.Module):
+    def __init__(self, reduction="none"): super().__init__()
+    def forward(self, pred, target): return torch.abs(pred - target).sum()
 
 
 def build_from_config(cfg):
@@ -94,6 +97,8 @@ def build_from_config(cfg):
 
     elif criterion in ["bce", "bce_loss", "binary_cross_entropy", "binarycrossentropy"]:
         return torch.nn.BCEWithLogitsLoss(), False
+    elif criterion in ["IOULoss", "iouloss", "IOU", "iou"]:
+        return IOUloss()
 
     else:
         raise ValueError("Criterion name mispelled or missing implementation")
