@@ -24,7 +24,7 @@ class Backbone(nn.Module):
 
 class UnimodalBackbone(Backbone):
     def __init__(self, backbone=None, pretrained=True,
-                 embed_dim=256, img_size=224, model_name='',outputs=["projector"]):
+                 embed_dim=256, img_size=224, model_name='',outputs=["projector"], out_indices = None):
         """
         Args:
             bacbkone: Timm model name or custom module
@@ -36,16 +36,20 @@ class UnimodalBackbone(Backbone):
         else:
             self.name = model_name
         self.img_size = img_size
-        
+        use_multiple_features = True if out_indices is not None else False
+        self.out_indices = out_indices if use_multiple_features else None
         if isinstance(backbone, str):
-            if "vit" in backbone: #TODO: trovare metodo migliore per capire se è un vit.
-                self.backbone = timm.create_model( backbone, img_size=img_size, pretrained=pretrained,
-                    in_chans=3, num_classes=0 )  # Assume 5-channel voxel grid
+            if 'resnet' in backbone:
+                self.backbone = timm.create_model( backbone, pretrained=pretrained,
+                    in_chans=3, num_classes=0,features_only=use_multiple_features, out_indices=out_indices)
             else:
-                self.backbone = timm.create_model(backbone, pretrained=pretrained,
-                    in_chans=3, num_classes=0 )  # Assume 5-channel voxel grid
+                self.backbone = timm.create_model( backbone, img_size=img_size, pretrained=pretrained,
+                    in_chans=3, num_classes=0,features_only=use_multiple_features, out_indices=out_indices)  # Assume 5-channel voxel grid
         else:
             self.backbone = backbone
+
+        if use_multiple_features:
+            self.feature_info = self.backbone.feature_info
 
         self.projector = nn.Sequential(
             nn.Linear(self.get_feature_output_dim(), embed_dim),
@@ -56,7 +60,11 @@ class UnimodalBackbone(Backbone):
         self.outputs = outputs
 
     def get_feature_output_dim(self):
-        return self.backbone.forward_features(torch.randn(1, 3, self.img_size, self.img_size)).flatten().shape[-1]
+        dummy_in  = torch.randn(1, 3, self.img_size, self.img_size)
+        if self.out_indices is None:
+            return self.backbone.forward_features(dummy_in).flatten().shape[-1]
+        else:
+            return self.backbone(dummy_in)[-1].shape[-1]
 
     def _get_features(self, feat):
         """
@@ -70,14 +78,15 @@ class UnimodalBackbone(Backbone):
                 - "projected_feat": The feature tensor after being passed through the projector.
         """
         out_dict = {}
+        last_feat = feat[-1] if isinstance(feat, list) else feat
         if "preflatten_feat" in self.outputs:
             out_dict["preflatten_feat"] = feat
-        feat = feat.flatten(start_dim=1)
+        last_feat = last_feat.flatten(start_dim=1)
         if "flatten_feat" in self.outputs:
-            out_dict['flatten_feat'] = feat
+            out_dict['flatten_feat'] = last_feat
         if "projected_feat" in self.outputs :
             if self.projector is not None:
-                out_dict["projected_feat"] = self.projector(feat)
+                out_dict["projected_feat"] = self.projector(last_feat)
             else:
                 print("\033[93m"+"WARNING: Projector not found"+"\033[0m")
 
@@ -88,7 +97,10 @@ class UnimodalBackbone(Backbone):
 
 
     def forward(self, x):
-        x = self.backbone.forward_features(x)
+        if self.out_indices is None:
+            x = self.backbone.forward_features(x)
+        else:
+            x = self.backbone(x)
         return self._get_features(x)
 
 
