@@ -9,11 +9,25 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from yolox.utils import bboxes_iou, cxcywh2xyxy, meshgrid, visualize_assign
+#from yolox.utils import bboxes_iou, meshgrid  #visualize_assign, cxcywh2xyxy
 
-from .losses import IOUloss
-from .network_blocks import BaseConv, DWConv
+from training.loss import IOUloss
 
+
+def bboxes_iou(a, b, c): return torch.rand(a.shape[0], b.shape[0])
+
+class BaseConv(nn.Module):
+    def __init__(self, in_channels, out_channels, ksize, stride, act):
+        super().__init__()
+        self.conv = nn.Conv2d(in_channels, out_channels, ksize, stride, (ksize-1)//2)
+        self.bn = nn.BatchNorm2d(out_channels)
+        self.act = nn.SiLU() if act == "silu" else nn.ReLU()
+    def forward(self, x): return self.act(self.bn(self.conv(x)))
+class DWConv(nn.Module): # Placeholder
+    def __init__(self, in_channels, out_channels, ksize, stride, act):
+        super().__init__()
+        self.conv = BaseConv(in_channels, out_channels, ksize, stride, act)
+    def forward(self, x): return self.conv(x)
 
 class YOLOXHead(nn.Module):
     def __init__(
@@ -575,67 +589,67 @@ class YOLOXHead(nn.Module):
         ]
         return num_fg, gt_matched_classes, pred_ious_this_matching, matched_gt_inds
 
-    def visualize_assign_result(self, xin, labels=None, imgs=None, save_prefix="assign_vis_"):
-        # original forward logic
-        outputs, x_shifts, y_shifts, expanded_strides = [], [], [], []
-        # TODO: use forward logic here.
+    # def visualize_assign_result(self, xin, labels=None, imgs=None, save_prefix="assign_vis_"):
+    #     # original forward logic
+    #     outputs, x_shifts, y_shifts, expanded_strides = [], [], [], []
+    #     # TODO: use forward logic here.
 
-        for k, (cls_conv, reg_conv, stride_this_level, x) in enumerate(
-            zip(self.cls_convs, self.reg_convs, self.strides, xin)
-        ):
-            x = self.stems[k](x)
-            cls_x = x
-            reg_x = x
+    #     for k, (cls_conv, reg_conv, stride_this_level, x) in enumerate(
+    #         zip(self.cls_convs, self.reg_convs, self.strides, xin)
+    #     ):
+    #         x = self.stems[k](x)
+    #         cls_x = x
+    #         reg_x = x
 
-            cls_feat = cls_conv(cls_x)
-            cls_output = self.cls_preds[k](cls_feat)
-            reg_feat = reg_conv(reg_x)
-            reg_output = self.reg_preds[k](reg_feat)
-            obj_output = self.obj_preds[k](reg_feat)
+    #         cls_feat = cls_conv(cls_x)
+    #         cls_output = self.cls_preds[k](cls_feat)
+    #         reg_feat = reg_conv(reg_x)
+    #         reg_output = self.reg_preds[k](reg_feat)
+    #         obj_output = self.obj_preds[k](reg_feat)
 
-            output = torch.cat([reg_output, obj_output, cls_output], 1)
-            output, grid = self.get_output_and_grid(output, k, stride_this_level, xin[0].type())
-            x_shifts.append(grid[:, :, 0])
-            y_shifts.append(grid[:, :, 1])
-            expanded_strides.append(
-                torch.full((1, grid.shape[1]), stride_this_level).type_as(xin[0])
-            )
-            outputs.append(output)
+    #         output = torch.cat([reg_output, obj_output, cls_output], 1)
+    #         output, grid = self.get_output_and_grid(output, k, stride_this_level, xin[0].type())
+    #         x_shifts.append(grid[:, :, 0])
+    #         y_shifts.append(grid[:, :, 1])
+    #         expanded_strides.append(
+    #             torch.full((1, grid.shape[1]), stride_this_level).type_as(xin[0])
+    #         )
+    #         outputs.append(output)
 
-        outputs = torch.cat(outputs, 1)
-        bbox_preds = outputs[:, :, :4]  # [batch, n_anchors_all, 4]
-        obj_preds = outputs[:, :, 4:5]  # [batch, n_anchors_all, 1]
-        cls_preds = outputs[:, :, 5:]  # [batch, n_anchors_all, n_cls]
+    #     outputs = torch.cat(outputs, 1)
+    #     bbox_preds = outputs[:, :, :4]  # [batch, n_anchors_all, 4]
+    #     obj_preds = outputs[:, :, 4:5]  # [batch, n_anchors_all, 1]
+    #     cls_preds = outputs[:, :, 5:]  # [batch, n_anchors_all, n_cls]
 
-        # calculate targets
-        total_num_anchors = outputs.shape[1]
-        x_shifts = torch.cat(x_shifts, 1)  # [1, n_anchors_all]
-        y_shifts = torch.cat(y_shifts, 1)  # [1, n_anchors_all]
-        expanded_strides = torch.cat(expanded_strides, 1)
+    #     # calculate targets
+    #     total_num_anchors = outputs.shape[1]
+    #     x_shifts = torch.cat(x_shifts, 1)  # [1, n_anchors_all]
+    #     y_shifts = torch.cat(y_shifts, 1)  # [1, n_anchors_all]
+    #     expanded_strides = torch.cat(expanded_strides, 1)
 
-        nlabel = (labels.sum(dim=2) > 0).sum(dim=1)  # number of objects
-        for batch_idx, (img, num_gt, label) in enumerate(zip(imgs, nlabel, labels)):
-            img = imgs[batch_idx].permute(1, 2, 0).to(torch.uint8)
-            num_gt = int(num_gt)
-            if num_gt == 0:
-                fg_mask = outputs.new_zeros(total_num_anchors).bool()
-            else:
-                gt_bboxes_per_image = label[:num_gt, 1:5]
-                gt_classes = label[:num_gt, 0]
-                bboxes_preds_per_image = bbox_preds[batch_idx]
-                _, fg_mask, _, matched_gt_inds, _ = self.get_assignments(  # noqa
-                    batch_idx, num_gt, gt_bboxes_per_image, gt_classes,
-                    bboxes_preds_per_image, expanded_strides, x_shifts,
-                    y_shifts, cls_preds, obj_preds,
-                )
+    #     nlabel = (labels.sum(dim=2) > 0).sum(dim=1)  # number of objects
+    #     for batch_idx, (img, num_gt, label) in enumerate(zip(imgs, nlabel, labels)):
+    #         img = imgs[batch_idx].permute(1, 2, 0).to(torch.uint8)
+    #         num_gt = int(num_gt)
+    #         if num_gt == 0:
+    #             fg_mask = outputs.new_zeros(total_num_anchors).bool()
+    #         else:
+    #             gt_bboxes_per_image = label[:num_gt, 1:5]
+    #             gt_classes = label[:num_gt, 0]
+    #             bboxes_preds_per_image = bbox_preds[batch_idx]
+    #             _, fg_mask, _, matched_gt_inds, _ = self.get_assignments(  # noqa
+    #                 batch_idx, num_gt, gt_bboxes_per_image, gt_classes,
+    #                 bboxes_preds_per_image, expanded_strides, x_shifts,
+    #                 y_shifts, cls_preds, obj_preds,
+    #             )
 
-            img = img.cpu().numpy().copy()  # copy is crucial here
-            coords = torch.stack([
-                ((x_shifts + 0.5) * expanded_strides).flatten()[fg_mask],
-                ((y_shifts + 0.5) * expanded_strides).flatten()[fg_mask],
-            ], 1)
+    #         img = img.cpu().numpy().copy()  # copy is crucial here
+    #         coords = torch.stack([
+    #             ((x_shifts + 0.5) * expanded_strides).flatten()[fg_mask],
+    #             ((y_shifts + 0.5) * expanded_strides).flatten()[fg_mask],
+    #         ], 1)
 
-            xyxy_boxes = cxcywh2xyxy(gt_bboxes_per_image)
-            save_name = save_prefix + str(batch_idx) + ".png"
-            img = visualize_assign(img, xyxy_boxes, coords, matched_gt_inds, save_name)
-            logger.info(f"save img to {save_name}")
+    #         xyxy_boxes = cxcywh2xyxy(gt_bboxes_per_image)
+    #         save_name = save_prefix + str(batch_idx) + ".png"
+    #         img = visualize_assign(img, xyxy_boxes, coords, matched_gt_inds, save_name)
+    #         logger.info(f"save img to {save_name}")
