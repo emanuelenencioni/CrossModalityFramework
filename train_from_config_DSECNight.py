@@ -14,6 +14,78 @@ from dataset.dsec import DSECDataset, collate_ssl
 from datetime import datetime
 import torch
 import wandb
+import argparse
+
+def parse_arguments():
+    parser = argparse.ArgumentParser(description="Training script with configurable parameters.")
+
+    parser.add_argument("config_path", type=str, help="Path to the YAML configuration file")
+    # Add arguments for all parameters in the YAML file
+    parser.add_argument("--experiment_name", type=str, help="Experiment name", default=None)
+    parser.add_argument("--seed", type=int, help="Seed value", default=None)
+    parser.add_argument("--device", type=str, help="Device to use (cuda or cpu)", default=None)
+
+    # Dataset parameters
+    parser.add_argument("--dataset_name", type=str, help="Dataset name", default=None)
+    parser.add_argument("--data_dir", type=str, help="Data directory", default=None)
+    parser.add_argument("--batch_size", type=int, help="Batch size", default=None)
+    parser.add_argument("--num_workers", type=int, help="Number of workers", default=None)
+    parser.add_argument("--train_type", type=str, help="Training type (ssl or sl)", default=None)
+
+    # Backbone parameters
+    parser.add_argument("--backbone_name", type=str, help="Backbone name", default=None)
+    parser.add_argument("--rgb_backbone", type=str, help="RGB backbone name", default=None)
+    parser.add_argument("--event_backbone", type=str, help="Event backbone name", default=None)
+    parser.add_argument("--embed_dim", type=int, help="Embedding dimension", default=None)
+    parser.add_argument("--input_size", type=int, help="Input size", default=None)
+    #parser.add_argument("--num_classes", type=int, help="Number of classes")
+    #parser.add_argument("--dropout", type=float, help="Dropout rate")
+
+    # Optimizer parameters
+    parser.add_argument("--optimizer_name", type=str, help="Optimizer name", default=None)
+    parser.add_argument("--lr", type=float, help="Learning rate", default=None)
+    parser.add_argument("--wd", type=float, help="Weight decay", default=None)
+
+    # Loss function parameters
+    parser.add_argument("--loss_name", type=str, help="Loss function name", default=None)
+
+    # Training loop parameters
+    parser.add_argument("--epochs", type=int, help="Number of epochs", default=None)
+    parser.add_argument("--log_interval", type=int, help="Log interval (steps)", default=None)
+    parser.add_argument("--val_interval", type=int, help="Validation interval (steps)", default=None)
+    parser.add_argument("--checkpoint_interval", type=int, help="Checkpoint interval (epochs)", default=None)
+    parser.add_argument("--save_folder", type=str,  help="Save folder", default=None)
+
+    # Scheduler parameters
+    parser.add_argument("--scheduler_name", type=str, help="Scheduler name", default=None)
+    parser.add_argument("--factor", type=float, help="Scheduler factor", default=None)
+    parser.add_argument("--patience", type=int, help="Scheduler patience", default=None)
+    parser.add_argument("--monitor", type=str,  help="Scheduler monitor metric", default=None)
+    parser.add_argument("--mode", type=str, help="Scheduler mode (min or max)", default=None)
+
+    # Logging parameters
+    parser.add_argument("--logger_name", type=str, help="Logger name", default=None)
+    parser.add_argument("--project", type=str,  help="Wandb project name", default=None)
+    parser.add_argument("--entity", type=str, help="Wandb entity name", default=None)
+
+    args = parser.parse_args()
+
+    cfg = None
+    with open(vars(args)['config_path']) as file:
+        cfg = yaml.safe_load(file)
+    
+    assert cfg
+    # Update cfg with parsed arguments
+    for k, v in vars(args).items():
+        if k != "config_path" and v is not None:
+            setattr(cfg, k, v)
+        else:
+            # Ensure the value from cfg is used if the argument is not provided
+            v_cfg = getattr(cfg, k, None)
+            if v_cfg is not None:
+                setattr(cfg, k, v_cfg)
+
+    return cfg
 
 def check_backbone_params(cfg):
     """
@@ -31,7 +103,7 @@ def check_backbone_params(cfg):
     ev_bb = cfg_b['event_backbone'] if 'event_backbone' in cfg['backbone'].keys() else None
     rgb_bb = cfg_b['rgb_backbone'] if 'rgb_backbone' in cfg['backbone'].keys() else None
     
-
+    
     assert ev_bb != None or rgb_bb != None, "Error - specify at least one backbone: event or rgb"
     if ev_bb is None:
         return False, rgb_bb
@@ -41,14 +113,10 @@ def check_backbone_params(cfg):
     return True, None
 
 if __name__ == "__main__":
-    assert len(sys.argv) >= 2, "Error - use python train_from_config.py path_to_yaml_file"
 
-    with open(sys.argv[1]) as file:
-        cfg = yaml.safe_load(file)
-    assert file != None, "Error opening file - file not found"
-    
-    # Configuration
-    
+    cfg = parse_arguments()
+
+    # Setup #
     dual_modality, backbone = check_backbone_params(cfg)
     if 'model' in cfg.keys():
         assert 'bb_num_classes' in cfg['dataset'], "Error - number of classes need to be specified in unimodal training"
