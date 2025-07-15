@@ -148,8 +148,8 @@ class DSECDataset(Dataset):
     def __init__(self, dataset_txt_path, events_num=-1, events_bins=5, events_clip_range=None, crop_size=(400, 400),
                  after_crop_resize_size=(512, 512), image_change_range=1, outputs={'events_vg', 'image'}, output_num=1,
                  classes=CLASSES, palette=PALETTE, isr_shift_pixel=4, test_mode=False, events_bins_5_avg_1=False,
-                 isr_parms='', isr_type='real_time', enforce_3_channels=True, shift_type='rightdown', hard_cache=False):
-        
+                 isr_parms='', isr_type='real_time', enforce_3_channels=True, shift_type='rightdown', hard_cache=False, max_labels=10):
+        self.max_labels = max_labels
         self.dataset_txt_path = dataset_txt_path
         self.events_num = events_num
         self.events_bins = events_bins
@@ -308,15 +308,25 @@ class DSECDataset(Dataset):
 
             # TODO: here need to be BB and classes. 
         if 'BB' in self.outputs:
+            bb_out = torch.zeros((self.max_labels, 5))
             timestamps = np.loadtxt(image_path.split('left/rectified')[0]+"timestamps.txt")
             bb_path = image_path.split('images/left/rectified')[0] + "object_detections/left/tracks.npy"
             bounding_boxes = np.load(bb_path,"r")
 
-            #mask to obtain only bb for the actual frame
+            #mask to obtain only bbs for the actual frame
             mask = bounding_boxes['t'] == timestamps[now_image_index]
-            output['BB'] = bounding_boxes[mask]
+            filtered_boxes = bounding_boxes[mask]
+            for i in range(len(filtered_boxes)):
+                bb_out[i,0] = torch.from_numpy(np.array(filtered_boxes[i][5].astype(np.float32)))
+                bb_out[i,1] = torch.from_numpy(np.array(filtered_boxes[i][1].astype(np.float32)))
+                bb_out[i,2] = torch.from_numpy(np.array(filtered_boxes[i][2].astype(np.float32)))
+                bb_out[i,3] = torch.from_numpy(np.array(filtered_boxes[i][3].astype(np.float32)))
+                bb_out[i,4] = torch.from_numpy(np.array(filtered_boxes[i][4].astype(np.float32)))
+
+            output['BB'] = bb_out
 
         if 'events_vg' in self.outputs:
+
             if DEBUG>2: start_time= time.perf_counter()
             if self.cached_vg:
                 events_vg_path_dir = image_path.replace('images', 'events')[:-20].split('lef')[0] + "events_vg/"
@@ -380,7 +390,6 @@ class DSECDataset(Dataset):
         return output
 
     def get_events_vg(self, events_finish_index, events_start_index):
-      
         events_t = np.asarray(self.events_h5['events/{}'.format('t')][events_start_index: events_finish_index + 1])
         events_x = np.asarray(self.events_h5['events/{}'.format('x')][events_start_index: events_finish_index + 1])
         events_y = np.asarray(self.events_h5['events/{}'.format('y')][events_start_index: events_finish_index + 1])
