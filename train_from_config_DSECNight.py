@@ -3,7 +3,12 @@ import sys
 import os
 from training import optimizer,loss
 from training.ssl import TrainSSL
-from model.backbone import DualModalityBackbone
+from training.sl import Trainer
+
+from model.backbone import DualModalityBackbone, UnimodalBackbone
+from model import models
+from model.yolox_head import YOLOXHead
+
 from torch.utils.data import DataLoader
 from dataset.dsec import DSECDataset, collate_ssl
 from datetime import datetime
@@ -43,17 +48,27 @@ if __name__ == "__main__":
     assert file != None, "Error opening file - file not found"
     
     # Configuration
-    modality, backbone = check_backbone_params(cfg)
-    if modality:
-        model = DualModalityBackbone(rgb_backbone=cfg['backbone']['rgb_backbone'],
-                    event_backbone=cfg['backbone']['event_backbone'],
-                    embed_dim=cfg['backbone']['embed_dim'],
-                    img_size=cfg['backbone']['input_size']
-        )
+    
+    dual_modality, backbone = check_backbone_params(cfg)
+    if 'model' in cfg.keys():
+        assert 'bb_num_classes' in cfg['dataset'], "Error - number of classes need to be specified in unimodal training"
+        model = models.Detector(backbone,num_classes=cfg['dataset']['bb_num_classes'], img_size=int(cfg['backbone']['input_size']))
     else:
-        model = unimodalBackbone(backbone, embed_dim=cfg['backbone']['embed_dim'],
-                    img_size=cfg['backbone']['input_size'])
+        if dual_modality:
+            model = DualModalityBackbone(rgb_backbone=cfg['backbone']['rgb_backbone'],
+                        event_backbone=cfg['backbone']['event_backbone'],
+                        embed_dim=cfg['backbone']['embed_dim'],
+                        img_size=cfg['backbone']['input_size']
+            )
+        else:
+            model = UnimodalBackbone(backbone, embed_dim=cfg['backbone']['embed_dim'],
+                        img_size=cfg['backbone']['input_size'])
 
+
+
+
+
+    
     # Loss   
     assert 'loss' in cfg.keys(), "loss params list missing in yaml file"
     criterion, learnable = loss.build_from_config(cfg['loss'])
@@ -65,6 +80,9 @@ if __name__ == "__main__":
         params = model.parameters()
     assert 'loss' in cfg.keys(), "'optimizer' params list missing in yaml file"
     opti = optimizer.build_from_config(params, cfg['optimizer'])
+    
+
+    # TODO: adjust for each dataset of interest
     # Dataloader (CMDA)
     events_bins_5_avg_1 = False
     if events_bins_5_avg_1:
@@ -74,8 +92,22 @@ if __name__ == "__main__":
         events_bins = 1
         events_clip_range = None
     dir_path = os.path.dirname(os.path.realpath(__file__))
+    
+    
+    outputs = {'events_vg', 'image'}
+    if dual_modality:
+        if 'outputs' in cfg['dataset'].keys():
+            outputs = cfg['dataset']['outputs']
+        else:
+            print(" 'outputs' params list missing from config file, using default for ssl")
+            
+        
+    else:
+        assert 'outputs' in cfg['dataset'].keys(), "Error, missing mandatory outputs for the dataset in unimodal training"
+        outputs = cfg['dataset']['outputs']
+
     dataset = DSECDataset(dataset_txt_path=dir_path+'/dataset/night_dataset.txt',
-                           outputs={'events_vg','image'},
+                           outputs=outputs,
                            events_bins=events_bins, events_clip_range=events_clip_range,
                            events_bins_5_avg_1=events_bins_5_avg_1)
     
@@ -106,5 +138,8 @@ if __name__ == "__main__":
     # Trainer
     assert 'trainer' in cfg.keys(), "'trainer' params list missing from config file "
     
-    trainer = TrainSSL(model, dataloader, opti, criterion, device, cfg['trainer'], root_folder=dir_path, wandb_log=wandb_log)
+    if dual_modality:
+        trainer = TrainSSL(model, dataloader, opti, criterion, device, cfg, root_folder=dir_path, wandb_log=wandb_log)
+    else:
+        trainer = Trainer(model,dataloader, opti, criterion, device,  cfg, root_folder=dir_path, wandb_log=wandb_log)
     trainer.train()
