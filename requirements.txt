@@ -1,0 +1,13 @@
+cityscapesscripts==2.2.4 
+h5py==3.13.0 
+hdf5plugin==5.1.0 
+kornia==0.8.1 
+loguru==0.7.3 
+matplotlib==3.10.3 
+numpy==2.2.6 
+Pillow==11.2.1 
+prettytable==3.16.0 
+PyYAML==6.0.2 
+timm==1.0.15
+tqdm==4.67.1
+wandb==0.19.11
