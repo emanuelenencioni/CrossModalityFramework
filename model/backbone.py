@@ -92,8 +92,7 @@ class UnimodalBackbone(Backbone):
 
         return out_dict
 
-    def get_model_name(self):
-        return self.name
+    def get_name(self): return self.name
 
 
     def forward(self, x):
@@ -166,8 +165,7 @@ class DualModalityBackbone(nn.Module):
                                     for p in self.event_backbone.parameters()]))
         return rgb_weights_norm, event_weights_norm
 
-    def get_model_name(self):
-        return self.name
+    def get_name(self): return self.name
 
 
 if __name__ == "__main__":

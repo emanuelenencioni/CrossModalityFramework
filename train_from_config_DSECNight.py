@@ -115,7 +115,7 @@ if __name__ == "__main__":
     dataloader = DataLoader(dataset, batch_size=cfg['dataset']['batch_size'], num_workers=num_workers, shuffle=False, collate_fn=collate_ssl, pin_memory=True)
     
     wandb_log = False
-    run_name = cfg['backbone']['name'] if ('name' in cfg['backbone'].keys() and cfg['backbone']['name'] != '') else model.get_model_name()
+    run_name = cfg['backbone']['name'] if ('name' in cfg['backbone'].keys() and cfg['backbone']['name'] != '') else model.get_name()
     run_name = f"{run_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     if 'logger' in cfg.keys() and 'name' in cfg['logger'].keys():
         if(cfg['logger']['name'] == 'wandb'):

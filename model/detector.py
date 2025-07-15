@@ -45,7 +45,7 @@ class Detector(nn.Module):
             strides=strides
         )
 
-    def get_model_name(self): return self.model_name
+    def get_name(self): return self.model_name
 
     def forward(self, x: torch.Tensor, targets: torch.Tensor = None):
         """
