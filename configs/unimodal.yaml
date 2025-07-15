@@ -1,0 +1,61 @@
+# General training parameters
+experiment_name: simpleCLIPTrain
+seed: 42 #TODO
+device: cuda  # or cpu
+
+# Data parameters
+dataset:
+  name: DSEC_Night
+  data_dir: ./data
+  batch_size: 4
+  num_workers: 4
+  outputs: ["events_vg", "BB", "labels"]
+  bb_num_classes: 8 # according to DSEC
+
+# Model parameters TODO
+backbone:
+  name: '' # if name is empty -> stack of the two backbone will be used
+  event_backbone: vit_small_patch14_dinov2.lvd142m # from timm
+  embed_dim: 128
+  input_size: 512
+  #num_classes: 10
+  #dropout: 0.25
+
+head: 
+  object_detection: yolox_head
+
+model:
+  name: detector
+  
+
+# Optimizer parameters
+optimizer:
+  name: Adam
+  lr: 0.001
+  wd: 0.0005
+
+# Loss function parameters
+loss:
+  name: cross_entropy
+
+# Training loop parameters
+trainer:
+  epochs: 50
+  log_interval: 100 # steps
+  val_interval: 500 # steps
+  checkpoint_interval: 50 # steps
+  save_folder: 
+
+# Scheduler parameters (optional)
+scheduler:
+  name: ReduceLROnPlateau
+  factor: 0.1
+  patience: 3
+  monitor: val_loss
+  mode: min
+
+# Logging parameters
+logger:
+  name: wandbasd
+  project: Cross_Modality_Framework  # Replace with your wandb project name
+  entity: TwoGuysOneCode
