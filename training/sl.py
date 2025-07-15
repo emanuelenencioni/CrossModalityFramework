@@ -53,7 +53,7 @@ class Trainer:
     def __run_epoch(self, epoch):
         self.model.train()
         losses = []
-        for batch in  self.dataloader:
+        for batch in  tqdm(self.dataloader, desc=f"training model - {model.get_model_name()}"):
             losses.append(self.__run_batch(batch))
         avg_loss = np.asarray(losses).mean()
         if DEBUG == 1: print(f"epoch loss: {avg_loss}")

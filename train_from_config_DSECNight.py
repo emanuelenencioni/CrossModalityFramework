@@ -6,7 +6,7 @@ from training.ssl import TrainSSL
 from training.sl import Trainer
 
 from model.backbone import DualModalityBackbone, UnimodalBackbone
-from model import models
+from model.detector import Detector
 from model.yolox_head import YOLOXHead
 
 from torch.utils.data import DataLoader
@@ -52,7 +52,7 @@ if __name__ == "__main__":
     dual_modality, backbone = check_backbone_params(cfg)
     if 'model' in cfg.keys():
         assert 'bb_num_classes' in cfg['dataset'], "Error - number of classes need to be specified in unimodal training"
-        model = models.Detector(backbone,num_classes=cfg['dataset']['bb_num_classes'], img_size=int(cfg['backbone']['input_size']))
+        model = Detector(backbone,num_classes=cfg['dataset']['bb_num_classes'], img_size=int(cfg['backbone']['input_size']))
     else:
         if dual_modality:
             model = DualModalityBackbone(rgb_backbone=cfg['backbone']['rgb_backbone'],
@@ -63,11 +63,6 @@ if __name__ == "__main__":
         else:
             model = UnimodalBackbone(backbone, embed_dim=cfg['backbone']['embed_dim'],
                         img_size=cfg['backbone']['input_size'])
-
-
-
-
-
     
     # Loss   
     assert 'loss' in cfg.keys(), "loss params list missing in yaml file"
@@ -92,7 +87,7 @@ if __name__ == "__main__":
         events_bins = 1
         events_clip_range = None
     dir_path = os.path.dirname(os.path.realpath(__file__))
-    
+
     
     outputs = {'events_vg', 'image'}
     if dual_modality:
