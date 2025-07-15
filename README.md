@@ -35,7 +35,7 @@ Pytorch 2.7.0 with cuda 12.6 is installed with the script.
 
 
 - [X] put config in the  loss function build
-- [ ] one of the backbone = None -> unimodal training, a questo punto sarebbe ottimo che dual modality non è altro che il training di 2 unimodal backbone.
+- [X] one of the backbone = None -> unimodal training, a questo punto sarebbe ottimo che dual modality non è altro che il training di 2 unimodal backbone.
 - [ ] create framework for domain adaptation -> (fare codice per fare domain adaptation cioe in cui si traina il new model e con anche l'old model)
 - [ ] add train from saved model -> save and load config too.
 - [ ] implement argparsing for the hyperparams (override of .yaml)
@@ -44,7 +44,7 @@ Pytorch 2.7.0 with cuda 12.6 is installed with the script.
     - [ ] watch for the YoloV11 loss function
 
 - [ ] (per la proposta di metodo) considerare di fare la loss di contrastive solo sulla bbox e tutto il resto considerarlo come negative
-
+- [ ] Refactor unimodal -> SingleModality. 
 Priority:  
 
 1. detection head
