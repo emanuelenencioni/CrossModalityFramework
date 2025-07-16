@@ -40,7 +40,7 @@ class Trainer:
 
     def __run_batch(self, batch):
         input_frame = torch.stack([item["events_vg"] for item in batch]).to(self.device)
-        targets = torch.stack([item["BB"] for item in batch])
+        targets = torch.stack([item["BB"] for item in batch]).to(self.device)
         self.optimizer.zero_grad()
         losses = self.model(input_frame, targets)
         
