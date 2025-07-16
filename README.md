@@ -39,9 +39,12 @@ Pytorch 2.7.0 with cuda 12.6 is installed with the script.
 - [ ] create framework for domain adaptation -> (fare codice per fare domain adaptation cioe in cui si traina il new model e con anche l'old model)
 - [ ] add train from saved model -> save and load config too.
 - [ ] implement argparsing for the hyperparams (override of .yaml)
+    - [X] implementation
+    - [ ] FIX: given a parameter not present in the yaml file -> add to cfg.
+
 - [ ] encoders must return a dict -> flatten_feat, projected_feat, preflatten_feat.
 - [ ] Add detection head, remember NO flatten -> yolo latest version (with no transformers)
-    - [ ] watch for the YoloV11 loss function
+    - [/] watch for the YoloV11 loss function (i watched the YoloX instead)
 
 - [ ] (per la proposta di metodo) considerare di fare la loss di contrastive solo sulla bbox e tutto il resto considerarlo come negative
 - [ ] Refactor unimodal -> SingleModality. 
