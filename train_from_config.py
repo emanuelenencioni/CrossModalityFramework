@@ -30,7 +30,7 @@ def parse_arguments():
     parser.add_argument("--data_dir", type=str, help="Data directory", default=None)
     parser.add_argument("--batch_size", type=int, help="Batch size", default=None)
     parser.add_argument("--num_workers", type=int, help="Number of workers", default=None)
-    parser.add_argument("--train_type", type=str, help="Training type (ssl or sl)", default=None)
+    parser.add_argument("--train_type", type=str, help="Training type (ssl or sl)", default=None) # maybe useless
 
     # Backbone parameters
     parser.add_argument("--backbone_name", type=str, help="Backbone name", default=None)
@@ -40,6 +40,7 @@ def parse_arguments():
     parser.add_argument("--input_size", type=int, help="Input size", default=None)
     #parser.add_argument("--num_classes", type=int, help="Number of classes")
     #parser.add_argument("--dropout", type=float, help="Dropout rate")
+    parser.add_argument("--outputs", type=list, help="Dropout rate", default=None)
 
     # Optimizer parameters
     parser.add_argument("--optimizer_name", type=str, help="Optimizer name", default=None)
