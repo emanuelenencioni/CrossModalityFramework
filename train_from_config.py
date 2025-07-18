@@ -2,8 +2,8 @@ import yaml
 import sys
 import os
 from training import optimizer,loss
-from training.ssl import TrainSSL
-from training.sl import Trainer
+from training.multimodal import TrainSSL
+from training.unimodal import Trainer
 
 from model.backbone import DualModalityBackbone, UnimodalBackbone
 from model.detector import Detector
