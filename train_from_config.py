@@ -118,20 +118,21 @@ if __name__ == "__main__":
     cfg = parse_arguments()
 
     # Setup #
-    dual_modality, backbone = check_backbone_params(cfg)
-    if 'model' in cfg.keys():
+    assert 'model' in cfg.keys(), "Error - specify the model architecture"
+    dual_modality, backbone = check_backbone_params(cfg['model'])
+    if 'head' in cfg['model'].keys():
         assert 'bb_num_classes' in cfg['dataset'], "Error - number of classes need to be specified in unimodal training"
-        model = Detector(backbone,num_classes=cfg['dataset']['bb_num_classes'], img_size=int(cfg['backbone']['input_size']))
+        model = Detector(backbone,num_classes=cfg['dataset']['bb_num_classes'], img_size=int(cfg['model']['backbone']['input_size']))
     else:
-        if dual_modality:
-            model = DualModalityBackbone(rgb_backbone=cfg['backbone']['rgb_backbone'],
-                        event_backbone=cfg['backbone']['event_backbone'],
-                        embed_dim=cfg['backbone']['embed_dim'],
-                        img_size=cfg['backbone']['input_size']
+        if dual_modality: #TODO: Fix this, not only backbones in there
+            model = DualModalityBackbone(rgb_backbone=cfg['model']['backbone']['rgb_backbone'],
+                        event_backbone=cfg['model']['backbone']['event_backbone'],
+                        embed_dim=cfg['model']['backbone']['embed_dim'],
+                        img_size=cfg['model']['backbone']['input_size']
             )
         else:
-            model = UnimodalBackbone(backbone, embed_dim=cfg['backbone']['embed_dim'],
-                        img_size=cfg['backbone']['input_size'])
+            model = UnimodalBackbone(backbone, embed_dim=cfg['model']['backbone']['embed_dim'],
+                        img_size=cfg['model']['backbone']['input_size'])
     
     # Loss   
     assert 'loss' in cfg.keys(), "loss params list missing in yaml file"
@@ -184,7 +185,7 @@ if __name__ == "__main__":
     dataloader = DataLoader(dataset, batch_size=cfg['dataset']['batch_size'], num_workers=num_workers, shuffle=False, collate_fn=collate_ssl, pin_memory=True)
     
     wandb_log = False
-    run_name = cfg['backbone']['name'] if ('name' in cfg['backbone'].keys() and cfg['backbone']['name'] != '') else model.get_name()
+    run_name = cfg['model']['backbone']['name'] if ('name' in cfg['model']['backbone'].keys() and cfg['model']['backbone']['name'] != '') else model.get_name()
     run_name = f"{run_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     if 'logger' in cfg.keys() and 'name' in cfg['logger'].keys():
         if(cfg['logger']['name'] == 'wandb'):

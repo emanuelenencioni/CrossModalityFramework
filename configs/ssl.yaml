@@ -12,14 +12,15 @@ dataset:
   train_type: "ssl"
 
 # Model parameters TODO
-backbone:
-  name: '' # if name is empty -> stack of the two backbone will be used
-  rgb_backbone: resnet50
-  event_backbone: vit_small_patch14_dinov2.lvd142m # from timm
-  embed_dim: 128
-  input_size: 512
-  #num_classes: 10
-  #dropout: 0.25
+model:
+  backbone:
+    name: '' # if name is empty -> stack of the two backbone will be used
+    rgb_backbone: resnet50
+    event_backbone: vit_small_patch14_dinov2.lvd142m # from timm
+    embed_dim: 128
+    input_size: 512
+    #num_classes: 10
+    #dropout: 0.25
 
 # Optimizer parameters
 optimizer:

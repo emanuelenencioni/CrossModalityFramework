@@ -13,20 +13,19 @@ dataset:
   bb_num_classes: 8 # according to DSEC
 
 # Model parameters TODO
-backbone:
-  name: '' # if name is empty -> stack of the two backbone will be used
-  event_backbone: vit_small_patch14_dinov2.lvd142m # from timm
-  embed_dim: 128
-  input_size: 512
-  #num_classes: 10
-  #dropout: 0.25
 
-head: 
-  object_detection: yolox_head
+
 
 model:
-  name: detector
-  
+  head: yolox_head
+  backbone:
+    name: '' # if name is empty -> stack of the two backbone will be used
+    event_backbone: vit_small_patch14_dinov2.lvd142m # from timm
+    embed_dim: 128
+    input_size: 512
+    #num_classes: 10
+    #dropout: 0.25
+
 
 # Optimizer parameters
 optimizer:
