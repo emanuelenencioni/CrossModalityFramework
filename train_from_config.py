@@ -15,6 +15,10 @@ from datetime import datetime
 import torch
 import wandb
 import argparse
+import random
+import numpy as np
+from helpers import DEBUG
+
 
 def find_and_modify(d, tag, mod):
     if tag in d.keys():
@@ -93,7 +97,6 @@ def parse_arguments():
             v_cfg = getattr(cfg, k, None)
             if v_cfg is not None:
                 setattr(cfg, k, v_cfg)
-
     return cfg
 
 def check_backbone_params(cfg):
@@ -121,9 +124,23 @@ def check_backbone_params(cfg):
 
     return True, None
 
+def print_cfg_params(cfg, indent=0):
+    """
+    Recursively prints all parameters specified in the cfg dictionary.
+    """
+    for key, value in cfg.items():
+        if isinstance(value, dict):
+            print(" " * indent + f"{key}:")
+            print_cfg_params(value, indent + 2)
+        else:
+            print(" " * indent + f"{key}: {value}")
+
 if __name__ == "__main__":
 
     cfg = parse_arguments()
+    if DEBUG>0:
+        print("Configuration parameters:")
+        print_cfg_params(cfg)
 
     # Setup #
     assert 'model' in cfg.keys(), "Error - specify the model architecture"
@@ -154,7 +171,13 @@ if __name__ == "__main__":
     assert 'loss' in cfg.keys(), "'optimizer' params list missing in yaml file"
     opti = optimizer.build_from_config(params, cfg['optimizer'])
     
-
+    if 'seed' in cfg.keys() and cfg['seed'] is not None:
+        torch.manual_seed(cfg['seed'])
+        random.seed(cfg['seed'])
+        np.random.seed(cfg['seed'])
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(cfg['seed'])
+    
     # TODO: adjust for each dataset of interest
     # Dataloader (CMDA)
     events_bins_5_avg_1 = False

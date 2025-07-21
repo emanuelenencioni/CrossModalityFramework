@@ -91,7 +91,7 @@ class TrainSSL:
         # Compute loss
         if(DEBUG>1): start_tm = time.perf_counter()
         
-        self.loss = self.criterion(rgb_proj['projected_feat'], event_proj['profected_feat'])
+        self.loss = self.criterion(rgb_proj['projected_feat'], event_proj['projected_feat'])
         if(DEBUG>1): 
             end_tm = time.perf_counter()-start_tm
             print(f"calculating loss: {((end_tm)*1000).__round__(3)} ms")
