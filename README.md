@@ -36,11 +36,11 @@ Pytorch 2.7.0 with cuda 12.6 is installed with the script.
 - [ ] Add segmentation task (low prio)
 
 
-- [ ] implement argparsing for the hyperparams (override of .yaml)
+- [X] implement argparsing for the hyperparams (override of .yaml)
     - [X] implementation
-    - [ ] FIX: given a parameter not present in the yaml file -> add to cfg.
+    - [X] FIX: given a parameter not present in the yaml file -> ~~add to cfg~~. Instead if param not present in cfg, it will not be added.
 
-- [ ] encoders must return a dict -> flatten_feat, projected_feat, preflatten_feat.
+- [X] encoders must return a dict -> flatten_feat, projected_feat, preflatten_feat.
 - [X] Add detection head, remember NO flatten -> yolo latest version (with no transformers)
     - [/] watch for the YoloV11 loss function (i watched the YoloX instead)
 

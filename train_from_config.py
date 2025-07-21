@@ -87,7 +87,7 @@ def parse_arguments():
     # Update cfg with parsed arguments
     for k, v in vars(args).items():
         if k != "config_path" and v is not None:
-            setattr(cfg, k, v)
+            find_and_modify(cfg,k,v)
         else:
             # Ensure the value from cfg is used if the argument is not provided
             v_cfg = getattr(cfg, k, None)
