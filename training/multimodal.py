@@ -26,6 +26,7 @@ class TrainSSL:
         self.criterion = criterion
         self.device = device
         self.cfg = cfg
+        
         self.trainer_cfg = cfg['trainer']
         assert 'epochs' in self.trainer_cfg.keys(), " specify 'epochs' trainer param"
         self.epochs = int(self.trainer_cfg['epochs'])
@@ -60,6 +61,7 @@ class TrainSSL:
         self.best_loss = float('inf')
         self.counter = 0
         self.current_step = 0
+        self.current_epoch = 0
 
         
     def _train_step(self, batch):
@@ -152,7 +154,7 @@ class TrainSSL:
                 pbar = tqdm(total=len(self.dataloader),desc=f"Training backbones, loss:{self.loss}")
                 self._train_epoch(pbar)
                 epoch_loss = self.total_loss / len(self.dataloader)
-                if epoch_loss < self.best_loss: #TODO: save model weights, opti, cfg, scheduler...
+                if epoch_loss < self.best_loss:
                     self.best_loss = epoch_loss
                     self.counter = 0
                     if self.save_folder is not None: self._save_best()
@@ -165,7 +167,7 @@ class TrainSSL:
                     wandb.log({"average_loss": epoch_loss}, step=self.current_step)
 
                 if self.scheduler is not None: self.scheduler.step()
-
+                self.current_epoch += 1
             wandb.finish()
             print("training finished")
 
@@ -185,22 +187,24 @@ class TrainSSL:
         print(prof.key_averages(group_by_input_shape=True).table(sort_by="cpu_time_total", row_limit=20))
 
     def _save_best(self):
-            save_path = f"{self.save_best_dir}{self.save_name}_best.pth"
-            torch.save({
-                    'epoch': self.epochs,
-                    'model_state_dict': self.model.state_dict(),
-                    'optimizer_state_dict': self.optimizer.state_dict(),
-                    'loss': self.loss,
-                    # Optionally save scheduler state too
-                    'scheduler_state_dict': self.scheduler.state_dict() if self.scheduler else None,
-                    'config': self.cfg
-                }, save_path)
-            print(f"saved best model to {save_path}")
+        save_path = f"{self.save_best_dir}{self.save_name}_best.pth"
+        torch.save({
+                'step': self.current_step,
+                'epoch': self.current_epoch,
+                'model_state_dict': self.model.state_dict(),
+                'optimizer_state_dict': self.optimizer.state_dict(),
+                'loss': self.loss,
+                # Optionally save scheduler state too
+                'scheduler_state_dict': self.scheduler.state_dict() if self.scheduler else None,
+                'config': self.cfg
+            }, save_path)
+        print(f"saved best model to {save_path}")
     
     def _save_checkpoint(self):
         checkpoint_path = f"{self.save_folder}{self.save_name}_checkpoint_step_{self.current_step}.pth"
         torch.save({
                     'step': self.current_step,
+                    'epoch': self.current_epoch,  
                     'model_state_dict': self.model.state_dict(),
                     'optimizer_state_dict': self.optimizer.state_dict(),
                     'loss': self.loss,

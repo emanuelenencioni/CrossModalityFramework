@@ -1,8 +1,7 @@
 # Cross modality framework
 
 ## Description
-
-TODO
+This project provides a flexible framework for cross-modality learning, enabling the integration and training of models across different data modalities (e.g., images and events). It supports unimodal and multimodal architectures, domain adaptation, and tasks such as detection and segmentation. The framework is designed for extensibility, allowing easy configuration, modular backbone and head selection, and streamlined dependency management. It is suitable for research and development in multi-domain and multi-task machine learning scenarios.
 
 ## Table of Contents
     TODO
@@ -11,17 +10,22 @@ TODO
 - [Contributing](#contributing)
 - [License](#license)
 
-## Dependencies Installation 
-Use the following commands:
+## Dependencies Installation
+
+You can set up the environment using the following commands:
+
 ```bash
-conda create -n CMF python=3.13.2 # Create a new conda environment
+conda create -n CMF python=3.13.2  # Create a new conda environment (other Python 3.x versions should work)
 ```
-It doesn't need to work specifically with python 3.13.2, but is what i used for the development.
-U can use `install_req.sh` to install all the dependencies:
+
+To install all required dependencies, use the provided script:
+
 ```bash
-conda activate CMF && sh install_req.sh
+conda activate CMF
+sh install_req.sh
 ```
-Pytorch 2.7.0 with cuda 12.6 is installed with the script.
+
+The script will install PyTorch 2.7.0 with CUDA 12.6. Adjust versions as needed for your system.
 
 ## TODO
 

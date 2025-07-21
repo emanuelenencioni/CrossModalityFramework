@@ -149,7 +149,7 @@ if __name__ == "__main__":
         assert 'bb_num_classes' in cfg['dataset'], "Error - number of classes need to be specified in unimodal training"
         model = Detector(backbone,num_classes=cfg['dataset']['bb_num_classes'], img_size=int(cfg['model']['backbone']['input_size']))
     else:
-        if dual_modality: #TODO: Fix this, not only backbones in there
+        if dual_modality:
             model = DualModalityBackbone(rgb_backbone=cfg['model']['backbone']['rgb_backbone'],
                         event_backbone=cfg['model']['backbone']['event_backbone'],
                         embed_dim=cfg['model']['backbone']['embed_dim'],
