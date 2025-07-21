@@ -16,6 +16,14 @@ import torch
 import wandb
 import argparse
 
+def find_and_modify(d, tag, mod):
+    if tag in d.keys():
+        d[tag] = mod
+    for k, v in d.items():
+        if isinstance(v, dict):
+            find_and_modify(v, tag, mod)
+
+
 def parse_arguments():
     parser = argparse.ArgumentParser(description="Training script with configurable parameters.")
 
