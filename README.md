@@ -1,7 +1,7 @@
 # Cross modality framework
 
 ## Description
-This project provides a flexible framework for cross-modality learning, enabling the integration and training of models across different data modalities (e.g., images and events). It supports unimodal and multimodal architectures, domain adaptation, and tasks such as detection and segmentation. The framework is designed for extensibility, allowing easy configuration, modular backbone and head selection, and streamlined dependency management. It is suitable for research and development in multi-domain and multi-task machine learning scenarios.
+This project provides a flexible framework for cross-modality learning, enabling the integration and training of models across different data modalities (e.g., images and events). It supports unimodal and multimodal architectures, domain adaptation, and tasks such as detection and segmentation. The framework is designed for extensibility, allowing easy configuration, modular backbone and head selection. It is suitable for research and development in multi-domain and multi-task machine learning scenarios.
 
 ## Table of Contents
     TODO
