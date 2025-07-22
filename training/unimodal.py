@@ -12,11 +12,24 @@ import sys
 from helpers import DEBUG
 
 class Trainer:
-    def __init__(self, model, dataloader, optimizer, criterion, device, cfg, root_folder, wandb_log=False, scheduler=None, patience=sys.maxsize):
+    def __init__(self, model, dataloader, optimizer, criterion, device, cfg, root_folder, wandb_log=False, scheduler=None, patience=sys.maxsize, pretrained_checkpoint=None):
         self.model = model
         self.dataloader = dataloader
         self.optimizer = optimizer
         self.criterion = criterion
+        if pretrained_checkpoint is not None:
+            if 'model_state_dict' in pretrained_checkpoint:
+                self.model.load_state_dict(pretrained_checkpoint['model_state_dict'])
+                if DEBUG >= 1: print("Pre-trained model loaded successfully")
+            if 'optimizer_state_dict' in pretrained_checkpoint:
+                self.optimizer.load_state_dict(pretrained_checkpoint['optimizer_state_dict'])
+                if DEBUG >= 1: print("Pre-trained optimizer state loaded successfully")
+            if 'scheduler_state_dict' in pretrained_checkpoint and cfg['trainer'].get('resume_scheduler', False):
+                scheduler_state = pretrained_checkpoint['scheduler_state_dict']
+                if scheduler_state is not None and self.scheduler is not None:
+                    self.scheduler.load_state_dict(scheduler_state)
+                    if DEBUG >= 1: print("Pre-trained scheduler state loaded successfully")
+
         self.device = device
         self.cfg = cfg
         self.trainer_cfg = cfg['trainer']

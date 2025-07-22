@@ -16,16 +16,30 @@ import wandb
 
 
 
-class TrainSSL:
-    def __init__(self, model, dataloader, optimizer, criterion, device, cfg, root_folder, wandb_log=False, scheduler = None, patience=sys.maxsize):
+class DualModalityTrainer:
+    def __init__(self, model, dataloader, optimizer, criterion, device, cfg, root_folder, wandb_log=False, scheduler = None, patience=sys.maxsize, pretrained_checkpoint=None):
         
 
         self.model = model
         self.dataloader = dataloader
         self.optimizer = optimizer
+        self.scheduler = scheduler 
         self.criterion = criterion
         self.device = device
         self.cfg = cfg
+
+        if pretrained_checkpoint is not None:
+            if 'model_state_dict' in pretrained_checkpoint:
+                self.model.load_state_dict(pretrained_checkpoint['model_state_dict'])
+                if DEBUG>=1: print("Pre-trained model loaded successfully")
+            if 'optimizer_state_dict' in pretrained_checkpoint:
+                self.optimizer.load_state_dict(pretrained_checkpoint['optimizer_state_dict'])
+                if DEBUG>=1: print("Pre-trained optimizer state loaded successfully")
+            if 'scheduler_state_dict' in pretrained_checkpoint and cfg['trainer'].get('resume_scheduler', False):
+                scheduler_state = pretrained_checkpoint['scheduler_state_dict']
+                if scheduler_state is not None and self.scheduler is not None:
+                    self.scheduler.load_state_dict(scheduler_state)
+                    if DEBUG>=1: print("Pre-trained scheduler state loaded successfully")
         
         self.trainer_cfg = cfg['trainer']
         assert 'epochs' in self.trainer_cfg.keys(), " specify 'epochs' trainer param"
@@ -55,7 +69,7 @@ class TrainSSL:
 
         self.total_loss = 0
         self.loss = 0
-        self.scheduler = scheduler 
+
         # patience
         self.patience=patience
         self.best_loss = float('inf')
@@ -125,7 +139,7 @@ class TrainSSL:
             if pbar is not None: pbar.set_description(f"Training backbones, loss:{self.loss.item()}")
             self.total_loss += self.loss.item()
             if self.current_step % self.checkpoint_interval == 0 and self.current_step > 0 and self.save_folder is not None:
-                _save_checkpoint(self)
+                self._save_checkpoint()
             if self.wandb_log:
                 wandb.log({"batch_loss": self.loss.item()}, step=self.current_step)
 

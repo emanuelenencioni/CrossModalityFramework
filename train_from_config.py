@@ -2,7 +2,7 @@ import yaml
 import sys
 import os
 from training import optimizer,loss
-from training.multimodal import TrainSSL
+from training.multimodal import DualModalityTrainer
 from training.unimodal import Trainer
 
 from model.backbone import DualModalityBackbone, UnimodalBackbone
@@ -138,6 +138,24 @@ def print_cfg_params(cfg, indent=0):
 if __name__ == "__main__":
 
     cfg = parse_arguments()
+
+    pretrained_checkpoint = None
+    if cfg.get("pretrained_path", None):
+        checkpoint_path = cfg["pretrained_path"]
+        print(f"Loading pretrained model from {checkpoint_path}")
+        pretrained_checkpoint = torch.load(checkpoint_path, map_location=torch.device('cpu'))
+        # Load the saved config (if available) to verify architecture consistency
+        saved_cfg = pretrained_checkpoint.get('config', {})
+        # You can compare saved_cfg['model'] with cfg['model'] for consistency.
+        # For example:
+        if saved_cfg.get('model', None) and saved_cfg['model'] != cfg['model']:
+            print("Warning: The provided config differs from the saved model's config. Proceeding with loaded model parameters.")
+
+        assert saved_cfg['optimizer']['name'] != cfg['optimizer']['name'], "Error - optimizer name mismatch with pretrained model"
+        assert saved_cfg['loss']['name'] != cfg['loss']['name'], "Error - loss name mismatch with pretrained model"
+        assert saved_cfg['scheduler']['name'] != cfg['scheduler']['name'], "Error - scheduler name mismatch with pretrained model"
+        cfg
+
     if DEBUG>0:
         print("Configuration parameters:")
         print_cfg_params(cfg)
@@ -231,11 +249,17 @@ if __name__ == "__main__":
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(device)
     model.to(device)    
+
+    # Place this right after model.to(device)
+    if pretrained_checkpoint is not None:
+        model.load_state_dict(pretrained_checkpoint['model_state_dict'])
+        print("Pre-trained model loaded successfully")
+    
     # Trainer
     assert 'trainer' in cfg.keys(), "'trainer' params list missing from config file "
     
     if dual_modality:
-        trainer = TrainSSL(model, dataloader, opti, criterion, device, cfg, root_folder=dir_path, wandb_log=wandb_log)
+        trainer = DualModalityTrainer(model, dataloader, opti, criterion, device, cfg, root_folder=dir_path, wandb_log=wandb_log, pretrained_checkpoint=pretrained_checkpoint)
     else:
         trainer = Trainer(model,dataloader, opti, criterion, device,  cfg, root_folder=dir_path, wandb_log=wandb_log)
     trainer.train()
