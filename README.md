@@ -14,7 +14,7 @@ This project provides a flexible framework for cross-modality learning, enabling
 You can set up the environment using the following commands:
 
 ```bash
-conda create -n CMF python=3.13.2  # Create a new conda environment (other Python 3.x versions should work)
+conda create -n CMF python=3.13.2  pip # Create a new conda environment (other Python 3.x versions should work)
 ```
 
 To install all required dependencies, use the provided script:
