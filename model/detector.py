@@ -13,7 +13,7 @@ class Detector(nn.Module):
         num_classes (int): Numero di classi per la detection.
         pretrained (bool): Se usare pesi pre-allenati per il backbone.
     """
-    def __init__(self, backbone_name: str,img_size: int, num_classes: int, pretrained: bool = True, model_name: str = None):
+    def __init__(self, backbone_name: str,img_size: int, num_classes: int, pretrained: bool = True, model_name: str = None, out_indices=(2, 3, 4)):
         super().__init__()
         
         # 1. Init backbone to extract 3 feat lvls
@@ -22,7 +22,7 @@ class Detector(nn.Module):
             img_size=img_size,
             pretrained=pretrained,
             outputs=["preflatten_feat"],
-            out_indices=(2, 3, 4) # Stages C3, C4, C5
+            out_indices=out_indices # TODO add this in config
         )
         
         if model_name is None:
@@ -31,8 +31,8 @@ class Detector(nn.Module):
             self.model_name = model_name
         
         feature_info = self.backbone.feature_info
-        in_channels = [info['num_chs'] for info in feature_info]
-        strides = [info['reduction'] for info in feature_info]
+        in_channels = [info['num_chs'] for info in feature_info if info['index'] in out_indices]
+        strides = [info['reduction'] for info in feature_info if info['index'] in out_indices]
         
         print(f"Backbone '{backbone_name}' inizializzato.")
         print(f"  - Strides estratti: {strides}")

@@ -73,7 +73,7 @@ This guide provides instructions to set up and run the framework:
 - [X] in yaml: backbone and head inside model
 - [X] refactor sl.py e ssl.py in unimodal.py multimodal.py
 - [ ] create framework for domain adaptation -> (fare codice per fare domain adaptation cioe in cui si traina il new model e con anche l'old model) -> this one deactivated for now
-- [ ] add train from saved model -> save and load config too.
+- [X] add train from saved model -> save and load config too.
 - [X] outputs return in the forward of YoloX but it should be the norm for all the heads. 
 - [ ] Add segmentation task (low prio)
 

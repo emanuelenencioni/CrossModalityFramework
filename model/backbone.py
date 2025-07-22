@@ -2,6 +2,7 @@ import torchvision.models as models
 import torch
 import torch.nn as nn
 import timm
+from helpers import DEBUG
 
 class UnimodalBackbone(nn.Module):
     def __init__(self, backbone=None, pretrained=True,
@@ -19,6 +20,7 @@ class UnimodalBackbone(nn.Module):
         self.img_size = img_size
         use_multiple_features = True if out_indices is not None else False
         self.out_indices = out_indices if use_multiple_features else None
+        # TODO add in_chans param as input in cfg. 
         if isinstance(backbone, str):
             if 'resnet' in backbone:
                 self.backbone = timm.create_model( backbone, pretrained=pretrained,
@@ -30,6 +32,7 @@ class UnimodalBackbone(nn.Module):
             self.backbone = backbone
 
         if use_multiple_features:
+            if DEBUG>=1: print(f"\033[93m"+"WARNING: Using multiple features from backbone. Make sure to set out_indices correctly."+"\033[0m")
             self.feature_info = self.backbone.feature_info
 
         self.projector = nn.Sequential(
