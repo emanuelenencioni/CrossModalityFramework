@@ -4,7 +4,6 @@
 This project provides a flexible framework for cross-modality learning, enabling the integration and training of models across different data modalities (e.g., images and events). It supports unimodal and multimodal architectures, domain adaptation, and tasks such as detection and segmentation. The framework is designed for extensibility, allowing easy configuration, modular backbone and head selection. It is suitable for research and development in multi-domain and multi-task machine learning scenarios.
 
 ## Table of Contents
-    TODO
 - [Dependencies Installation](#dependencies-installation)
 - [Usage](#usage)
 - [Contributing](#contributing)
@@ -26,6 +25,45 @@ sh install_req.sh
 ```
 
 The script will install PyTorch 2.7.0 with CUDA 12.6. Adjust versions as needed for your system.
+
+## Usage
+
+This guide provides instructions to set up and run the framework:
+2. **Preparing the Data:**
+    - Organize your datasets according to the required modalities (e.g., images, events). 
+    - Update configuration files with dataset paths and parameters.
+
+3. **Configuration:**
+    Edit the configuration file (typically located in `config/`) to specify:
+    - Modality-specific parameters.
+    - Model details (e.g. backbone and head settings).
+    - Training hyperparameters.
+
+    Example snippet:
+    ```yaml
+    model:
+        backbone: ResNet50
+        head: DetectionHead
+    training:
+        batch_size: 32
+        epochs: 50
+    ```
+
+    Use existing templates as a reference.
+
+    ### ⚠️⚠️⚠️ Warning
+    The config `.yaml` file must include all the parameters defined in the argparse for them to take effect. Otherwise, the argument parsing WILL NOT WORK.
+
+4. **Training the Model:**
+    - Run the training script with your configuration file:
+      ```bash
+      python train_from_config.py --config config/your_config.yaml
+      ```
+    - To monitor the process, the framework is fully integrated with wandb.
+
+5. **Evaluating the Model:**
+    TODO
+
 
 ## TODO
 
