@@ -3,26 +3,7 @@ import torch
 import torch.nn as nn
 import timm
 
-
-# TODO: handle extern model from torch or timm ->  Give guidelines to a basic compatible structure
-class Backbone(nn.Module):
-    """
-    Initializes the Backbone model.
-    Args:
-        model (torchvision.models): A pre-trained torchvision model. (at least for now)
-        pretrained (bool): If True, loads pre-trained weights for the model. Defaults to True.
-        input_dim: squared dim for input frame
-        input_ch: input channel
-    """
-    def __init__(self):
-        super().__init__()
-        self.outputs = None
-        self.projector = None
-    
-
-    
-
-class UnimodalBackbone(Backbone):
+class UnimodalBackbone(nn.Module):
     def __init__(self, backbone=None, pretrained=True,
                  embed_dim=256, img_size=224, model_name='',outputs=["projector"], out_indices = None):
         """
@@ -56,7 +37,6 @@ class UnimodalBackbone(Backbone):
             nn.ReLU(),
             nn.Linear(embed_dim, embed_dim)
         )
-
         self.outputs = outputs
 
     def get_feature_output_dim(self):
@@ -168,8 +148,8 @@ class DualModalityBackbone(nn.Module):
     def get_name(self): return self.name
 
 
-if __name__ == "__main__":
-    model = BackboneAdapter(models.resnet18(),224,3,True)
-    print(model)
-    x = torch.randn(1,3,224,224)
-    print(model(x).size())
+# if __name__ == "__main__":
+#     model = BackboneAdapter(models.resnet18(),224,3,True)
+#     print(model)
+#     x = torch.randn(1,3,224,224)
+#     print(model(x).size())
