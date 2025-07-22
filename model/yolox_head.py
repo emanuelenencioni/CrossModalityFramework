@@ -178,6 +178,25 @@ class YOLOXHead(nn.Module):
             conv.bias = torch.nn.Parameter(b.view(-1), requires_grad=True)
 
     def forward(self, xin, labels=None, imgs=None):
+        """
+        Computes the forward pass for the head module, generating prediction outputs for object detection.
+        Parameters:
+            xin (list[Tensor]): A list of feature maps from the backbone or neck network. Each tensor corresponds to a different scale level.
+            labels (optional, Tensor): Ground-truth labels used for training, providing information such as bounding boxes and class labels.
+            imgs (optional, Tensor): The original input images. These may be used for auxiliary computations during training (e.g., loss calculations).
+        Returns:
+            During training:
+                tuple: A pair (outputs, losses) where:
+                    - outputs (list[Tensor]): A list of output tensors from different scales, each containing concatenated regression,
+                      objectness, and classification predictions.
+                    - losses: The computed losses obtained from the get_losses function, using the predictions, computed grid shifts,
+                      expanded strides, labels, and original regression predictions (if L1 loss is used).
+            During inference:
+                Tensor or tuple: If decode_in_inference is True, returns the decoded output predictions;
+                otherwise, returns a tuple (outputs, None), where outputs is a tensor of concatenated predictions across all scales,
+                reshaped to have dimensions [batch_size, num_anchors_all, prediction_channels].
+        """
+
         outputs = []
         origin_preds = []
         x_shifts = []
@@ -248,7 +267,7 @@ class YOLOXHead(nn.Module):
             if self.decode_in_inference:
                 return self.decode_outputs(outputs, dtype=xin[0].type())
             else:
-                return outputs
+                return outputs, None
 
     def get_output_and_grid(self, output, k, stride, dtype):
         grid = self.grids[k]
@@ -468,6 +487,7 @@ class YOLOXHead(nn.Module):
         expanded_strides,
         x_shifts,
         y_shifts,
+        
         cls_preds,
         obj_preds,
         mode="gpu",
