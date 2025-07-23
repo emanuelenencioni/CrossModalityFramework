@@ -265,7 +265,7 @@ class YOLOXHead(nn.Module):
                 [x.flatten(start_dim=2) for x in outputs], dim=2
             ).permute(0, 2, 1)
             if self.decode_in_inference:
-                return self.decode_outputs(outputs, dtype=xin[0].type())
+                return self.decode_outputs(outputs, dtype=xin[0].type()), None
             else:
                 return outputs, None
 
@@ -487,7 +487,7 @@ class YOLOXHead(nn.Module):
         expanded_strides,
         x_shifts,
         y_shifts,
-        
+
         cls_preds,
         obj_preds,
         mode="gpu",
