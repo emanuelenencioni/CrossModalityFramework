@@ -148,7 +148,7 @@ class DSECDataset(Dataset):
     def __init__(self, dataset_txt_path, events_num=-1, events_bins=5, events_clip_range=None, crop_size=(400, 400),
                  after_crop_resize_size=(512, 512), image_change_range=1, outputs={'events_vg', 'image'}, output_num=1,
                  classes=CLASSES, palette=PALETTE, isr_shift_pixel=4, test_mode=False, events_bins_5_avg_1=False,
-                 isr_parms='', isr_type='real_time', enforce_3_channels=True, shift_type='rightdown', hard_cache=False, max_labels=10):
+                 isr_parms='', isr_type='real_time', enforce_3_channels=True, shift_type='rightdown', hard_cache=False, max_labels=50):
         self.max_labels = max_labels
         self.dataset_txt_path = dataset_txt_path
         self.events_num = events_num
@@ -317,6 +317,7 @@ class DSECDataset(Dataset):
             mask = bounding_boxes['t'] == timestamps[now_image_index]
             filtered_boxes = bounding_boxes[mask]
             for i in range(len(filtered_boxes)):
+                if i>= self.max_labels: break
                 bb_out[i,0] = torch.from_numpy(np.array(filtered_boxes[i][5].astype(np.float32)))
                 bb_out[i,1] = torch.from_numpy(np.array(filtered_boxes[i][1].astype(np.float32)))
                 bb_out[i,2] = torch.from_numpy(np.array(filtered_boxes[i][2].astype(np.float32)))
