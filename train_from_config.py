@@ -19,6 +19,8 @@ import random
 import numpy as np
 from helpers import DEBUG
 
+import dataset.dataset_builder as dataset_builder
+
 
 def find_and_modify(d, tag, mod):
     if tag in d.keys():
@@ -43,6 +45,8 @@ def parse_arguments():
     parser.add_argument("--batch_size", type=int, help="Batch size", default=None)
     parser.add_argument("--num_workers", type=int, help="Number of workers", default=None)
     parser.add_argument("--train_type", type=str, help="Training type (ssl or sl)", default=None) # maybe useless
+    parser.add_argument("--train_split", type=str, help="Training split file", default=None)
+    parser.add_argument("--val_split", type=str, help="Validation split file", default=None)
 
     # Backbone parameters
     parser.add_argument("--backbone_name", type=str, help="Backbone name", default=None)
@@ -218,18 +222,17 @@ if __name__ == "__main__":
         assert 'outputs' in cfg['dataset'].keys(), "Error, missing mandatory outputs for the dataset in unimodal training"
         outputs = cfg['dataset']['outputs']
 
-    dataset = DSECDataset(dataset_txt_path=dir_path+'/dataset/night_dataset.txt',
-                           outputs=outputs,
-                           events_bins=events_bins, events_clip_range=events_clip_range,
-                           events_bins_5_avg_1=events_bins_5_avg_1)
     
+    train_ds, test_ds = dataset_builder.build_from_config(cfg['dataset'])
     # Dataloader (CMDA)
     assert 'dataset' in cfg.keys(), " 'dataset' params list missing from config file"
     assert 'batch_size' in cfg['dataset'].keys(), " specify 'batch_size' dataset param"
     num_workers=2
     if 'num_workers' in cfg['dataset'].keys(): 
         num_workers = int(cfg['dataset']['num_workers'])
-    dataloader = DataLoader(dataset, batch_size=cfg['dataset']['batch_size'], num_workers=num_workers, shuffle=False, collate_fn=collate_ssl, pin_memory=True)
+        
+    train_dl = DataLoader(train_ds, batch_size=cfg['dataset']['batch_size'], num_workers=num_workers, shuffle=False, collate_fn=collate_ssl, pin_memory=True)
+    test_dl = DataLoader(train_ds, batch_size=cfg['dataset']['batch_size'], num_workers=num_workers, shuffle=False, collate_fn=collate_ssl, pin_memory=True) if test_ds is not None else None
     
     wandb_log = False
     run_name = cfg['model']['backbone']['name'] if ('name' in cfg['model']['backbone'].keys() and cfg['model']['backbone']['name'] != '') else model.get_name()
@@ -257,7 +260,8 @@ if __name__ == "__main__":
     assert 'trainer' in cfg.keys(), "'trainer' params list missing from config file "
     
     if dual_modality:
-        trainer = DualModalityTrainer(model, dataloader, opti, criterion, device, cfg, root_folder=dir_path, wandb_log=wandb_log, pretrained_checkpoint=pretrained_checkpoint)
+        trainer = DualModalityTrainer(model, train_dl, opti, criterion, device, cfg, root_folder=dir_path, wandb_log=wandb_log, pretrained_checkpoint=pretrained_checkpoint)
     else:
-        trainer = Trainer(model,dataloader, opti, criterion, device,  cfg, root_folder=dir_path, wandb_log=wandb_log)
-    trainer.train()
+        trainer = Trainer(model,train_dl, opti, criterion, device,  cfg, root_folder=dir_path, wandb_log=wandb_log)
+
+    trainer.train(val_data=test_dl)

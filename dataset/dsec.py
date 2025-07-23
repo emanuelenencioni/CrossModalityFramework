@@ -417,24 +417,6 @@ class DSECDataset(Dataset):
         events_vg = events_norm(events_vg, clip_range=events_clip_range, final_range=1.0, enforce_no_events_zero=True)
         return events_vg
 
-    def get_gt_gg(self, efficient_test=False):
-        """Get ground truth bb position and class"""
-        get_gt_gg = []
-
-        for idx in range(self.dataset_txt.shape[0]):
-            image_path = self.dataset_txt[idx][0]
-            now_image_index = int(image_path.split('/')[-1].split('.')[0])
-            sequence_name = image_path.split('/')[-5]
-            seg_map = '{}object_detections/tracks.npy'.format("left")
-        
-            # if efficient_test:
-            #     gt_seg_maps = seg_map
-            # else:
-            #     gt_seg_maps = mmcv.imread(seg_map, flag='unchanged', backend='pillow')
-            # gt_seg_map = gt_seg_map[:440, :]
-            # gt_seg_maps.append(gt_seg_map)
-        return gt_seg_maps
-
     def evaluate(self,
                  results,
                  metric='mIoU',
