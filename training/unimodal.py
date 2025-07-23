@@ -10,6 +10,7 @@ import wandb
 import os
 import sys
 from helpers import DEBUG
+from evaluator.coco_evaluator import COCOEvaluator
 
 class Trainer:
     def __init__(self, model, dataloader, optimizer, criterion, device, cfg, root_folder, wandb_log=False, scheduler=None, patience=sys.maxsize, pretrained_checkpoint=None):
@@ -17,6 +18,7 @@ class Trainer:
         self.dataloader = dataloader
         self.optimizer = optimizer
         self.criterion = criterion
+        self.input_type = 'events_vg' if 'events_vg' in dataloader.dataset[0] else 'image'
         if pretrained_checkpoint is not None:
             if 'model_state_dict' in pretrained_checkpoint:
                 self.model.load_state_dict(pretrained_checkpoint['model_state_dict'])
@@ -61,10 +63,11 @@ class Trainer:
         self.best_sch_params = self.scheduler.state_dict() if self.scheduler is not None else None
         self.start_epoch = 0
         self.saving_stride = 100
+        self.step = 0
 
     def _train_step(self, batch):
-        input_frame = torch.stack([item["events_vg"] for item in batch]).to(self.device)
-        targets = torch.stack([item["BB"] for item in batch]).to(self.device)
+        input_frame = torch.stack([item[self.input_type] for item in batch]).to(self.device)
+        targets = torch.stack([item["BB"] for item in batch]).to(self.device) #For now considering only object detection tasks
         self.optimizer.zero_grad()
         outputs, losses = self.model(input_frame, targets)
         sum(losses).backward()
@@ -83,10 +86,11 @@ class Trainer:
                 pbar.update(1)
             if self.wandb_log:
                 wandb.log({"batch_loss": batch_loss})
+            self.step += 1
         avg_loss = self.total_loss / len(self.dataloader)
-        if DEBUG == 1: print(f"Epoch loss: {avg_loss:.4f}")
+        if DEBUG == 1: print(f"Epoch loss: {avg_loss:.4f}", step=self.step)
         if self.wandb_log:
-            wandb.log({"train_loss": avg_loss})
+            wandb.log({"train_loss": avg_loss},step=self.step)
         return avg_loss
 
     def evaluate_model(self, val_set, eval_loss=False):
@@ -96,57 +100,55 @@ class Trainer:
         losses = []
         avg_loss = None
         with torch.no_grad():
-            for xs, ys in tqdm(val_set, desc="Evaluating"):
-                xs = xs.to(self.device)
-                ys = ys.to(self.device)
-                output = self.model(xs)
-                _, preds = torch.max(output, 1)
-                total += ys.size(0)
-                correct += (preds == ys).sum().item()
-                if eval_loss:
-                    losses.append(F.nll_loss(F.log_softmax(output, dim=1), ys).cpu().item())
-        if eval_loss:
-            avg_loss = np.asarray(losses).mean()
+            for batch in tqdm(val_set, desc="Evaluating"):
+                # Prepare the batch the same way as in _train_step()
+                input_frame = torch.stack([item["events_vg"] for item in batch]).to(self.device)
+                targets = torch.stack([item["BB"] for item in batch]).to(self.device)
+                
+                # Get model outputs and losses
+                outputs, loss_list = self.model(input_frame, targets,)
+                
+                # Compute predictions as in _train_epoch()
+                _, preds = torch.max(outputs, 1)
+                total += targets.size(0)
+                correct += (preds == targets).sum().item()
+                
+                if eval_loss and loss_list is not None:
+                    losses.append(loss_list[0].item())
+        if eval_loss and len(losses) > 0:
+            avg_loss = np.mean(losses)
         return correct / total, avg_loss
 
-    def train(self, val_data=None):
-        self.best_accuracy = 0
-        self.counter = 0
+    def train(self, val_data=None, evaluator=None, eval_loss=False):
         for epoch in range(self.total_epochs):
-            start_time = time.time()
-            avg_loss = self._train_epoch()
-            epoch_time = time.time() - start_time
-            if self.scheduler is not None:
-                self.scheduler.step()
-            if (epoch + 1) % self.saving_stride == 0 and self.save_folder is not None:
-                self._save_checkpoint(epoch)
-            if DEBUG == 1:
-                print(f"Epoch {epoch+1} completed in {epoch_time:.2f} seconds")
-            if self.wandb_log:
-                wandb.log({"lr": self.optimizer.param_groups[0]['lr']}, step=epoch)
-            if val_data is not None:
-                accuracy, val_loss = self.evaluate_model(val_data, eval_loss=True)
-                self.accuracies.append(accuracy)
-                if DEBUG == 1:
-                    print(f"Validation accuracy at epoch {epoch+1}: {accuracy:.4f}")
+            # start_time = time.time()
+            # avg_loss = self._train_epoch()
+            # epoch_time = time.time() - start_time
+            # if self.scheduler is not None:
+            #     self.scheduler.step()
+            # if (epoch + 1) % self.saving_stride == 0 and self.save_folder is not None:
+            #     self._save_checkpoint(epoch)
+            # if DEBUG == 1:
+            #     print(f"Epoch {epoch+1} completed in {epoch_time:.2f} seconds")
+            # if self.wandb_log:
+            #     wandb.log({"lr": self.optimizer.param_groups[0]['lr']}, step=epoch)
+
+            if val_data is not None and evaluator is not None:
+                ap50_95, ap50, summary = evaluator.evaluate(self.model, val_data)
+
+                if DEBUG == 1: print(summary)
+
                 if self.wandb_log:
-                    wandb.log({"val_accuracy": accuracy, "val_loss": val_loss}, step=epoch)
-                if accuracy > self.best_accuracy:
-                    self.best_accuracy = accuracy
+                    wandb.log({"ap50_95": ap50_95, "ap50": ap50}, step=epoch)
+                if ap50_95 > self.best_ap50_95:
+                    self.best_ap50_95 = ap50_95
                     self.best_epoch = epoch
                     self.best_params = self.model.state_dict()
                     self.best_optimizer = self.optimizer.state_dict()
                     self.best_sch_params = self.scheduler.state_dict() if self.scheduler is not None else None
-                    self.counter = 0
                     if self.save_folder is not None:
                         self._save_best()
-                else:
-                    self.counter += 1
-                    if self.counter >= self.patience:
-                        print("Early stopping triggered. Saving best parameters...")
-                        if self.save_folder is not None:
-                            self._save_best()
-                        return
+
         print("Training finished.")
 
     def _save_best(self):
