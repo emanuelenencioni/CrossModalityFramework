@@ -50,8 +50,7 @@ def parse_arguments():
     parser.add_argument("--event_backbone", type=str, help="Event backbone name", default=None)
     parser.add_argument("--embed_dim", type=int, help="Embedding dimension", default=None)
     parser.add_argument("--input_size", type=int, help="Input size", default=None)
-    #parser.add_argument("--num_classes", type=int, help="Number of classes")
-    #parser.add_argument("--dropout", type=float, help="Dropout rate")
+    parser.add_argument("--num_classes", type=int, help="Number of classes")
     parser.add_argument("--outputs", type=list, help="Dropout rate", default=None)
 
     # Optimizer parameters
@@ -154,7 +153,6 @@ if __name__ == "__main__":
         assert saved_cfg['optimizer']['name'] != cfg['optimizer']['name'], "Error - optimizer name mismatch with pretrained model"
         assert saved_cfg['loss']['name'] != cfg['loss']['name'], "Error - loss name mismatch with pretrained model"
         assert saved_cfg['scheduler']['name'] != cfg['scheduler']['name'], "Error - scheduler name mismatch with pretrained model"
-        cfg
 
     if DEBUG>0:
         print("Configuration parameters:")
