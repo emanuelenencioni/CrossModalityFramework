@@ -18,7 +18,7 @@ import argparse
 import random
 import numpy as np
 from helpers import DEBUG
-from evaluator.coco_evaluator import COCOEvaluator
+from evaluator.dsec_evaluator import DSECEvaluator
 import dataset.dataset_builder as dataset_builder
 
 
@@ -263,5 +263,6 @@ if __name__ == "__main__":
         trainer = DualModalityTrainer(model, train_dl, opti, criterion, device, cfg, root_folder=dir_path, wandb_log=wandb_log, pretrained_checkpoint=pretrained_checkpoint)
     else:
         trainer = Trainer(model,train_dl, opti, criterion, device,  cfg, root_folder=dir_path, wandb_log=wandb_log)
-    evaluator = COCOEvaluator(test_dl, img_size=cfg['model']['backbone']['input_size'], confthre=0.001, nmsthre=0.65, num_classes=cfg['dataset']['bb_num_classes'])
-    trainer.train(val_data=test_dl, evaluator=evaluator)
+    in_size = cfg['model']['backbone']['input_size']
+    evaluator = DSECEvaluator(test_dl, img_size=(in_size, in_size), confthre=0.001, nmsthre=0.65, num_classes=cfg['dataset']['bb_num_classes'])
+    trainer.train(evaluator=evaluator)

@@ -11,7 +11,7 @@ import functools
 #import mmcv
 import numpy as np
 # from mmcv.utils import print_log
-#from mmcv.parallel.data_container import DataContainer
+from .data_container import DataContainer
 from prettytable import PrettyTable
 import torchvision.transforms as standard_transforms
 from torch.utils.data import Dataset
@@ -146,7 +146,7 @@ class DSECDataset(Dataset):
                [0, 80, 100], [0, 0, 230], [119, 11, 32]]
 
     def __init__(self, dataset_txt_path, events_num=-1, events_bins=5, events_clip_range=None, crop_size=(400, 400),
-                 after_crop_resize_size=(512, 512), image_change_range=1, outputs={'events_vg', 'image'}, output_num=1,
+                 after_crop_resize_size=(512, 512), image_change_range=1, outputs={'events_vg', 'image', 'img_metas'}, output_num=1,
                  classes=CLASSES, palette=PALETTE, isr_shift_pixel=4, test_mode=False, events_bins_5_avg_1=False,
                  isr_parms='', isr_type='real_time', enforce_3_channels=True, shift_type='rightdown', hard_cache=False, max_labels=50):
         self.max_labels = max_labels
@@ -381,12 +381,14 @@ class DSECDataset(Dataset):
             output['img_metas']['img_shape'] = (440, 640)
             output['img_metas']['pad_shape'] = (440, 640)
             output['img_metas']['ori_shape'] = (440, 640)
+            output['img_metas']['orig_shape'] = (1080,1440)
             output['img_metas']['ori_filename'] = sequence_name + '_' + image_path.split('/')[-1]
+            output['img_metas']['idx'] = idx
 
             output['img_metas']['flip'] = False
             if output['img_metas']['flip']:
                 output['img_metas']['flip_direction'] = 'horizontal'
-            #output['img_metas'] = DataContainer(output['img_metas'], cpu_only=True)
+            output['img_metas'] = DataContainer(output['img_metas'], cpu_only=True)
 
         return output
 

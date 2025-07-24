@@ -10,7 +10,6 @@ import wandb
 import os
 import sys
 from helpers import DEBUG
-from evaluator.coco_evaluator import COCOEvaluator
 
 class Trainer:
     def __init__(self, model, dataloader, optimizer, criterion, device, cfg, root_folder, wandb_log=False, scheduler=None, patience=sys.maxsize, pretrained_checkpoint=None):
@@ -61,6 +60,7 @@ class Trainer:
         self.best_params = self.model.state_dict()
         self.best_optimizer = self.optimizer.state_dict()
         self.best_sch_params = self.scheduler.state_dict() if self.scheduler is not None else None
+        self.best_ap50_95 = 0
         self.start_epoch = 0
         self.saving_stride = 100
         self.step = 0
@@ -119,7 +119,7 @@ class Trainer:
             avg_loss = np.mean(losses)
         return correct / total, avg_loss
 
-    def train(self, val_data=None, evaluator=None, eval_loss=False):
+    def train(self, evaluator=None, eval_loss=False):
         for epoch in range(self.total_epochs):
             # start_time = time.time()
             # avg_loss = self._train_epoch()
@@ -133,21 +133,19 @@ class Trainer:
             # if self.wandb_log:
             #     wandb.log({"lr": self.optimizer.param_groups[0]['lr']}, step=epoch)
 
-            if val_data is not None and evaluator is not None:
-                ap50_95, ap50, summary = evaluator.evaluate(self.model, val_data)
-
-                if DEBUG == 1: print(summary)
+            if evaluator is not None:
+                ap50_95, ap50, _ = evaluator.evaluate(self.model)
 
                 if self.wandb_log:
                     wandb.log({"ap50_95": ap50_95, "ap50": ap50}, step=epoch)
-                if ap50_95 > self.best_ap50_95:
-                    self.best_ap50_95 = ap50_95
-                    self.best_epoch = epoch
-                    self.best_params = self.model.state_dict()
-                    self.best_optimizer = self.optimizer.state_dict()
-                    self.best_sch_params = self.scheduler.state_dict() if self.scheduler is not None else None
-                    if self.save_folder is not None:
-                        self._save_best()
+                # if ap50_95 > self.best_ap50_95: #TODO: should be on the loss
+                #     self.best_ap50_95 = ap50_95
+                #     self.best_epoch = epoch
+                #     self.best_params = self.model.state_dict()
+                #     self.best_optimizer = self.optimizer.state_dict()
+                #     self.best_sch_params = self.scheduler.state_dict() if self.scheduler is not None else None
+                #     if self.save_folder is not None:
+                #         self._save_best()
 
         print("Training finished.")
 
