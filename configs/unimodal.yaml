@@ -1,16 +1,18 @@
 # General training parameters
 experiment_name: simpleCLIPTrain
-seed: 42 #TODO
+seed: 42
 device: cuda  # or cpu
 
 # Data parameters
 dataset:
   name: DSEC_Night
-  data_dir: ./data
+  data_dir: /data
   batch_size: 4
   num_workers: 4
-  outputs: ["events_vg", "BB", "labels"]
+  outputs: ["events_vg", "BB", "labels", "img_metas"] # these mandatory for unimodal training
   bb_num_classes: 8 # according to DSEC
+  train_split: "night_dataset.txt"
+  val_split: "night_test_dataset.txt"
 
 # Model parameters TODO
 
@@ -20,7 +22,7 @@ model:
   head: yolox_head
   backbone:
     name: '' # if name is empty -> stack of the two backbone will be used
-    event_backbone: vit_small_patch14_dinov2.lvd142m # from timm
+    event_backbone: resnet50 # from timm
     embed_dim: 128
     input_size: 512
     #num_classes: 10
