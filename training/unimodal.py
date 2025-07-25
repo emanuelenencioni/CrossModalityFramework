@@ -60,6 +60,7 @@ class Trainer:
         self.counter = 0
         self.loss = 0
         self.total_loss = 0
+        self.best_loss = float('inf')
         self.accuracies = []
         self.best_params = self.model.state_dict()
         self.best_optimizer = self.optimizer.state_dict()
