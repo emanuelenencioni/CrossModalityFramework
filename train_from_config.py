@@ -264,5 +264,5 @@ if __name__ == "__main__":
     else:
         trainer = Trainer(model,train_dl, opti, criterion, device,  cfg, root_folder=dir_path, wandb_log=wandb_log)
     in_size = cfg['model']['backbone']['input_size']
-    evaluator = DSECEvaluator(test_dl, img_size=(in_size, in_size), confthre=0.001, nmsthre=0.65, num_classes=cfg['dataset']['bb_num_classes'])
+    evaluator = DSECEvaluator(test_dl, img_size=(in_size, in_size), confthre=0.001, nmsthre=0.65, num_classes=cfg['dataset']['bb_num_classes'], device=device)
     trainer.train(evaluator=evaluator)

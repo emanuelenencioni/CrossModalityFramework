@@ -94,6 +94,7 @@ class DSECEvaluator:
         testdev: bool = False,
         per_class_AP: bool = True,
         per_class_AR: bool = True,
+        device = "cpu"
     ):
         """
         Args:
@@ -114,6 +115,7 @@ class DSECEvaluator:
         self.testdev = testdev
         self.per_class_AP = per_class_AP
         self.per_class_AR = per_class_AR
+        self.device = device
 
     def evaluate(
         self, model, distributed=False, half=False, trt_file=None,
@@ -162,8 +164,8 @@ class DSECEvaluator:
             progress_bar(self.dataloader)
         ):
             with torch.no_grad():
-                input_frame = torch.stack([item["events_vg"] for item in batch])#.to(self.device)
-                targets = torch.stack([item["BB"] for item in batch])#.to(self.device)
+                input_frame = torch.stack([item["events_vg"] for item in batch]).to(self.device)
+                targets = torch.stack([item["BB"] for item in batch]).to(self.device)
                 img_info = [item["img_metas"] for item in batch]
                 #imgs = input_frame.type(tensor_type)
                 # skip the last iters since batchsize might be not enough for batch inference
