@@ -17,6 +17,7 @@ class Trainer:
         self.dataloader = dataloader
         self.optimizer = optimizer
         self.criterion = criterion
+        self.epoch = 1
         self.input_type = 'events_vg' if 'events_vg' in dataloader.dataset[0] else 'image'
         if pretrained_checkpoint is not None:
             if 'model_state_dict' in pretrained_checkpoint:
@@ -30,6 +31,9 @@ class Trainer:
                 if scheduler_state is not None and self.scheduler is not None:
                     self.scheduler.load_state_dict(scheduler_state)
                     if DEBUG >= 1: print("Pre-trained scheduler state loaded successfully")
+            if 'epoch' in pretrained_checkpoint:
+                self.start_epoch = pretrained_checkpoint['epoch'] + 1
+                if DEBUG >= 1: print(f"Resuming training from epoch {self.start_epoch}")
 
         self.device = device
         self.cfg = cfg
@@ -78,11 +82,11 @@ class Trainer:
     def _train_epoch(self, pbar=None):
         self.model.train()
         self.total_loss = 0
-        for batch in tqdm(self.dataloader, desc=f"Training model - {self.model.__class__.__name__}"):
+        for batch in self.dataloader:
             batch_loss = self._train_step(batch)
             self.total_loss += batch_loss
             if pbar is not None:
-                pbar.set_description(f"Training, loss:{batch_loss:.4f}")
+                pbar.set_description(f"Training model {self.model.get_name()}, loss:{batch_loss:.4f}")
                 pbar.update(1)
             if self.wandb_log:
                 wandb.log({"batch_loss": batch_loss})
@@ -100,14 +104,15 @@ class Trainer:
         losses = []
         avg_loss = None
         with torch.no_grad():
-            for batch in tqdm(val_set, desc="Evaluating"):
+            pbar = tqdm(val_set, desc="Evaluating")
+            for batch in pbar:
                 # Prepare the batch the same way as in _train_step()
                 input_frame = torch.stack([item["events_vg"] for item in batch]).to(self.device)
                 targets = torch.stack([item["BB"] for item in batch]).to(self.device)
                 
                 # Get model outputs and losses
-                outputs, loss_list = self.model(input_frame, targets,)
-                
+                outputs, loss_list = self.model(input_frame, targets)
+                pbar.set_description(f"Evaluating, loss: {tot_loss:.4f}")
                 # Compute predictions as in _train_epoch()
                 _, preds = torch.max(outputs, 1)
                 total += targets.size(0)
@@ -121,31 +126,35 @@ class Trainer:
 
     def train(self, evaluator=None, eval_loss=False):
         for epoch in range(self.total_epochs):
-            # start_time = time.time()
-            # avg_loss = self._train_epoch()
-            # epoch_time = time.time() - start_time
-            # if self.scheduler is not None:
-            #     self.scheduler.step()
-            # if (epoch + 1) % self.saving_stride == 0 and self.save_folder is not None:
-            #     self._save_checkpoint(epoch)
-            # if DEBUG == 1:
-            #     print(f"Epoch {epoch+1} completed in {epoch_time:.2f} seconds")
-            # if self.wandb_log:
-            #     wandb.log({"lr": self.optimizer.param_groups[0]['lr']}, step=epoch)
+            start_time = time.time()
+            with tqdm(total=len(self.dataloader), desc=f"Epoch {self.epoch}/{self.total_epochs}") as pbar:
+                avg_loss = self._train_epoch(pbar)
+            epoch_time = time.time() - start_time
+            if self.scheduler is not None:
+                self.scheduler.step()
+            if (epoch + 1) % self.saving_stride == 0 and self.save_folder is not None:
+                self._save_checkpoint(epoch)
+            if DEBUG == 1:
+                print(f"Epoch {epoch+1} completed in {epoch_time:.2f} seconds")
+            if self.wandb_log:
+                wandb.log({"lr": self.optimizer.param_groups[0]['lr']}, step=self.epoch)
 
             if evaluator is not None:
                 ap50_95, ap50, _ = evaluator.evaluate(self.model)
 
                 if self.wandb_log:
-                    wandb.log({"ap50_95": ap50_95, "ap50": ap50}, step=epoch)
-                # if ap50_95 > self.best_ap50_95: #TODO: should be on the loss
-                #     self.best_ap50_95 = ap50_95
-                #     self.best_epoch = epoch
-                #     self.best_params = self.model.state_dict()
-                #     self.best_optimizer = self.optimizer.state_dict()
-                #     self.best_sch_params = self.scheduler.state_dict() if self.scheduler is not None else None
-                #     if self.save_folder is not None:
-                #         self._save_best()
+                    wandb.log({"ap50_95": ap50_95, "ap50": ap50}, step=self.epoch)
+            if avg_loss < self.best_loss: #TODO: should be on the loss
+                if DEBUG >= 1: print(f"New best loss: {avg_loss:.4f} at epoch {self.epoch}")
+                self.best_ap50_95 = ap50_95 if evaluator is not None else None
+                self.best_ap50 = ap50 if evaluator is not None else None
+                self.best_epoch = self.epoch
+                self.best_params = self.model.state_dict()
+                self.best_optimizer = self.optimizer.state_dict()
+                self.best_sch_params = self.scheduler.state_dict() if self.scheduler is not None else None
+                if self.save_folder is not None:
+                    self._save_best()
+            self.epoch += 1
 
         print("Training finished.")
 

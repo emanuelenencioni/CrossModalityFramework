@@ -264,22 +264,17 @@ class DSECEvaluator:
                 for ann_idx in range(target.shape[0]):
                     bbox = target[ann_idx]
                     if len(bbox) >= 5:  # class_id, x1, y1, x2, y2, 
-                        class_id, x1, y1, x2, y2 = bbox[:5]
-                        
-                        # Skip invalid bounding boxes
-                        if x2 <= x1 or y2 <= y1 or x1 < 0 or y1 < 0:
-                            continue
-                            
+                        class_id, x1, y1, w, h= bbox[:5]
+
                         # Convert to COCO format (x, y, width, height)
                         coco_bbox = [
                             float(x1), 
                             float(y1), 
-                            float(x2 - x1), 
-                            float(y2 - y1)
+                            float(w), 
+                            float(h)
                         ]
-                        
-                        area = float((x2 - x1) * (y2 - y1))
-                        
+
+                        area = float(w * h)
                         # Skip very small bounding boxes
                         if area <= 0:
                             continue
@@ -380,7 +375,7 @@ class DSECEvaluator:
             coco_eval = COCOeval(coco_gt, coco_dt, 'bbox')
             coco_eval.evaluate()
             coco_eval.accumulate()
-            
+            coco_eval.summarize()
             # Get metrics
             # stats[0] = AP@0.5:0.95
             # stats[1] = AP@0.5

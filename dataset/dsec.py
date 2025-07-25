@@ -309,7 +309,7 @@ class DSECDataset(Dataset):
             # TODO: here need to be BB and classes. 
         if 'BB' in self.outputs:
             bb_out = torch.zeros((self.max_labels, 5))
-            timestamps = np.loadtxt(image_path.split('left/rectified')[0]+"timestamps.txt")
+            timestamps = np.loadtxt(image_path.split('left/rectified')[0]+"timestamps.txt", dtype='uint64')
             bb_path = image_path.split('images/left/rectified')[0] + "object_detections/left/tracks.npy"
             bounding_boxes = np.load(bb_path,"r")
 
