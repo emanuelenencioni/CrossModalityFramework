@@ -7,7 +7,7 @@ def build_from_config(cfg):
     
     Currently implemented: DSEC_Night dataset.
     """
-    
+
     dataset_name = cfg.get("name", None)
     if dataset_name is None:
         raise ValueError("Specify the 'name' parameter under dataset in the cfg.")
@@ -15,15 +15,15 @@ def build_from_config(cfg):
     if dataset_name.lower() in ["dsec_night", "dsec_night_dataset", "dsecnight"]:
         # Determine the project root by navigating two levels up from this file's directory.
         project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-        data_dir = project_root + cfg.get("data_dir", "/data") + "/DSEC_Night"
+        txt_dir = project_root + "/dataset/"
         # Construct the dataset_txt_path (adjust the filename if needed)
-        dataset_txt_path = os.path.join(data_dir, cfg.get("train_split", "night_dataset.txt"))
+        dataset_txt_path = os.path.join(txt_dir, cfg.get("train_split", "night_dataset.txt"))
         if not os.path.exists(dataset_txt_path):
             raise FileNotFoundError(f"Dataset file {dataset_txt_path} does not exist. Please check the data_dir and filename.")
         
         dataset_txt_val_path = None
         if cfg.get("val_split") is not None:
-            dataset_txt_val_path = os.path.join(data_dir, cfg["val_split"])
+            dataset_txt_val_path = os.path.join(txt_dir, cfg["val_split"])
             if not os.path.exists(dataset_txt_val_path):
                 raise FileNotFoundError(f"Validation dataset file {dataset_txt_val_path} does not exist. Please check the data_dir and filename.")
         
