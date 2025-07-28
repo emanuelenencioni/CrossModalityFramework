@@ -3,9 +3,10 @@ import torch
 import torch.nn as nn
 import timm
 from helpers import DEBUG
+import os
 
 class UnimodalBackbone(nn.Module):
-    def __init__(self, backbone=None, pretrained=True,
+    def __init__(self, backbone=None, pretrained=True, pretrained_weights=None,
                  embed_dim=256, img_size=224, model_name='',outputs=["projector"], out_indices = None):
         """
         Args:
@@ -21,15 +22,20 @@ class UnimodalBackbone(nn.Module):
         use_multiple_features = True if out_indices is not None else False
         self.out_indices = out_indices if use_multiple_features else None
         # TODO add in_chans param as input in cfg. 
+        if pretrained_weights is not None and pretrained:
+            pretrained = False
+            if DEBUG >= 1: print(f"Pretrained weights will be loaded from {pretrained_weights}")
+        
         if isinstance(backbone, str):
             if 'resnet' in backbone:
                 self.backbone = timm.create_model( backbone, pretrained=pretrained,
-                    in_chans=3, num_classes=0,features_only=use_multiple_features, out_indices=out_indices)
+                    in_chans=3, num_classes=0,features_only=use_multiple_features, out_indices=out_indices, cache_dir=".cache_dir")
             else:
                 self.backbone = timm.create_model( backbone, img_size=img_size, pretrained=pretrained,
-                    in_chans=3, num_classes=0,features_only=use_multiple_features, out_indices=out_indices)  # Assume 5-channel voxel grid
+                    in_chans=3, num_classes=0,features_only=use_multiple_features, out_indices=out_indices, cache_dir=".cache_dir")  # Assume 5-channel voxel grid
         else:
             self.backbone = backbone
+        if pretrained_weights is not None: self.load_pretrained_weights(pretrained_weights)
 
         if use_multiple_features:
             if DEBUG>=1: print(f"\033[93m"+"WARNING: Using multiple features from backbone. Make sure to set out_indices correctly."+"\033[0m")
@@ -41,6 +47,23 @@ class UnimodalBackbone(nn.Module):
             nn.Linear(embed_dim, embed_dim)
         )
         self.outputs = outputs
+
+
+    def load_pretrained_weights(self, pretrained_weights):
+        """
+        Load pretrained weights into the backbone.
+        Args:
+            pretrained_weights (str): Path to the pretrained weights file.
+        """
+        root_dir = os.path.dirname(os.path.abspath(__file__)).replace('model', '')
+        pretrained_weights = os.path.join(root_dir, pretrained_weights)
+        if DEBUG >= 1: print(f"Loading pretrained weights from {pretrained_weights}")
+        state_dict = torch.load(pretrained_weights, map_location='cpu')
+        missing_keys, unexpected_keys = self.backbone.load_state_dict(state_dict, strict=False)
+        if missing_keys:
+            print(f"Missing keys: {missing_keys}, total: {len(missing_keys)}")
+        if unexpected_keys:
+            print(f"Unexpected keys: {unexpected_keys}, total: {len(unexpected_keys)}")
 
     def get_feature_output_dim(self):
         dummy_in  = torch.randn(1, 3, self.img_size, self.img_size)

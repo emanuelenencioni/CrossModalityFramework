@@ -13,14 +13,15 @@ class Detector(nn.Module):
         num_classes (int): Numero di classi per la detection.
         pretrained (bool): Se usare pesi pre-allenati per il backbone.
     """
-    def __init__(self, backbone_name: str,img_size: int, num_classes: int, pretrained: bool = True, model_name: str = None, out_indices=(2, 3, 4)):
+    def __init__(self, backbone_name: str,img_size: int, num_classes: int, pretrained: bool = True, pretrained_weights=None, model_name: str = None, out_indices=(2, 3, 4)):
         super().__init__()
         
         # 1. Init backbone to extract 3 feat lvls
         self.backbone = UnimodalBackbone(
             backbone=backbone_name,
-            img_size=img_size,
             pretrained=pretrained,
+            pretrained_weights=pretrained_weights,
+            img_size=img_size,
             outputs=["preflatten_feat"],
             out_indices=out_indices # TODO add this in config
         )
