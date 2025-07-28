@@ -41,7 +41,7 @@ def parse_arguments():
     parser.add_argument("--device", type=str, help="Device to use (cuda or cpu)", default=None)
 
     # Dataset parameters
-    parser.add_argument("--dataset_name", type=str, help="Dataset name", default=None)
+    parser.add_argument("--dataset-name", type=str, help="Dataset name", default=None)
     parser.add_argument("--data_dir", type=str, help="Data directory", default=None)
     parser.add_argument("--batch_size", type=int, help="Batch size", default=None)
     parser.add_argument("--num_workers", type=int, help="Number of workers", default=None)
@@ -50,16 +50,17 @@ def parse_arguments():
     parser.add_argument("--val_split", type=str, help="Validation split file", default=None)
 
     # Backbone parameters
-    parser.add_argument("--backbone_name", type=str, help="Backbone name", default=None)
+    parser.add_argument("--model-backbone-name", type=str, help="Backbone name", default=None)
     parser.add_argument("--rgb_backbone", type=str, help="RGB backbone name", default=None)
     parser.add_argument("--event_backbone", type=str, help="Event backbone name", default=None)
     parser.add_argument("--embed_dim", type=int, help="Embedding dimension", default=None)
     parser.add_argument("--input_size", type=int, help="Input size", default=None)
     parser.add_argument("--num_classes", type=int, help="Number of classes")
     parser.add_argument("--outputs", type=list, help="Dropout rate", default=None)
+    parser.add_argument("--model-backbone-pretrained_weights", type=str, help="Path to pretrained weights", default=None)
 
     # Optimizer parameters
-    parser.add_argument("--optimizer_name", type=str, help="Optimizer name", default=None)
+    parser.add_argument("--optimizer-name", type=str, help="Optimizer name", default=None)
     parser.add_argument("--lr", type=float, help="Learning rate", default=None)
     parser.add_argument("--wd", type=float, help="Weight decay", default=None)
 
@@ -74,14 +75,14 @@ def parse_arguments():
     parser.add_argument("--save_folder", type=str,  help="Save folder", default=None)
 
     # Scheduler parameters
-    parser.add_argument("--scheduler_name", type=str, help="Scheduler name", default=None)
+    parser.add_argument("--scheduler-name", type=str, help="Scheduler name", default=None)
     parser.add_argument("--factor", type=float, help="Scheduler factor", default=None)
     parser.add_argument("--patience", type=int, help="Scheduler patience", default=None)
     parser.add_argument("--monitor", type=str,  help="Scheduler monitor metric", default=None)
     parser.add_argument("--mode", type=str, help="Scheduler mode (min or max)", default=None)
 
     # Logging parameters
-    parser.add_argument("--logger_name", type=str, help="Logger name", default=None)
+    parser.add_argument("--logger-name", type=str, help="Logger name", default=None)
     parser.add_argument("--project", type=str,  help="Wandb project name", default=None)
     parser.add_argument("--entity", type=str, help="Wandb entity name", default=None)
 
@@ -96,10 +97,14 @@ def parse_arguments():
     for k, v in vars(args).items():
         
         if k != "config_path" and v is not None:
-            if '_' in k:
-                key = k.split('_')[0]
-                subkey = k.split('_')[1]
-                if key in cfg and subkey in cfg[key]:
+            if '-' in k:
+                key = k.split('-')[0]
+                subkey = k.split('-')[1]
+                if len(k.split('-')) > 2:
+                    subsubkey = k.split('-')[2]
+                    if key in cfg and subkey in cfg[key] and subsubkey in cfg[key][subkey]:
+                        cfg[key][subkey][subsubkey] = v
+                elif key in cfg and subkey in cfg[key]:
                     cfg[key][subkey] = v
             else:
                 find_and_modify(cfg,k,v)
@@ -165,6 +170,7 @@ if __name__ == "__main__":
         assert saved_cfg['optimizer']['name'] != cfg['optimizer']['name'], "Error - optimizer name mismatch with pretrained model"
         assert saved_cfg['loss']['name'] != cfg['loss']['name'], "Error - loss name mismatch with pretrained model"
         assert saved_cfg['scheduler']['name'] != cfg['scheduler']['name'], "Error - scheduler name mismatch with pretrained model"
+        cfg = saved_cfg
 
     if DEBUG>0:
         print("Configuration parameters:")
@@ -173,18 +179,21 @@ if __name__ == "__main__":
     # Setup #
     assert 'model' in cfg.keys(), "Error - specify the model architecture"
     dual_modality, backbone = check_backbone_params(cfg['model'])
+    pretrained_weights = cfg['model']['backbone']['pretrained_weights'] if 'pretrained_weights' in cfg['model']['backbone'].keys() else None
+    pretrained = cfg['model']['backbone'].get('pretrained', True) if 'pretrained' in cfg['model']['backbone'].keys() else True
     if 'head' in cfg['model'].keys():
         assert 'bb_num_classes' in cfg['dataset'], "Error - number of classes need to be specified in unimodal training"
-        model = Detector(backbone,num_classes=cfg['dataset']['bb_num_classes'], img_size=int(cfg['model']['backbone']['input_size']))
+        model = Detector(backbone,pretrained=pretrained,pretrained_weights=pretrained_weights, 
+                         num_classes=cfg['dataset']['bb_num_classes'], img_size=int(cfg['model']['backbone']['input_size']))
     else:
         if dual_modality:
-            model = DualModalityBackbone(rgb_backbone=cfg['model']['backbone']['rgb_backbone'],
+            model = DualModalityBackbone(rgb_backbone=cfg['model']['backbone']['rgb_backbone'], pretrained=pretrained,
                         event_backbone=cfg['model']['backbone']['event_backbone'],
                         embed_dim=cfg['model']['backbone']['embed_dim'],
                         img_size=cfg['model']['backbone']['input_size']
             )
         else:
-            model = UnimodalBackbone(backbone, embed_dim=cfg['model']['backbone']['embed_dim'],
+            model = UnimodalBackbone(backbone,pretrained_weights=pretrained_weights, embed_dim=cfg['model']['backbone']['embed_dim'],
                         img_size=cfg['model']['backbone']['input_size'])
     
     # Loss   
