@@ -41,7 +41,7 @@ def parse_arguments():
     parser.add_argument("--device", type=str, help="Device to use (cuda or cpu)", default=None)
 
     # Dataset parameters
-    parser.add_argument("--dataset-name", type=str, help="Dataset name", default=None)
+    parser.add_argument("--dataset-name", type=str, help="Dataset name", default=None, dest="dataset-name")
     parser.add_argument("--data_dir", type=str, help="Data directory", default=None)
     parser.add_argument("--batch_size", type=int, help="Batch size", default=None)
     parser.add_argument("--num_workers", type=int, help="Number of workers", default=None)
@@ -50,17 +50,17 @@ def parse_arguments():
     parser.add_argument("--val_split", type=str, help="Validation split file", default=None)
 
     # Backbone parameters
-    parser.add_argument("--model-backbone-name", type=str, help="Backbone name", default=None)
+    parser.add_argument("--model-backbone-name", type=str, help="Backbone name", default=None, dest="model-backbone-name")
     parser.add_argument("--rgb_backbone", type=str, help="RGB backbone name", default=None)
     parser.add_argument("--event_backbone", type=str, help="Event backbone name", default=None)
     parser.add_argument("--embed_dim", type=int, help="Embedding dimension", default=None)
     parser.add_argument("--input_size", type=int, help="Input size", default=None)
     parser.add_argument("--num_classes", type=int, help="Number of classes")
     parser.add_argument("--outputs", type=list, help="Dropout rate", default=None)
-    parser.add_argument("--model-backbone-pretrained_weights", type=str, help="Path to pretrained weights", default=None)
+    parser.add_argument("--model-backbone-pretrained_weights", type=str, help="Path to pretrained weights", default=None, dest="model-backbone-pretrained_weights")
 
     # Optimizer parameters
-    parser.add_argument("--optimizer-name", type=str, help="Optimizer name", default=None)
+    parser.add_argument("--optimizer-name", type=str, help="Optimizer name", default=None, dest="optimizer-name")
     parser.add_argument("--lr", type=float, help="Learning rate", default=None)
     parser.add_argument("--wd", type=float, help="Weight decay", default=None)
 
@@ -75,14 +75,14 @@ def parse_arguments():
     parser.add_argument("--save_folder", type=str,  help="Save folder", default=None)
 
     # Scheduler parameters
-    parser.add_argument("--scheduler-name", type=str, help="Scheduler name", default=None)
+    parser.add_argument("--scheduler-name", type=str, help="Scheduler name", default=None, dest="scheduler-name")
     parser.add_argument("--factor", type=float, help="Scheduler factor", default=None)
     parser.add_argument("--patience", type=int, help="Scheduler patience", default=None)
     parser.add_argument("--monitor", type=str,  help="Scheduler monitor metric", default=None)
     parser.add_argument("--mode", type=str, help="Scheduler mode (min or max)", default=None)
 
     # Logging parameters
-    parser.add_argument("--logger-name", type=str, help="Logger name", default=None)
+    parser.add_argument("--logger-name", type=str, help="Logger name", default=None, dest="logger-name")
     parser.add_argument("--project", type=str,  help="Wandb project name", default=None)
     parser.add_argument("--entity", type=str, help="Wandb entity name", default=None)
 

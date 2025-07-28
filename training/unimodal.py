@@ -99,7 +99,7 @@ class Trainer:
         avg_loss = self.total_loss / len(self.dataloader)
         if DEBUG == 1: print(f"Epoch loss: {avg_loss:.4f}", step=self.step)
         if self.wandb_log:
-            wandb.log({"train_loss": avg_loss},step=self.step)
+            wandb.log({"epoch_loss": avg_loss},step=self.step)
         return avg_loss
 
     # def evaluate_model(self, val_set, eval_loss=False):
@@ -145,13 +145,14 @@ class Trainer:
             if DEBUG == 1:
                 print(f"Epoch {epoch+1} completed in {epoch_time:.2f} seconds")
             if self.wandb_log:
-                wandb.log({"lr": self.optimizer.param_groups[0]['lr']}, step=self.epoch)
+                wandb.log({"lr": self.optimizer.param_groups[0]['lr']}, step=self.step)
 
             if evaluator is not None:
                 ap50_95, ap50, _ = evaluator.evaluate(self.model)
+                if DEBUG >= 1: print(f"AP50-95: {ap50_95:.4f}, AP50: {ap50:.4f}")
 
                 if self.wandb_log:
-                    wandb.log({"ap50_95": ap50_95, "ap50": ap50}, step=self.epoch)
+                    wandb.log({"ap50_95": ap50_95, "ap50": ap50}, step=self.step)
             if avg_loss < self.best_loss: #TODO: should be on the loss
                 if DEBUG >= 1: print(f"New best loss: {avg_loss:.4f} at epoch {self.epoch}")
                 self.best_ap50_95 = ap50_95 if evaluator is not None else None
