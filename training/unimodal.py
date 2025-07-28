@@ -74,8 +74,12 @@ class Trainer:
         input_frame = torch.stack([item[self.input_type] for item in batch]).to(self.device)
         targets = torch.stack([item["BB"] for item in batch]).to(self.device) #For now considering only object detection tasks
         self.optimizer.zero_grad()
-        outputs, losses = self.model(input_frame, targets)
-        sum(losses).backward()
+        _, losses = self.model(input_frame, targets)
+        losses[0].backward()
+        if DEBUG >= 1: 
+            print(f"loss_obj: {losses[1].item():.4f}, loss_cls: {losses[2].item():.4f}, loss_l1: {losses[3].item():.4f}")
+        if wandb.run is not None:
+            wandb.log({"loss_obj": losses[1].item(), "loss_cls": losses[2].item(), "loss_l1": losses[3].item()}, step=self.step)
         self.optimizer.step()
         self.loss = losses[0].item()
         return self.loss
