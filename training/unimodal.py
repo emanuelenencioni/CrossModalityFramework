@@ -12,7 +12,7 @@ import sys
 from helpers import DEBUG
 
 class Trainer:
-    def __init__(self, model, dataloader, optimizer, criterion, device, cfg, root_folder, wandb_log=False, scheduler=None, patience=sys.maxsize, pretrained_checkpoint=None):
+    def __init__(self, model, dataloader, optimizer, criterion, device, cfg, root_folder, scheduler=None, patience=sys.maxsize, pretrained_checkpoint=None):
         self.model = model
         self.dataloader = dataloader
         self.optimizer = optimizer
@@ -41,7 +41,7 @@ class Trainer:
         assert 'epochs' in self.trainer_cfg.keys(), " specify 'epochs' trainer param"
         self.total_epochs = int(self.trainer_cfg['epochs'])
         self.scheduler = scheduler
-        self.wandb_log = wandb_log
+        self.wandb_log = True if wandb.run is not None else False
         if self.wandb_log: assert wandb.run is not None, "Wandb run must be initialized before setting wandb_log to True"
         self.save_folder = root_folder + "/" + self.trainer_cfg['save_folder'] if 'save_folder' in self.trainer_cfg.keys() and self.trainer_cfg['save_folder'] is not None else None
         self.save_best_dir = None
@@ -67,7 +67,7 @@ class Trainer:
         self.best_sch_params = self.scheduler.state_dict() if self.scheduler is not None else None
         self.best_ap50_95 = 0
         self.start_epoch = 0
-        self.saving_stride = 100
+        self.saving_stride = cfg['trainer']['log_interval'] if 'log_interval' in cfg['trainer'].keys() else 500
         self.step = 0
 
     def _train_step(self, batch):
@@ -102,32 +102,32 @@ class Trainer:
             wandb.log({"train_loss": avg_loss},step=self.step)
         return avg_loss
 
-    def evaluate_model(self, val_set, eval_loss=False):
-        self.model.eval()
-        correct = 0
-        total = 0
-        losses = []
-        avg_loss = None
-        with torch.no_grad():
-            pbar = tqdm(val_set, desc="Evaluating")
-            for batch in pbar:
-                # Prepare the batch the same way as in _train_step()
-                input_frame = torch.stack([item["events_vg"] for item in batch]).to(self.device)
-                targets = torch.stack([item["BB"] for item in batch]).to(self.device)
+    # def evaluate_model(self, val_set, eval_loss=False):
+    #     self.model.eval()
+    #     correct = 0
+    #     total = 0
+    #     losses = []
+    #     avg_loss = None
+    #     with torch.no_grad():
+    #         pbar = tqdm(val_set, desc="Evaluating")
+    #         for batch in pbar:
+    #             # Prepare the batch the same way as in _train_step()
+    #             input_frame = torch.stack([item["events_vg"] for item in batch]).to(self.device)
+    #             targets = torch.stack([item["BB"] for item in batch]).to(self.device)
                 
-                # Get model outputs and losses
-                outputs, loss_list = self.model(input_frame, targets)
-                pbar.set_description(f"Evaluating, loss: {tot_loss:.4f}")
-                # Compute predictions as in _train_epoch()
-                _, preds = torch.max(outputs, 1)
-                total += targets.size(0)
-                correct += (preds == targets).sum().item()
+    #             # Get model outputs and losses
+    #             outputs, loss_list = self.model(input_frame, targets)
+    #             pbar.set_description(f"Evaluating, loss: {tot_loss:.4f}")
+    #             # Compute predictions as in _train_epoch()
+    #             _, preds = torch.max(outputs, 1)
+    #             total += targets.size(0)
+    #             correct += (preds == targets).sum().item()
                 
-                if eval_loss and loss_list is not None:
-                    losses.append(loss_list[0].item())
-        if eval_loss and len(losses) > 0:
-            avg_loss = np.mean(losses)
-        return correct / total, avg_loss
+    #             if eval_loss and loss_list is not None:
+    #                 losses.append(loss_list[0].item())
+    #     if eval_loss and len(losses) > 0:
+    #         avg_loss = np.mean(losses)
+    #     return correct / total, avg_loss
 
     def train(self, evaluator=None, eval_loss=False):
         for epoch in range(self.total_epochs):
@@ -137,8 +137,11 @@ class Trainer:
             epoch_time = time.time() - start_time
             if self.scheduler is not None:
                 self.scheduler.step()
-            if (epoch + 1) % self.saving_stride == 0 and self.save_folder is not None:
-                self._save_checkpoint(epoch)
+            if (epoch + 1) % self.saving_stride == 0:
+                if self.save_folder is not None:
+                    self._save_checkpoint(epoch)
+                else:
+                    print("\033[93m"+"WARNING: the model will not be saved - saving folder need to be specified"+"\033[0m")
             if DEBUG == 1:
                 print(f"Epoch {epoch+1} completed in {epoch_time:.2f} seconds")
             if self.wandb_log:
