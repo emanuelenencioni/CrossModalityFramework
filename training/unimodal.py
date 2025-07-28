@@ -12,7 +12,7 @@ import sys
 from helpers import DEBUG
 
 class Trainer:
-    def __init__(self, model, dataloader, optimizer, criterion, device, cfg, root_folder, scheduler=None, patience=sys.maxsize, pretrained_checkpoint=None):
+    def __init__(self, model, dataloader, optimizer, criterion, device, cfg, root_folder,wandb_log=False, scheduler=None, patience=sys.maxsize, pretrained_checkpoint=None):
         self.model = model
         self.dataloader = dataloader
         self.optimizer = optimizer
