@@ -365,32 +365,41 @@ class DSECEvaluator:
                 print(f"Saved GT to {gt_path}, predictions to {pred_path}")
             
             # Load COCO objects
-            coco_gt = COCO(gt_path)
-            coco_dt = coco_gt.loadRes(pred_path)
+            
+            if DEBUG >=3:
+                coco_gt = COCO(gt_path)
+                coco_dt = coco_gt.loadRes(pred_path)
+            else:
+                with contextlib.redirect_stdout(open('/dev/null', 'w')):
+                    coco_gt = COCO(gt_path)
+                    coco_dt = coco_gt.loadRes(pred_path)
+                
             
             # Import COCOeval
             try:
                 from yolox.layers import COCOeval_opt as COCOeval
             except ImportError:
                 from pycocotools.cocoeval import COCOeval
-                logger.warning("Using standard COCOeval.")
+                if DEBUG>=2: logger.warning("Using standard COCOeval.")
+
             
-            # Evaluate
-            coco_eval = COCOeval(coco_gt, coco_dt, 'bbox')
-            coco_eval.evaluate()
-            coco_eval.accumulate()
-            coco_eval.summarize()
-            # Get metrics
-            # stats[0] = AP@0.5:0.95
-            # stats[1] = AP@0.5
+            if DEBUG >= 3:
+                coco_eval = COCOeval(coco_gt, coco_dt, 'bbox')
+                coco_eval.evaluate()
+                coco_eval.accumulate()
+                coco_eval.summarize()
+            else:
+                redirect_string = io.StringIO()
+                with contextlib.redirect_stdout(open('/dev/null', 'w')):
+                    coco_eval = COCOeval(coco_gt, coco_dt, 'bbox')
+                    coco_eval.evaluate()
+                    coco_eval.accumulate()
+                    coco_eval.summarize()
+                    
+                
+            summary_info = redirect_string.getvalue()
             ap50_95 = coco_eval.stats[0]
             ap50 = coco_eval.stats[1]
-            
-            # Generate summary
-            redirect_string = io.StringIO()
-            with contextlib.redirect_stdout(redirect_string):
-                coco_eval.summarize()
-            summary_info = redirect_string.getvalue()
             
             # Clean up temporary files
             import os
