@@ -30,6 +30,7 @@ def find_and_modify(d, tag, mod):
             find_and_modify(v, tag, mod)
 
 
+
 def parse_arguments():
     parser = argparse.ArgumentParser(description="Training script with configurable parameters.")
 
@@ -93,8 +94,15 @@ def parse_arguments():
     assert cfg
     # Update cfg with parsed arguments
     for k, v in vars(args).items():
+        
         if k != "config_path" and v is not None:
-            find_and_modify(cfg,k,v)
+            if '_' in k:
+                key = k.split('_')[0]
+                subkey = k.split('_')[1]
+                if key in cfg and subkey in cfg[key]:
+                    cfg[key][subkey] = v
+            else:
+                find_and_modify(cfg,k,v)
         else:
             # Ensure the value from cfg is used if the argument is not provided
             v_cfg = getattr(cfg, k, None)

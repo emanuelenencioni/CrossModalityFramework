@@ -116,6 +116,7 @@ class DSECEvaluator:
         self.per_class_AP = per_class_AP
         self.per_class_AR = per_class_AR
         self.device = device
+        self.input_type = 'events_vg' if 'events_vg' in dataloader.dataset[0] else 'image'
 
     def evaluate(
         self, model, distributed=False, half=False, trt_file=None,
@@ -164,8 +165,9 @@ class DSECEvaluator:
             progress_bar(self.dataloader)
         ):
             with torch.no_grad():
-                input_frame = torch.stack([item["events_vg"] for item in batch]).to(self.device)
-                targets = torch.stack([item["BB"] for item in batch]).to(self.device)
+                input_frame = torch.stack([item[self.input_type] for item in batch]).to(self.device)
+                assert "BB" in batch[0], "Batch must contain 'BB' key for targets"
+                targets = torch.stack([item["BB"] for item in batch]).to(self.device) #TODO: now only for obj detection
                 img_info = [item["img_metas"] for item in batch]
                 #imgs = input_frame.type(tensor_type)
                 # skip the last iters since batchsize might be not enough for batch inference
