@@ -16,9 +16,19 @@ dataset:
 
 # Model parameters
 model:
-  name: SimpleCRossBackbones
-  num_classes: 10
-  dropout: 0.25
+  name: 'model_name'
+  head: 
+    name: 'head_name' # redoundant here, but useful for clarity
+    num_classes: 8
+  backbone:
+    name: '' # if name is empty -> stack of the two backbone will be used
+    rgb_backbone: backbone_name # from timm
+    pretrained: True # if not specified, it will be set to True
+    pretrained_weights: #'detr_resnet50_weights.pth' # path to pretrained weights if needed
+    embed_dim: 128
+    input_size: 512
+    output_indices: [1, 2, 3, 4] # indices of the output layers to be used
+    #dropout: 0.25
 
 # Optimizer parameters
 optimizer:

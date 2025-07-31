@@ -3,50 +3,48 @@ from model.yolox_head import YOLOXHead
 import torch
 import torch.nn as nn
 
-class Detector(nn.Module):
+class Resnet50_yolox(nn.Module):
     """
-    Un modello di object detection completo che combina un backbone
-    e una YOLOXHead.
+    Un modello di object detection completo che combina backbone resnet50 con una head YOLOX.
 
     Args:
         backbone_name (str): Nome del modello timm da usare come backbone.
         num_classes (int): Numero di classi per la detection.
         pretrained (bool): Se usare pesi pre-allenati per il backbone.
     """
-    def __init__(self, backbone_name: str,img_size: int, num_classes: int, pretrained: bool = True, pretrained_weights=None, model_name: str = None, out_indices=(2, 3, 4)):
+    def __init__(self,  backbone: dict, name: str="resnet50_yolox", head: dict={'name': 'yolox_head','num_classes': 8}):
         super().__init__()
-        
+        assert 'output_indices' in backbone, "Error - output_indices must be specified in the backbone config"
+        out_indices = backbone['output_indices']
         # 1. Init backbone to extract 3 feat lvls
         self.backbone = UnimodalBackbone(
-            backbone=backbone_name,
-            pretrained=pretrained,
-            pretrained_weights=pretrained_weights,
-            img_size=img_size,
+            backbone=backbone.get('rgb_backbone', backbone.get('event_backbone', None)),
+            pretrained=backbone.get('pretrained', True),
+            pretrained_weights=backbone.get("pretrained_weights", None),
+            img_size=backbone.get('input_size'),
             outputs=["preflatten_feat"],
-            out_indices=out_indices # TODO add this in config
+            output_indices=backbone.get('output_indices')  # Default to last 3 layers if not specified
         )
         
-        if model_name is None:
-            self.model_name = f"{backbone_name}_yolox"
-        else:
-            self.model_name = model_name
+
+        self.name = name
         
         feature_info = self.backbone.feature_info
         in_channels = [info['num_chs'] for info in feature_info if info['index'] in out_indices]
         strides = [info['reduction'] for info in feature_info if info['index'] in out_indices]
         
-        print(f"Backbone '{backbone_name}' inizializzato.")
+        print(f"Backbone '{backbone['name']}' inizializzato.")
         print(f"  - Strides estratti: {strides}")
         print(f"  - Canali di input per la Head: {in_channels}")
-
+        
         # 3. Inizializza la YOLOXHead con i parametri corretti
         self.head = YOLOXHead(
-            num_classes=num_classes,
+            num_classes=head['num_classes'],
             in_channels=in_channels,
             strides=strides
         )
 
-    def get_name(self): return self.model_name
+    def get_name(self): return self.name
 
     def forward(self, x: torch.Tensor, targets: torch.Tensor = None):
         """

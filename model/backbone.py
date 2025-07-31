@@ -7,7 +7,7 @@ import os
 
 class UnimodalBackbone(nn.Module):
     def __init__(self, backbone=None, pretrained=True, pretrained_weights=None,
-                 embed_dim=256, img_size=224, model_name='',outputs=["projector"], out_indices = None):
+                 embed_dim=256, img_size=224, model_name='',outputs=["projector"], output_indices = None):
         """
         Args:
             bacbkone: Timm model name or custom module
@@ -19,8 +19,9 @@ class UnimodalBackbone(nn.Module):
         else:
             self.name = model_name
         self.img_size = img_size
-        use_multiple_features = True if out_indices is not None else False
-        self.out_indices = out_indices if use_multiple_features else None
+        use_multiple_features = True if output_indices is not None else False
+        if DEBUG>=1: print (f"Using multiple features: {use_multiple_features}")
+        self.out_indices = output_indices if use_multiple_features else None
         # TODO add in_chans param as input in cfg. 
         if pretrained_weights is not None and pretrained:
             pretrained = False
@@ -29,10 +30,10 @@ class UnimodalBackbone(nn.Module):
         if isinstance(backbone, str):
             if 'resnet' in backbone:
                 self.backbone = timm.create_model( backbone, pretrained=pretrained,
-                    in_chans=3, num_classes=0,features_only=use_multiple_features, out_indices=out_indices, cache_dir=".cache_dir")
+                    in_chans=3, num_classes=0,features_only=use_multiple_features, out_indices=output_indices, cache_dir=".cache_dir")
             else:
                 self.backbone = timm.create_model( backbone, img_size=img_size, pretrained=pretrained,
-                    in_chans=3, num_classes=0,features_only=use_multiple_features, out_indices=out_indices, cache_dir=".cache_dir")  # Assume 5-channel voxel grid
+                    in_chans=3, num_classes=0,features_only=use_multiple_features, out_indices=output_indices, cache_dir=".cache_dir")  # Assume 5-channel voxel grid
         else:
             self.backbone = backbone
         if pretrained_weights is not None: self.load_pretrained_weights(pretrained_weights)

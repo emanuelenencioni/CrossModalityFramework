@@ -19,6 +19,9 @@ class Trainer:
         self.criterion = criterion
         self.epoch = 1
         self.input_type = 'events_vg' if 'events_vg' in dataloader.dataset[0] else 'image'
+        if 'events_vg' in dataloader.dataset[0] and 'image' in dataloader.dataset[0]:
+            print("\033[93m"+"WARNING: the dataloader contains both events_vg and image, using events_vg as input type"+"\033[0m")
+        if DEBUG >= 1: print(f"Input type: {self.input_type}")
         if pretrained_checkpoint is not None:
             if 'model_state_dict' in pretrained_checkpoint:
                 self.model.load_state_dict(pretrained_checkpoint['model_state_dict'])
