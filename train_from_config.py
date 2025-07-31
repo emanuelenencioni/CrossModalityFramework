@@ -6,8 +6,8 @@ from training.multimodal import DualModalityTrainer
 from training.unimodal import Trainer
 
 from model.backbone import DualModalityBackbone, UnimodalBackbone
-from model.detector import Detector
 from model.yolox_head import YOLOXHead
+from model.builder import build_model_from_cfg
 
 from torch.utils.data import DataLoader
 from dataset.dsec import DSECDataset, collate_ssl
@@ -183,8 +183,7 @@ if __name__ == "__main__":
     pretrained = cfg['model']['backbone'].get('pretrained', True) if 'pretrained' in cfg['model']['backbone'].keys() else True
     if 'head' in cfg['model'].keys():
         assert 'bb_num_classes' in cfg['dataset'], "Error - number of classes need to be specified in unimodal training"
-        model = Detector(backbone,pretrained=pretrained,pretrained_weights=pretrained_weights, 
-                         num_classes=cfg['dataset']['bb_num_classes'], img_size=int(cfg['model']['backbone']['input_size']))
+        model = build_model_from_cfg(cfg['model'])
     else:
         if dual_modality:
             model = DualModalityBackbone(rgb_backbone=cfg['model']['backbone']['rgb_backbone'], pretrained=pretrained,
