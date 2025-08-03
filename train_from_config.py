@@ -29,6 +29,51 @@ def find_and_modify(d, tag, mod):
         if isinstance(v, dict):
             find_and_modify(v, tag, mod)
 
+def deep_dict_compare(dict1, dict2, path=""):
+    """
+    Recursively compare two dictionaries for equality.
+    Returns True if equal, False otherwise.
+    Prints differences with their paths.
+    """
+    if type(dict1) != type(dict2):
+        print(f"Type mismatch at {path}: {type(dict1)} vs {type(dict2)}")
+        return False
+    
+    if isinstance(dict1, dict):
+        # Get all keys from both dictionaries
+        all_keys = set(dict1.keys()) | set(dict2.keys())
+        
+        for key in all_keys:
+            current_path = f"{path}.{key}" if path else key
+            
+            if key not in dict1:
+                print(f"Key missing in first dict at {current_path}")
+                return False
+            if key not in dict2:
+                print(f"Key missing in second dict at {current_path}")
+                return False
+                
+            # Recursively compare values
+            if not deep_dict_compare(dict1[key], dict2[key], current_path):
+                return False
+        return True
+    
+    elif isinstance(dict1, list):
+        if len(dict1) != len(dict2):
+            print(f"List length mismatch at {path}: {len(dict1)} vs {len(dict2)}")
+            return False
+        
+        for i, (item1, item2) in enumerate(zip(dict1, dict2)):
+            if not deep_dict_compare(item1, item2, f"{path}[{i}]"):
+                return False
+        return True
+    
+    else:
+        # Compare primitive values
+        if dict1 != dict2:
+            print(f"Value mismatch at {path}: {dict1} vs {dict2}")
+            return False
+        return True
 
 
 def parse_arguments():
@@ -39,7 +84,7 @@ def parse_arguments():
     parser.add_argument("--experiment_name", type=str, help="Experiment name", default=None)
     parser.add_argument("--seed", type=int, help="Seed value", default=None)
     parser.add_argument("--device", type=str, help="Device to use (cuda or cpu)", default=None)
-
+    parser.add_argument("--checkpoint_path", type=str, help="Path to the checkpoint file", default=None)
     # Dataset parameters
     parser.add_argument("--dataset-name", type=str, help="Dataset name", default=None, dest="dataset-name")
     parser.add_argument("--data_dir", type=str, help="Data directory", default=None)
@@ -91,6 +136,25 @@ def parse_arguments():
     cfg = None
     with open(vars(args)['config_path']) as file:
         cfg = yaml.safe_load(file)
+
+    pretrained_checkpoint = None
+    # If a checkpoint path is provided, load the checkpoint
+    if cfg.get("checkpoint_path", None) is not None:
+        #root_dir = os.path.dirname(os.path.realpath(__file__))
+        checkpoint_path = cfg["checkpoint_path"]
+        print(f"Loading pretrained model from {checkpoint_path}")
+        pretrained_checkpoint = torch.load(checkpoint_path, map_location=torch.device('cpu'))
+        # Load the saved config (if available) to verify architecture consistency
+        saved_cfg = pretrained_checkpoint.get('config', {})
+        # You can compare saved_cfg['model'] with cfg['model'] for consistency.
+        # For example:
+        if saved_cfg.get('model', None) and deep_dict_compare(saved_cfg['model'], cfg['model']):
+            print("Warning: The provided config differs from the saved model's config. Proceeding with loaded model parameters.")
+
+        assert deep_dict_compare(saved_cfg['optimizer'], cfg['optimizer']), "Error - optimizer config mismatch with pretrained model"
+        assert deep_dict_compare(saved_cfg['loss'], cfg['loss']), "Error - loss config mismatch with pretrained model"
+        assert deep_dict_compare(saved_cfg['scheduler'], cfg['scheduler']), "Error - scheduler config mismatch with pretrained model"
+        cfg = saved_cfg
     
     assert cfg
     # Update cfg with parsed arguments
@@ -113,7 +177,7 @@ def parse_arguments():
             v_cfg = getattr(cfg, k, None)
             if v_cfg is not None:
                 setattr(cfg, k, v_cfg)
-    return cfg
+    return cfg, pretrained_checkpoint
 
 def check_backbone_params(cfg):
     """
@@ -153,24 +217,7 @@ def print_cfg_params(cfg, indent=0):
 
 if __name__ == "__main__":
 
-    cfg = parse_arguments()
-
-    pretrained_checkpoint = None
-    if cfg.get("pretrained_path", None):
-        checkpoint_path = cfg["pretrained_path"]
-        print(f"Loading pretrained model from {checkpoint_path}")
-        pretrained_checkpoint = torch.load(checkpoint_path, map_location=torch.device('cpu'))
-        # Load the saved config (if available) to verify architecture consistency
-        saved_cfg = pretrained_checkpoint.get('config', {})
-        # You can compare saved_cfg['model'] with cfg['model'] for consistency.
-        # For example:
-        if saved_cfg.get('model', None) and saved_cfg['model'] != cfg['model']:
-            print("Warning: The provided config differs from the saved model's config. Proceeding with loaded model parameters.")
-
-        assert saved_cfg['optimizer']['name'] != cfg['optimizer']['name'], "Error - optimizer name mismatch with pretrained model"
-        assert saved_cfg['loss']['name'] != cfg['loss']['name'], "Error - loss name mismatch with pretrained model"
-        assert saved_cfg['scheduler']['name'] != cfg['scheduler']['name'], "Error - scheduler name mismatch with pretrained model"
-        cfg = saved_cfg
+    cfg, pretrained_checkpoint = parse_arguments()
 
     if DEBUG>0:
         print("Configuration parameters:")
@@ -278,7 +325,7 @@ if __name__ == "__main__":
     if dual_modality:
         trainer = DualModalityTrainer(model, train_dl, opti, criterion, device, cfg, root_folder=dir_path, wandb_log=wandb_log, pretrained_checkpoint=pretrained_checkpoint)
     else:
-        trainer = Trainer(model,train_dl, opti, criterion, device,  cfg, root_folder=dir_path, wandb_log=wandb_log)
+        trainer = Trainer(model,train_dl, opti, criterion, device,  cfg, root_folder=dir_path, wandb_log=wandb_log, pretrained_checkpoint=pretrained_checkpoint)
     in_size = cfg['model']['backbone']['input_size']
     evaluator = DSECEvaluator(test_dl, img_size=(in_size, in_size), confthre=0.001, nmsthre=0.65, num_classes=cfg['dataset']['bb_num_classes'], device=device)
     trainer.train(evaluator=evaluator)

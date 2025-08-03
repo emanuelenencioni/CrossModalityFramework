@@ -2,6 +2,8 @@
 experiment_name: simpleCLIPTrain
 seed: 42
 device: cuda  # or cpu
+checkpoint_path: # Path to the checkpoint file, if start from an already trained model with this framework
+
 
 # Data parameters
 dataset:

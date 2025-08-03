@@ -18,6 +18,10 @@ class Trainer:
         self.optimizer = optimizer
         self.criterion = criterion
         self.epoch = 1
+        self.cfg = cfg
+        self.trainer_cfg = cfg['trainer']
+        assert 'epochs' in self.trainer_cfg.keys(), " specify 'epochs' trainer param"
+        self.total_epochs = int(self.trainer_cfg['epochs'])
         self.input_type = 'events_vg' if 'events_vg' in dataloader.dataset[0] else 'image'
         if 'events_vg' in dataloader.dataset[0] and 'image' in dataloader.dataset[0]:
             print("\033[93m"+"WARNING: the dataloader contains both events_vg and image, using events_vg as input type"+"\033[0m")
@@ -35,14 +39,13 @@ class Trainer:
                     self.scheduler.load_state_dict(scheduler_state)
                     if DEBUG >= 1: print("Pre-trained scheduler state loaded successfully")
             if 'epoch' in pretrained_checkpoint:
-                self.start_epoch = pretrained_checkpoint['epoch'] + 1
-                if DEBUG >= 1: print(f"Resuming training from epoch {self.start_epoch}")
+                self.epoch = pretrained_checkpoint['epoch'] + 1
+                self.total_epochs = int(self.trainer_cfg['epochs']) + self.epoch - 1
+                if DEBUG >= 1: print(f"Resuming training from epoch {self.epoch}")
 
         self.device = device
-        self.cfg = cfg
-        self.trainer_cfg = cfg['trainer']
-        assert 'epochs' in self.trainer_cfg.keys(), " specify 'epochs' trainer param"
-        self.total_epochs = int(self.trainer_cfg['epochs'])
+        
+       
         self.scheduler = scheduler
         self.wandb_log = True if wandb.run is not None else False
         if self.wandb_log: assert wandb.run is not None, "Wandb run must be initialized before setting wandb_log to True"
@@ -69,7 +72,6 @@ class Trainer:
         self.best_optimizer = self.optimizer.state_dict()
         self.best_sch_params = self.scheduler.state_dict() if self.scheduler is not None else None
         self.best_ap50_95 = 0
-        self.start_epoch = 0
         self.saving_stride = cfg['trainer']['log_interval'] if 'log_interval' in cfg['trainer'].keys() else 500
         self.step = 0
 
@@ -104,33 +106,6 @@ class Trainer:
         if self.wandb_log:
             wandb.log({"epoch_loss": avg_loss},step=self.step)
         return avg_loss
-
-    # def evaluate_model(self, val_set, eval_loss=False):
-    #     self.model.eval()
-    #     correct = 0
-    #     total = 0
-    #     losses = []
-    #     avg_loss = None
-    #     with torch.no_grad():
-    #         pbar = tqdm(val_set, desc="Evaluating")
-    #         for batch in pbar:
-    #             # Prepare the batch the same way as in _train_step()
-    #             input_frame = torch.stack([item["events_vg"] for item in batch]).to(self.device)
-    #             targets = torch.stack([item["BB"] for item in batch]).to(self.device)
-                
-    #             # Get model outputs and losses
-    #             outputs, loss_list = self.model(input_frame, targets)
-    #             pbar.set_description(f"Evaluating, loss: {tot_loss:.4f}")
-    #             # Compute predictions as in _train_epoch()
-    #             _, preds = torch.max(outputs, 1)
-    #             total += targets.size(0)
-    #             correct += (preds == targets).sum().item()
-                
-    #             if eval_loss and loss_list is not None:
-    #                 losses.append(loss_list[0].item())
-    #     if eval_loss and len(losses) > 0:
-    #         avg_loss = np.mean(losses)
-    #     return correct / total, avg_loss
 
     def train(self, evaluator=None, eval_loss=False):
         for epoch in range(self.total_epochs):
@@ -197,7 +172,7 @@ class Trainer:
         checkpoint = torch.load(file_path, map_location=torch.device(self.device))
         self.model.load_state_dict(checkpoint['model_state_dict'])
         self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        self.start_epoch = checkpoint['epoch']
+        self.epoch = checkpoint['epoch']
         if self.scheduler is not None and checkpoint.get('scheduler_state_dict') is not None:
             self.scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
 

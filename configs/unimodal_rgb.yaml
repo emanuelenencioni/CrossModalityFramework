@@ -2,6 +2,7 @@
 experiment_name: simpleCLIPTrain
 seed: 42
 device: cuda  # or cpu
+checkpoint_path: unimodal_rgb_checkpoints/best/resnet50_yolox_20250802_151644_best.pth
 
 # Data parameters
 dataset:
@@ -51,7 +52,7 @@ trainer:
   log_interval: 500 # steps
   #val_interval: 500 # steps
   checkpoint_interval: 50 # steps
-  save_folder: 
+  save_folder: unimodal_rgb_checkpoints
 
 # Scheduler parameters (optional)
 scheduler:
