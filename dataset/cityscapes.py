@@ -4,16 +4,21 @@ import os.path as osp
 import tempfile
 
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
+import matplotlib.pyplot as plt
+import matplotlib.patches as patches
+import cv2
+import torch
 
-from .builder import DATASETS
+#from .builder import DATASETS
 from .custom import CustomDataset
+from helpers import DEBUG
 
 import os
 import tqdm
 
 
-@DATASETS.register_module()
+
 class CityscapesDataset(CustomDataset):
     """Cityscapes dataset.
 
@@ -36,8 +41,18 @@ class CityscapesDataset(CustomDataset):
                  img_suffix='_leftImg8bit.png',
                  seg_map_suffix='_gtFine_labelTrainIds.png',
                  **kwargs):
+        # Extract bounding box parameters if provided
+        bbox_ann_dir = kwargs.get('bbox_ann_dir', None)
+        bbox_ann_suffix = kwargs.get('bbox_ann_suffix', '.json')
+        load_bboxes = kwargs.get('load_bboxes', False)
+        
         super(CityscapesDataset, self).__init__(
-            img_suffix=img_suffix, seg_map_suffix=seg_map_suffix, **kwargs)
+            img_suffix=img_suffix, 
+            seg_map_suffix=seg_map_suffix, 
+            bbox_ann_dir=bbox_ann_dir,
+            bbox_ann_suffix=bbox_ann_suffix,
+            load_bboxes=load_bboxes,
+            **kwargs)
 
     @staticmethod
     def _convert_to_label_id(result):
@@ -128,6 +143,190 @@ class CityscapesDataset(CustomDataset):
 
         return result_files, tmp_dir
 
+    def visualize_segmentation(self, image, segmentation_mask, bboxes=None, 
+                              save_path=None, show_labels=True, alpha=0.7,
+                              bbox_color='red', bbox_thickness=2):
+        """Visualize segmentation mask with optional bounding boxes.
+        
+        Args:
+            image (np.ndarray or PIL.Image): Input image
+            segmentation_mask (np.ndarray): Segmentation mask with class IDs
+            bboxes (list, optional): List of bounding boxes in format [x1, y1, x2, y2, class_id]
+            save_path (str, optional): Path to save the visualization
+            show_labels (bool): Whether to show class labels
+            alpha (float): Transparency for segmentation overlay
+            bbox_color (str): Color for bounding boxes
+            bbox_thickness (int): Thickness of bounding box lines
+            
+        Returns:
+            PIL.Image: Visualized image
+        """
+        # Convert image to PIL if it's a numpy array
+        if isinstance(image, np.ndarray):
+            if image.dtype == np.float32 or image.dtype == np.float64:
+                image = (image * 255).astype(np.uint8)
+            image = Image.fromarray(image)
+        
+        # Create a copy for visualization
+        vis_image = image.copy()
+        
+        # Create segmentation overlaywalk
+        seg_overlay = self._create_segmentation_overlay(segmentation_mask, alpha)
+        
+        # Blend the segmentation overlay with the original image
+        vis_image = Image.blend(vis_image.convert('RGBA'), seg_overlay, alpha)
+        vis_image = vis_image.convert('RGB')
+        
+        # Add bounding boxes if provided
+        if bboxes is not None:
+            vis_image = self._draw_bounding_boxes(vis_image, bboxes, bbox_color, 
+                                                bbox_thickness, show_labels)
+        
+        # Save if path is provided
+        if save_path:
+            vis_image.save(save_path)
+            print(f"Visualization saved to: {save_path}")
+            
+        return vis_image
+    
+    def _create_segmentation_overlay(self, segmentation_mask, alpha=0.7):
+        """Create colored segmentation overlay."""
+        colored_mask = np.zeros((*segmentation_mask.shape, 3), dtype=np.uint8)
+        
+        # Apply colors based on class palette
+        for class_id in range(len(self.CLASSES)):
+            if class_id < len(self.PALETTE):
+                mask = segmentation_mask == class_id
+                colored_mask[mask] = self.PALETTE[class_id]
+        
+        # Convert to PIL and add alpha channel
+        overlay = Image.fromarray(colored_mask).convert('RGBA')
+        # Make overlay semi-transparent
+        overlay_data = np.array(overlay)
+        overlay_data[:, :, 3] = int(255 * alpha)  # Set alpha channel
+        overlay = Image.fromarray(overlay_data)
+        
+        return overlay
+    
+    def _draw_bounding_boxes(self, image, bboxes, color='red', thickness=2, show_labels=True):
+        """Draw bounding boxes on image."""
+        draw = ImageDraw.Draw(image)
+        
+        # Try to load a font, fallback to default if not available
+        try:
+            font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 16)
+        except:
+            try:
+                font = ImageFont.load_default()
+            except:
+                font = None
+        
+        for bbox in bboxes:
+            if len(bbox) >= 4:  # At least x1, y1, x2, y2
+                x1, y1, x2, y2 = bbox[:4]
+                class_id = bbox[4] if len(bbox) > 4 else None
+                
+                # Draw bounding box
+                draw.rectangle([x1, y1, x2, y2], outline=color, width=thickness)
+                
+                # Draw class label if available and requested
+                if show_labels and class_id is not None and class_id < len(self.CLASSES):
+                    label = self.CLASSES[class_id]
+                    
+                    # Calculate text size and position
+                    if font:
+                        bbox_font = draw.textbbox((0, 0), label, font=font)
+                        text_width = bbox_font[2] - bbox_font[0]
+                        text_height = bbox_font[3] - bbox_font[1]
+                    else:
+                        text_width = len(label) * 8  # Approximate
+                        text_height = 12
+                    
+                    # Draw background rectangle for text
+                    text_bg = [x1, y1 - text_height - 4, x1 + text_width + 4, y1]
+                    draw.rectangle(text_bg, fill=color)
+                    
+                    # Draw text
+                    draw.text((x1 + 2, y1 - text_height - 2), label, 
+                             fill='white', font=font)
+        
+        return image
+    
+    def visualize_with_matplotlib(self, image, segmentation_mask, bboxes=None, 
+                                save_path=None, figsize=(12, 8)):
+        """Visualize using matplotlib for more advanced plotting."""
+        fig, axes = plt.subplots(1, 3, figsize=figsize)
+        
+        # Original image
+        axes[0].imshow(image)
+        axes[0].set_title('Original Image')
+        axes[0].axis('off')
+        
+        # Segmentation mask
+        colored_mask = self._create_segmentation_overlay(segmentation_mask, alpha=1.0)
+        axes[1].imshow(colored_mask)
+        axes[1].set_title('Segmentation Mask')
+        axes[1].axis('off')
+        
+        # Combined visualization
+        overlay = self.visualize_segmentation(image, segmentation_mask, bboxes, alpha=0.6)
+        axes[2].imshow(overlay)
+        axes[2].set_title('Combined Visualization')
+        axes[2].axis('off')
+        
+        # Add bounding boxes to the combined view if provided
+        if bboxes is not None:
+            for bbox in bboxes:
+                if len(bbox) >= 4:
+                    x1, y1, x2, y2 = bbox[:4]
+                    class_id = bbox[4] if len(bbox) > 4 else None
+                    
+                    # Create rectangle patch
+                    rect = patches.Rectangle((x1, y1), x2-x1, y2-y1, 
+                                           linewidth=2, edgecolor='red', facecolor='none')
+                    axes[2].add_patch(rect)
+                    
+                    # Add label
+                    if class_id is not None and class_id < len(self.CLASSES):
+                        axes[2].text(x1, y1-5, self.CLASSES[class_id], 
+                                   bbox=dict(boxstyle="round,pad=0.3", facecolor='red', alpha=0.7),
+                                   fontsize=10, color='white')
+        
+        plt.tight_layout()
+        
+        if save_path:
+            plt.savefig(save_path, dpi=300, bbox_inches='tight')
+            print(f"Matplotlib visualization saved to: {save_path}")
+        
+        plt.show()
+        return fig
+    
+    def create_legend(self, save_path=None):
+        """Create a legend showing class colors."""
+        fig, ax = plt.subplots(figsize=(10, 6))
+        
+        # Create color patches for each class
+        patches_list = []
+        for i, (class_name, color) in enumerate(zip(self.CLASSES, self.PALETTE)):
+            color_normalized = [c/255.0 for c in color]  # Normalize to 0-1 range
+            patch = patches.Patch(color=color_normalized, label=class_name)
+            patches_list.append(patch)
+        
+        # Create legend
+        ax.legend(handles=patches_list, loc='center', ncol=3, 
+                 frameon=False, fontsize=10)
+        ax.axis('off')
+        
+        plt.title('Cityscapes Dataset Class Legend', fontsize=14, fontweight='bold')
+        plt.tight_layout()
+        
+        if save_path:
+            plt.savefig(save_path, dpi=300, bbox_inches='tight')
+            print(f"Legend saved to: {save_path}")
+            
+        plt.show()
+        return fig
+
     def evaluate(self,
                  results,
                  metric='mIoU',
@@ -185,10 +384,8 @@ class CityscapesDataset(CustomDataset):
         except ImportError:
             raise ImportError('Please run "pip install cityscapesscripts" to '
                               'install cityscapesscripts first.')
-        msg = 'Evaluating in Cityscapes style'
-        if logger is None:
-            msg = '\n' + msg
-        print_log(msg, logger=logger)
+
+        if DEBUG>=1: print('Evaluating in Cityscapes style')
 
         result_files, tmp_dir = self.format_results(results, imgfile_prefix)
 
@@ -198,7 +395,7 @@ class CityscapesDataset(CustomDataset):
             result_dir = tmp_dir.name
 
         eval_results = dict()
-        print_log(f'Evaluating results under {result_dir} ...', logger=logger)
+        if DEBUG>=1: print(f'Evaluating results under {result_dir} ...')
 
         CSEval.args.evalInstLevelScore = True
         CSEval.args.predictionPath = osp.abspath(result_dir)
@@ -210,10 +407,12 @@ class CityscapesDataset(CustomDataset):
 
         # when evaluating with official cityscapesscripts,
         # **_gtFine_labelIds.png is used
-        for seg_map in mmcv.scandir(
-                self.ann_dir, 'gtFine_labelIds.png', recursive=True):
-            seg_map_list.append(osp.join(self.ann_dir, seg_map))
-            pred_list.append(CSEval.getPrediction(CSEval.args, seg_map))
+        for root, dirs, files in os.walk(self.ann_dir):
+            for file in files:
+                if file.endswith('gtFine_labelIds.png'):
+                    seg_map = osp.relpath(osp.join(root, file), self.ann_dir)
+                    seg_map_list.append(osp.join(self.ann_dir, seg_map))
+                    pred_list.append(CSEval.getPrediction(CSEval.args, seg_map))
 
         eval_results.update(
             CSEval.evaluateImgLists(pred_list, seg_map_list, CSEval.args))

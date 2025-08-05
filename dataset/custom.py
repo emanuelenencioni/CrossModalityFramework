@@ -10,16 +10,18 @@ from functools import reduce
 import numpy as np
 from prettytable import PrettyTable
 from PIL import Image
+import torch
 
 from torch.utils.data import Dataset
 from torchvision.utils import draw_bounding_boxes
+from torchvision.ops import masks_to_boxes
 
-from .builder import DATASETS
+#from .builder import DATASETS
 from helpers import DEBUG
 from utils import parse
 
 
-@DATASETS.register_module()
+
 class CustomDataset(Dataset):
     """Custom dataset for semantic segmentation. An example of file structure
     is as followed.
@@ -88,7 +90,10 @@ class CustomDataset(Dataset):
                  ignore_index=255,
                  reduce_zero_label=False,
                  classes=None,
-                 palette=None):
+                 palette=None,
+                 load_bboxes=False,
+                 extract_bboxes_from_masks=True,
+                 bbox_min_area=100):
         self.pipeline = Compose(pipeline)
         self.img_dir = img_dir
         self.img_suffix = img_suffix
@@ -102,6 +107,11 @@ class CustomDataset(Dataset):
         self.label_map = None
         self.CLASSES, self.PALETTE = self.get_classes_and_palette(
             classes, palette)
+        
+        # Bounding box support
+        self.load_bboxes = load_bboxes
+        self.extract_bboxes_from_masks = extract_bboxes_from_masks
+        self.bbox_min_area = bbox_min_area
 
         # join paths if data_root is specified
         if self.data_root is not None:
@@ -178,7 +188,17 @@ class CustomDataset(Dataset):
         results['seg_fields'] = []
         results['img_prefix'] = self.img_dir
         results['seg_prefix'] = self.ann_dir
-        results['BB'] = draw_bounding_boxes()
+        
+        # Add bounding box information if available
+        if self.load_bboxes:
+            idx = results.get('idx', 0)  # Get index if available
+            bboxes = self.get_bbox_info(idx) if hasattr(self, 'get_bbox_info') else []
+            results['bboxes'] = bboxes
+            results['bbox_fields'] = ['bboxes'] if bboxes else []
+        else:
+            results['bboxes'] = []
+            results['bbox_fields'] = []
+            
         if self.custom_classes:
             results['label_map'] = self.label_map
 
@@ -211,7 +231,7 @@ class CustomDataset(Dataset):
 
         img_info = self.img_infos[idx]
         ann_info = self.get_ann_info(idx)
-        results = dict(img_info=img_info, ann_info=ann_info)
+        results = dict(img_info=img_info, ann_info=ann_info, idx=idx)
         self.pre_pipeline(results)
         return self.pipeline(results)
 
@@ -227,7 +247,7 @@ class CustomDataset(Dataset):
         """
 
         img_info = self.img_infos[idx]
-        results = dict(img_info=img_info)
+        results = dict(img_info=img_info, idx=idx)
         self.pre_pipeline(results)
         return self.pipeline(results)
 
@@ -245,6 +265,188 @@ class CustomDataset(Dataset):
                 gt_seg_map = np.array(Image.open(seg_map))
             gt_seg_maps.append(gt_seg_map)
         return gt_seg_maps
+
+    def extract_bboxes_from_mask(self, segmentation_mask, min_area=None):
+        """
+        Extract bounding boxes from segmentation mask using torchvision.ops.masks_to_boxes.
+        
+        Args:
+            segmentation_mask (np.ndarray): Segmentation mask with class IDs
+            min_area (int, optional): Minimum area threshold for bounding boxes
+            
+        Returns:
+            tuple: (bboxes, class_ids) where bboxes are [x1, y1, x2, y2] format
+        """
+        if min_area is None:
+            min_area = self.bbox_min_area
+            
+        # Ensure mask is numpy array
+        if torch.is_tensor(segmentation_mask):
+            segmentation_mask = segmentation_mask.numpy()
+        
+        # Get unique classes (excluding ignore_index)
+        unique_classes = np.unique(segmentation_mask)
+        unique_classes = unique_classes[unique_classes != self.ignore_index]
+        
+        all_bboxes = []
+        all_class_ids = []
+        
+        for class_id in unique_classes:
+            if class_id == 0:  # Skip background
+                continue
+                
+            # Create binary mask for this class
+            class_mask = (segmentation_mask == class_id).astype(np.uint8)
+            
+            # Find connected components for multiple instances
+            try:
+                from scipy import ndimage
+                labeled_mask, num_features = ndimage.label(class_mask)
+                
+                for instance_id in range(1, num_features + 1):
+                    # Create mask for this instance
+                    instance_mask = (labeled_mask == instance_id).astype(bool)
+                    
+                    # Check minimum area
+                    if np.sum(instance_mask) < min_area:
+                        continue
+                    
+                    # Convert to torch tensor for masks_to_boxes
+                    instance_tensor = torch.from_numpy(instance_mask)
+                    
+                    # Extract bounding box using torchvision.ops.masks_to_boxes
+                    bbox = masks_to_boxes(instance_tensor.unsqueeze(0))  # Add batch dimension
+                    
+                    if bbox.numel() > 0:  # If bbox was found
+                        bbox = bbox.squeeze(0).numpy()  # Remove batch dim and convert to numpy
+                        all_bboxes.append(bbox)
+                        all_class_ids.append(class_id)
+                        
+            except ImportError:
+                # Fallback: treat entire class as single object
+                if np.sum(class_mask) >= min_area:
+                    # Convert to torch tensor for masks_to_boxes
+                    class_tensor = torch.from_numpy(class_mask.astype(bool))
+                    
+                    # Extract bounding box using torchvision.ops.masks_to_boxes
+                    bbox = masks_to_boxes(class_tensor.unsqueeze(0))  # Add batch dimension
+                    
+                    if bbox.numel() > 0:  # If bbox was found
+                        bbox = bbox.squeeze(0).numpy()  # Remove batch dim and convert to numpy
+                        all_bboxes.append(bbox)
+                        all_class_ids.append(class_id)
+        
+        return all_bboxes, all_class_ids
+
+    def get_bboxes_from_segmentation(self, idx):
+        """
+        Load segmentation mask and extract bounding boxes using masks_to_boxes.
+        
+        Args:
+            idx (int): Index of the sample
+            
+        Returns:
+            tuple: (bboxes, class_ids) where bboxes are [x1, y1, x2, y2] format
+        """
+        if not self.extract_bboxes_from_masks or self.ann_dir is None:
+            return [], []
+            
+        # Get segmentation file path
+        img_info = self.img_infos[idx]
+        seg_map_path = osp.join(self.ann_dir, img_info['ann']['seg_map'])
+        
+        if not osp.exists(seg_map_path):
+            if DEBUG >= 1:
+                print(f"Segmentation file not found: {seg_map_path}")
+            return [], []
+        
+        # Load segmentation mask
+        try:
+            seg_mask = np.array(Image.open(seg_map_path))
+            return self.extract_bboxes_from_mask(seg_mask)
+        except Exception as e:
+            if DEBUG >= 1:
+                print(f"Error loading segmentation mask {seg_map_path}: {e}")
+            return [], []
+
+    def get_bbox_info(self, idx):
+        """
+        Get bounding box information for a sample.
+        If extract_bboxes_from_masks is True, extract from segmentation.
+        
+        Args:
+            idx (int): Index of the sample
+            
+        Returns:
+            list: List of bounding boxes in [x1, y1, x2, y2] format
+        """
+        if self.extract_bboxes_from_masks:
+            bboxes, class_ids = self.get_bboxes_from_segmentation(idx)
+            return bboxes
+        else:
+            # Could load from JSON files if available
+            return []
+
+    def draw_bounding_boxes_on_image(self, image, bboxes, class_ids=None, colors=None):
+        """
+        Draw bounding boxes on image using torchvision.utils.draw_bounding_boxes.
+        
+        Args:
+            image (np.ndarray or torch.Tensor): Input image
+            bboxes (list or torch.Tensor): Bounding boxes in [x1, y1, x2, y2] format
+            class_ids (list, optional): Class IDs for each bbox
+            colors (list, optional): Colors for each bbox
+            
+        Returns:
+            torch.Tensor: Image with drawn bounding boxes
+        """
+        if len(bboxes) == 0:
+            if torch.is_tensor(image):
+                return image
+            else:
+                return torch.from_numpy(image).permute(2, 0, 1).byte()
+        
+        # Convert image to tensor
+        if not torch.is_tensor(image):
+            if image.dtype != np.uint8:
+                image = (image * 255).astype(np.uint8)
+            image_tensor = torch.from_numpy(image).permute(2, 0, 1).byte()
+        else:
+            image_tensor = image.byte()
+        
+        # Convert bboxes to tensor
+        if not torch.is_tensor(bboxes):
+            bbox_tensor = torch.tensor(bboxes, dtype=torch.float32)
+        else:
+            bbox_tensor = bboxes.float()
+        
+        # Create labels
+        labels = None
+        if class_ids is not None:
+            if self.CLASSES is not None:
+                labels = [self.CLASSES[cid] if cid < len(self.CLASSES) else f"Class_{cid}" 
+                         for cid in class_ids]
+            else:
+                labels = [f"Class_{cid}" for cid in class_ids]
+        
+        # Default colors
+        if colors is None:
+            colors = ["red", "blue", "green", "yellow", "purple", "orange", "pink", "cyan"] * 10
+        
+        # Draw bounding boxes
+        try:
+            result_image = draw_bounding_boxes(
+                image_tensor,
+                bbox_tensor,
+                labels=labels,
+                colors=colors[:len(bbox_tensor)] if colors else None,
+                width=2
+            )
+            return result_image
+        except Exception as e:
+            if DEBUG >= 1:
+                print(f"Error drawing bounding boxes: {e}")
+            return image_tensor
 
     def get_classes_and_palette(self, classes=None, palette=None):
         """Get class names of current dataset.
