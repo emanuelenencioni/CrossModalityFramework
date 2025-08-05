@@ -54,5 +54,9 @@ def build_from_config(cfg):
                 events_clip_range=events_clip_range,
                 events_bins_5_avg_1=events_bins_5_avg_1
             ), None
+        
+    elif dataset_name.lower() in ["cityscape", "cityscapes", "cityscapes_dataset", "cityscape_dataset", "cityscapesdataset", "cityscapedataset"]:
+        from .cityscapes import CityscapesDataset
+        return CityscapesDataset(cfg), None
     else:
         raise NotImplementedError(f"Dataset {dataset_name} not implemented yet.")

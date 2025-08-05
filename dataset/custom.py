@@ -7,17 +7,17 @@ import os
 import os.path as osp
 from collections import OrderedDict
 from functools import reduce
-
-import mmcv
 import numpy as np
-
 from prettytable import PrettyTable
-from torch.utils.data import Dataset
+from PIL import Image
 
-from mmseg.utils import get_root_logger
+from torch.utils.data import Dataset
+from torchvision.utils import draw_bounding_boxes
+
 from .builder import DATASETS
-from torchvision import Compose
 from helpers import DEBUG
+from utils import parse
+
 
 @DATASETS.register_module()
 class CustomDataset(Dataset):
@@ -149,16 +149,16 @@ class CustomDataset(Dataset):
                         img_info['ann'] = dict(seg_map=seg_map)
                     img_infos.append(img_info)
         else:
-            for img in mmcv.scandir(img_dir, img_suffix, recursive=True):
-                img_info = dict(filename=img)
-                if ann_dir is not None:
-                    seg_map = img.replace(img_suffix, seg_map_suffix)
-                    img_info['ann'] = dict(seg_map=seg_map)
-                img_infos.append(img_info)
+            for entry in os.scandir(img_dir):
+                if entry.is_file() and entry.name.endswith(img_suffix):
+                    img_info = dict(filename=entry.name)
+                    if ann_dir is not None:
+                        seg_map = entry.name.replace(img_suffix, seg_map_suffix)
+                        img_info['ann'] = dict(seg_map=seg_map)
+                    img_infos.append(img_info)
 
         if DEBUG>=1: print(
-            f'Loaded {len(img_infos)} images from {img_dir}',
-            logger=get_root_logger())
+            f'Loaded {len(img_infos)} images from {img_dir}')
         return img_infos
 
     def get_ann_info(self, idx):
@@ -178,6 +178,7 @@ class CustomDataset(Dataset):
         results['seg_fields'] = []
         results['img_prefix'] = self.img_dir
         results['seg_prefix'] = self.ann_dir
+        results['BB'] = draw_bounding_boxes()
         if self.custom_classes:
             results['label_map'] = self.label_map
 
@@ -241,8 +242,7 @@ class CustomDataset(Dataset):
             if efficient_test:
                 gt_seg_map = seg_map
             else:
-                gt_seg_map = mmcv.imread(
-                    seg_map, flag='unchanged', backend='pillow')
+                gt_seg_map = np.array(Image.open(seg_map))
             gt_seg_maps.append(gt_seg_map)
         return gt_seg_maps
 
@@ -266,7 +266,7 @@ class CustomDataset(Dataset):
         self.custom_classes = True
         if isinstance(classes, str):
             # take it as a file path
-            class_names = mmcv.list_from_file(classes)
+            class_names = parse.list_from_file(classes)
         elif isinstance(classes, (tuple, list)):
             class_names = classes
         else:
