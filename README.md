@@ -76,6 +76,7 @@ This guide provides instructions to set up and run the framework:
 - [X] add train from saved model -> save and load config too.
 - [X] outputs return in the forward of YoloX but it should be the norm for all the heads. 
 - [ ] Add segmentation task (low prio)
+- [ ] Add same build from config as mmcv.
 
 
 - [X] implement argparsing for the hyperparams (override of .yaml)
