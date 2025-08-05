@@ -9,10 +9,12 @@ from functools import partial
 
 import numpy as np
 import torch
-from mmcv.parallel import collate
-from mmcv.runner import get_dist_info
-from mmcv.utils import Registry, build_from_cfg
 from torch.utils.data import DataLoader, DistributedSampler
+from torch import distributed as dist
+
+from utils import collate
+from utils import Registry, build_from_cfg
+from helpers import TORCH_VERSION
 
 if platform.system() != 'Windows':
     # https://github.com/pytorch/pytorch/issues/973
@@ -25,6 +27,22 @@ if platform.system() != 'Windows':
 
 DATASETS = Registry('dataset')
 PIPELINES = Registry('pipeline')
+
+def get_dist_info():
+    if TORCH_VERSION < '1.0':
+        initialized = dist._initialized
+    else:
+        if dist.is_available():
+            initialized = dist.is_initialized()
+        else:
+            initialized = False
+    if initialized:
+        rank = dist.get_rank()
+        world_size = dist.get_world_size()
+    else:
+        rank = 0
+        world_size = 1
+    return rank, world_size
 
 
 def _concat_dataset(cfg, default_args=None):

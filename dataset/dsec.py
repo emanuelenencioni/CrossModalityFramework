@@ -11,7 +11,7 @@ import functools
 #import mmcv
 import numpy as np
 # from mmcv.utils import print_log
-from .data_container import DataContainer
+from .utils.data_container import DataContainer
 from prettytable import PrettyTable
 import torchvision.transforms as standard_transforms
 from torch.utils.data import Dataset

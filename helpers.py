@@ -4,6 +4,8 @@ from typing import Dict, Tuple, Union, List, ClassVar, Optional, Iterable, Any, 
 import os
 import contextlib
 
+import torch
+
 def merge_dicts(ds):
     kvs = set([(k,v) for d in ds for k,v in d.items()])
     assert len(kvs) == len(set(kv[0] for kv in kvs)), f"cannot merge, {kvs} contains different values for the same key"
@@ -36,6 +38,7 @@ class ContextVar:
     def __lt__(self, x): return self.value < x
 
 DEBUG = ContextVar("DEBUG", 0)
+TORCH_VERSION = torch.__version__
 
 # **************** timer and profiler ****************
 
