@@ -9,11 +9,14 @@ from collections import OrderedDict
 from functools import reduce
 import numpy as np
 from prettytable import PrettyTable
-from PIL import Image
-import torch
+import json
+from PIL import Image, ImageDraw
+from tqdm import tqdm
 
+import torch
 from torch.utils.data import Dataset
 from torchvision.utils import draw_bounding_boxes
+from torchvision.transforms import Compose
 from torchvision.ops import masks_to_boxes
 
 #from .builder import DATASETS
@@ -338,15 +341,109 @@ class CustomDataset(Dataset):
         
         return all_bboxes, all_class_ids
 
+    def extract_bboxes_from_json_polygons(self, idx):
+        """
+        Extract bounding boxes from JSON polygon annotations.
+        Each polygon represents an individual instance of a class.
+        Args: idx (int): Index of the sample
+        Returns:
+            tuple: (bboxes, class_ids, instance_masks) where:
+                - bboxes are [x1, y1, x2, y2] format
+                - class_ids are the class indices 
+                - instance_masks are individual binary masks for each instance
+        """
+        if self.ann_dir is None: return [], [], []
+            
+        # Get JSON file path
+        img_info = self.img_infos[idx]
+        seg_map_path = osp.join(self.ann_dir, img_info['ann']['seg_map'])
+        json_file_path = seg_map_path.replace(self.seg_map_suffix, '_gtFine_polygons.json')
+        
+        if not osp.exists(json_file_path):
+            if DEBUG >= 1: print(f"JSON annotation file not found: {json_file_path}")
+            return [], [], []
+        
+        try:
+            # Load JSON annotation
+            with open(json_file_path, 'r') as f:
+                annotation_data = json.load(f)
+            
+            img_height = annotation_data.get('imgHeight', 1024)
+            img_width = annotation_data.get('imgWidth', 2048)
+            objects = annotation_data.get('objects', [])
+            
+            all_bboxes = []
+            all_class_ids = []
+            all_instance_masks = []
+            
+            for obj_idx, obj in enumerate(objects):
+                label = obj.get('label', '')
+                polygon = obj.get('polygon', [])
+                
+                if not polygon or len(polygon) < 3:
+                    continue
+                
+                # Map label to class index
+                class_id = -1
+                if self.CLASSES is not None and label in self.CLASSES:
+                    class_id = self.CLASSES.index(label)
+                elif hasattr(self, 'label_map') and self.label_map is not None:
+                    # Handle custom class mapping if needed
+                    original_class_id = self.CLASSES.index(label) if label in self.CLASSES else -1
+                    class_id = self.label_map.get(original_class_id, -1) if original_class_id != -1 else -1
+                
+                # Skip if class not found or is ignore class
+                if class_id == -1 or class_id == self.ignore_index:
+                    continue
+                
+                # Create binary mask from polygon
+                try:
+                    # Convert polygon to binary mask
+                    mask = Image.new('L', (img_width, img_height), 0)
+                    if polygon:
+                        # Flatten polygon points for PIL
+                        polygon_points = [tuple(point) for point in polygon]
+                        ImageDraw.Draw(mask).polygon(polygon_points, outline=1, fill=1)
+                    
+                    # Convert to numpy array
+                    mask_array = np.array(mask, dtype=bool)
+                    
+                    # Check minimum area
+                    if np.sum(mask_array) < self.bbox_min_area:
+                        continue
+                    
+                    # Convert to torch tensor for masks_to_boxes
+                    mask_tensor = torch.from_numpy(mask_array)
+                    
+                    # Extract bounding box using torchvision.ops.masks_to_boxes
+                    bbox = masks_to_boxes(mask_tensor.unsqueeze(0))  # Add batch dimension
+                    
+                    if bbox.numel() > 0:  # If bbox was found
+                        bbox = bbox.squeeze(0).numpy()  # Remove batch dim and convert to numpy
+                        
+                        # Validate bbox coordinates
+                        x1, y1, x2, y2 = bbox
+                        if x2 > x1 and y2 > y1:  # Valid bbox
+                            all_bboxes.append(bbox)
+                            all_class_ids.append(class_id)
+                            all_instance_masks.append(mask_array)
+                    elif DEBUG >= 1: print(f"No valid bbox found for object {obj_idx} in {json_file_path}")
+                    
+                except Exception as e:
+                    if DEBUG >= 1: print(f"Error processing polygon for object {obj_idx} in {json_file_path}: {e}")
+                    continue
+            
+            return all_bboxes, all_class_ids, all_instance_masks
+            
+        except Exception as e:
+            if DEBUG >= 1: print(f"Error loading JSON file {json_file_path}: {e}")
+            return [], [], []
+
     def get_bboxes_from_segmentation(self, idx):
         """
         Load segmentation mask and extract bounding boxes using masks_to_boxes.
-        
-        Args:
-            idx (int): Index of the sample
-            
-        Returns:
-            tuple: (bboxes, class_ids) where bboxes are [x1, y1, x2, y2] format
+        Args: idx (int): Index of the sample  
+        Returns: tuple: (bboxes, class_ids) where bboxes are [x1, y1, x2, y2] format
         """
         if not self.extract_bboxes_from_masks or self.ann_dir is None:
             return [], []
@@ -354,10 +451,13 @@ class CustomDataset(Dataset):
         # Get segmentation file path
         img_info = self.img_infos[idx]
         seg_map_path = osp.join(self.ann_dir, img_info['ann']['seg_map'])
-        
+        json_file_path = seg_map_path.replace(self.seg_map_suffix, '.json')
+        if not osp.exists(json_file_path):
+            if DEBUG >= 1: print(f"Segmentation json file not found: {json_file_path}")
+            return [], []
+
         if not osp.exists(seg_map_path):
-            if DEBUG >= 1:
-                print(f"Segmentation file not found: {seg_map_path}")
+            if DEBUG >= 1: print(f"Segmentation file not found: {seg_map_path}")
             return [], []
         
         # Load segmentation mask
@@ -368,41 +468,41 @@ class CustomDataset(Dataset):
             if DEBUG >= 1:
                 print(f"Error loading segmentation mask {seg_map_path}: {e}")
             return [], []
+    def get_bboxes_from_json_segmentation(self, idx):
+        """
+        Get bounding box information for a sample from JSON polygon annotations.
+        Args: idx (int): Index of the sample
+        Returns: list: List of bounding boxes in [x1, y1, x2, y2] format
+        """
+        bboxes, class_ids, _ = self.extract_bboxes_from_json_polygons(idx)
+        return bboxes
 
     def get_bbox_info(self, idx):
         """
         Get bounding box information for a sample.
-        If extract_bboxes_from_masks is True, extract from segmentation.
-        
-        Args:
-            idx (int): Index of the sample
-            
-        Returns:
-            list: List of bounding boxes in [x1, y1, x2, y2] format
+        Priority: JSON polygons > segmentation masks > empty list
+        Args: idx (int): Index of the sample
+        Returns: list: List of bounding boxes in [x1, y1, x2, y2] format
         """
-        if self.extract_bboxes_from_masks:
-            bboxes, class_ids = self.get_bboxes_from_segmentation(idx)
-            return bboxes
-        else:
-            # Could load from JSON files if available
-            return []
+        bboxes, _, _ = self.extract_bboxes_from_json_polygons(idx)
+        
+        if len(bboxes) > 0: return bboxes
+        elif self.extract_bboxes_from_masks:
+            return self.get_bboxes_from_segmentation(idx)
+        else: return []
 
     def draw_bounding_boxes_on_image(self, image, bboxes, class_ids=None, colors=None):
         """
         Draw bounding boxes on image using torchvision.utils.draw_bounding_boxes.
-        
         Args:
             image (np.ndarray or torch.Tensor): Input image
             bboxes (list or torch.Tensor): Bounding boxes in [x1, y1, x2, y2] format
             class_ids (list, optional): Class IDs for each bbox
             colors (list, optional): Colors for each bbox
-            
-        Returns:
-            torch.Tensor: Image with drawn bounding boxes
+        Returns: torch.Tensor: Image with drawn bounding boxes
         """
         if len(bboxes) == 0:
-            if torch.is_tensor(image):
-                return image
+            if torch.is_tensor(image): return image
             else:
                 return torch.from_numpy(image).permute(2, 0, 1).byte()
         

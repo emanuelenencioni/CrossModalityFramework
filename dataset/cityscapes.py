@@ -30,7 +30,17 @@ class CityscapesDataset(CustomDataset):
                'traffic light', 'traffic sign', 'vegetation', 'terrain', 'sky',
                'person', 'rider', 'car', 'truck', 'bus', 'train', 'motorcycle',
                'bicycle')
-
+    DSEC_DET_CLASSES = {
+        11: "pedestrian", #the person class
+        12: "rider", 
+        13: "car",
+        15: "bus",
+        14: "truck",
+        18: "bicycle",
+        17: "motorcycle",
+        16: "train",
+    }
+    
     PALETTE = [[128, 64, 128], [244, 35, 232], [70, 70, 70], [102, 102, 156],
                [190, 153, 153], [153, 153, 153], [250, 170, 30], [220, 220, 0],
                [107, 142, 35], [152, 251, 152], [70, 130, 180], [220, 20, 60],
@@ -42,16 +52,12 @@ class CityscapesDataset(CustomDataset):
                  seg_map_suffix='_gtFine_labelTrainIds.png',
                  **kwargs):
         # Extract bounding box parameters if provided
-        bbox_ann_dir = kwargs.get('bbox_ann_dir', None)
         bbox_ann_suffix = kwargs.get('bbox_ann_suffix', '.json')
         load_bboxes = kwargs.get('load_bboxes', False)
         
         super(CityscapesDataset, self).__init__(
             img_suffix=img_suffix, 
             seg_map_suffix=seg_map_suffix, 
-            bbox_ann_dir=bbox_ann_dir,
-            bbox_ann_suffix=bbox_ann_suffix,
-            load_bboxes=load_bboxes,
             **kwargs)
 
     @staticmethod
