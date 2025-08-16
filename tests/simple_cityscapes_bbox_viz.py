@@ -21,9 +21,10 @@ from tqdm import tqdm
 # Disable matplotlib GUI backend for server usage
 import matplotlib
 matplotlib.use('Agg')
-
+sys.path.append(os.path.dirname(os.path.abspath(__file__)).split('tests')[0])  # Add parent directory to path
+from helpers import DEBUG
 # Add the current directory to Python path for imports
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
 
 # Import the CityscapesDataset class
 from dataset.cityscapes import CityscapesDataset
@@ -33,7 +34,7 @@ DATA_ROOT = "./data"  # Change this to your dataset root
 IMG_DIR = "cityscapes/leftImg8bit/train/aachen"  # Relative to DATA_ROOT
 ANN_DIR = "cityscapes/gtFine/train/aachen"       # Relative to DATA_ROOT
 OUTPUT_DIR = "./bbox_visualizations"
-MIN_BBOX_AREA = 100  # Minimum area for bounding boxes
+MIN_BBOX_AREA = 500  # Minimum area for bounding boxes
 NUM_SAMPLES = 5      # Number of samples to process
 
 
@@ -78,7 +79,8 @@ def initialize_cityscapes_dataset(data_root, img_dir, ann_dir, min_bbox_area):
             test_mode=True,   # For visualization purposes
             load_bboxes=True,
             extract_bboxes_from_masks=True,
-            bbox_min_area=min_bbox_area
+            bbox_min_area=min_bbox_area,
+            custom_classes=True,  # Assuming this is defined in dataset/custom.py
         )
         
         print(f"✓ Initialized Cityscapes dataset with {len(dataset)} samples")
@@ -177,22 +179,21 @@ def visualize_and_save(dataset, image_np, segmentation_mask, bboxes, class_ids, 
     colors = ['red', 'blue', 'green', 'yellow', 'purple', 'orange', 'pink', 'cyan']
     
     for i, (bbox, class_id) in enumerate(zip(bboxes, class_ids)):
-        if class_id in dataset.DSEC_DET_CLASSES.keys():
-            x1, y1, x2, y2 = bbox
-            color = colors[class_id % len(colors)]
-            
-            # Draw bounding box
-            rect = patches.Rectangle((x1, y1), x2-x1, y2-y1, 
-                                linewidth=3, edgecolor=color, 
-                                facecolor='none', alpha=0.8)
-            axes[2].add_patch(rect)
-            
-            # Add class label
-            if class_id < len(dataset.CLASSES):
-                class_name = dataset.DSEC_DET_CLASSES[class_id]
-                axes[2].text(x1, y1-5, class_name, 
-                        bbox=dict(boxstyle="round,pad=0.3", facecolor=color, alpha=0.8),
-                        fontsize=10, color='white', fontweight='bold')
+        x1, y1, x2, y2 = bbox
+        color = colors[class_id % len(colors)]
+        
+        # Draw bounding box
+        rect = patches.Rectangle((x1, y1), x2-x1, y2-y1, 
+                            linewidth=3, edgecolor=color, 
+                            facecolor='none', alpha=0.8)
+        axes[2].add_patch(rect)
+        
+        # Add class label
+        if class_id < len(dataset.CLASSES):
+            class_name = dataset.DSEC_DET_CLASSES[class_id]
+            axes[2].text(x1, y1-5, class_name, 
+                    bbox=dict(boxstyle="round,pad=0.3", facecolor=color, alpha=0.8),
+                    fontsize=10, color='white', fontweight='bold')
     
     axes[2].axis('off')
     
