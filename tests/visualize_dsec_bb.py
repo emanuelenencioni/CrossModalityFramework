@@ -17,7 +17,7 @@ import random
 import cv2
 
 # Add the current directory to Python path for imports
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+sys.path.append(os.path.dirname(os.path.abspath(__file__).split('tests')[0]))
 
 from dataset.dsec import DSECDataset
 
