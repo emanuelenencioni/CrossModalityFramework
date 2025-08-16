@@ -96,7 +96,7 @@ class CustomDataset(Dataset):
                  palette=None,
                  load_bboxes=False,
                  extract_bboxes_from_masks=True,
-                 bbox_min_area=100):
+                 bbox_min_area=100, **kwargs):
         self.pipeline = Compose(pipeline)
         self.img_dir = img_dir
         self.img_suffix = img_suffix
@@ -110,7 +110,11 @@ class CustomDataset(Dataset):
         self.label_map = None
         self.CLASSES, self.PALETTE = self.get_classes_and_palette(
             classes, palette)
-        
+        self.custom_classes = kwargs.get('custom_classes', False)
+        if self.custom_classes: 
+            self.DETECTION_CLASSES = kwargs.get('DETECTION_CLASSES', None)
+            assert self.DETECTION_CLASSES is not None, "DETECTION_CLASSES must be provided when custom_classes is True"
+
         # Bounding box support
         self.load_bboxes = load_bboxes
         self.extract_bboxes_from_masks = extract_bboxes_from_masks
@@ -393,8 +397,7 @@ class CustomDataset(Dataset):
                     class_id = self.label_map.get(original_class_id, -1) if original_class_id != -1 else -1
                 
                 # Skip if class not found or is ignore class
-                if class_id == -1 or class_id == self.ignore_index:
-                    continue
+                if class_id == -1 or class_id == self.ignore_index or class_id not in self.DETECTION_CLASSES.keys(): continue
                 
                 # Create binary mask from polygon
                 try:
