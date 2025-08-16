@@ -141,7 +141,6 @@ class CustomDataset(Dataset):
     def load_annotations(self, img_dir, img_suffix, ann_dir, seg_map_suffix,
                          split):
         """Load annotation from directory.
-
         Args:
             img_dir (str): Path to image directory
             img_suffix (str): Suffix of images.
@@ -150,9 +149,7 @@ class CustomDataset(Dataset):
             split (str|None): Split txt file. If split is specified, only file
                 with suffix in the splits will be loaded. Otherwise, all images
                 in img_dir/ann_dir will be loaded. Default: None
-
-        Returns:
-            list[dict]: All image info of dataset.
+        Returns: list[dict]: All image info of dataset.
         """
 
         img_infos = []
@@ -180,14 +177,9 @@ class CustomDataset(Dataset):
 
     def get_ann_info(self, idx):
         """Get annotation by index.
-
-        Args:
-            idx (int): Index of data.
-
-        Returns:
-            dict: Annotation info of specified index.
+        Args: idx (int): Index of data.
+        Returns: dict: Annotation info of specified index.
         """
-
         return self.img_infos[idx]['ann']
 
     def pre_pipeline(self, results):
@@ -211,15 +203,9 @@ class CustomDataset(Dataset):
 
     def __getitem__(self, idx):
         """Get training/test data after pipeline.
-
-        Args:
-            idx (int): Index of data.
-
-        Returns:
-            dict: Training/test data (with annotation if `test_mode` is set
-                False).
+        Args: idx (int): Index of data.
+        Returns: dict: Training/test data (with annotation if `test_mode` is set False).
         """
-
         if self.test_mode:
             return self.prepare_test_img(idx)
         else:
@@ -227,13 +213,8 @@ class CustomDataset(Dataset):
 
     def prepare_train_img(self, idx):
         """Get training data and annotations after pipeline.
-
-        Args:
-            idx (int): Index of data.
-
-        Returns:
-            dict: Training data and annotation after pipeline with new keys
-                introduced by pipeline.
+        Args: idx (int): Index of data.
+        Returns: dict: Training data and annotation after pipeline with new keys introduced by pipeline.
         """
 
         img_info = self.img_infos[idx]
@@ -244,15 +225,9 @@ class CustomDataset(Dataset):
 
     def prepare_test_img(self, idx):
         """Get testing data after pipeline.
-
-        Args:
-            idx (int): Index of data.
-
-        Returns:
-            dict: Testing data after pipeline with new keys introduced by
-                pipeline.
+        Args: idx (int): Index of data.
+        Returns: dict: Testing data after pipeline with new keys introduced by pipeline.
         """
-
         img_info = self.img_infos[idx]
         results = dict(img_info=img_info, idx=idx)
         self.pre_pipeline(results)
@@ -553,7 +528,6 @@ class CustomDataset(Dataset):
 
     def get_classes_and_palette(self, classes=None, palette=None):
         """Get class names of current dataset.
-
         Args:
             classes (Sequence[str] | str | None): If classes is None, use
                 default CLASSES defined by builtin dataset. If classes is a
@@ -614,25 +588,16 @@ class CustomDataset(Dataset):
 
         return palette
 
-    def evaluate(self,
-                 results,
-                 metric='mIoU',
-                 logger=None,
-                 efficient_test=False,
-                 **kwargs):
+    def evaluate(self, results, metric='mIoU', logger=None, efficient_test=False, **kwargs):
         """Evaluate the dataset.
-
         Args:
             results (list): Testing results of the dataset.
             metric (str | list[str]): Metrics to be evaluated. 'mIoU',
                 'mDice' and 'mFscore' are supported.
             logger (logging.Logger | None | str): Logger used for printing
                 related information during evaluation. Default: None.
-
-        Returns:
-            dict[str, float]: Default metrics.
+        Returns: dict[str, float]: Default metrics.
         """
-
         if isinstance(metric, str):
             metric = [metric]
         allowed_metrics = ['mIoU', 'mDice', 'mFscore']
