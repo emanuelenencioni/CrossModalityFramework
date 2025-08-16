@@ -67,25 +67,13 @@ This guide provides instructions to set up and run the framework:
 
 ## TODO
 
-
-- [X] put config in the  loss function build
-- [X] one of the backbone = None -> unimodal training, a questo punto sarebbe ottimo che dual modality non è altro che il training di 2 unimodal backbone.
-- [X] in yaml: backbone and head inside model
-- [X] refactor sl.py e ssl.py in unimodal.py multimodal.py
-- [ ] create framework for domain adaptation -> (fare codice per fare domain adaptation cioe in cui si traina il new model e con anche l'old model) -> this one deactivated for now
-- [X] add train from saved model -> save and load config too.
-- [X] outputs return in the forward of YoloX but it should be the norm for all the heads. 
+- [ ] check cityscape output as DSEC
+- [ ] FIX: errors in multimodal training.
+- [ ] FIX: errors in DSEC-det -> bbox should be aligned to images. 
+- [ ] check for validity of VGs
+ 
 - [ ] Add segmentation task (low prio)
 - [ ] Add same build from config as mmcv.
-
-
-- [X] implement argparsing for the hyperparams (override of .yaml)
-    - [X] implementation
-    - [X] FIX: given a parameter not present in the yaml file -> ~~add to cfg~~. Instead if param not present in cfg, it will not be added.
-
-- [X] encoders must return a dict -> flatten_feat, projected_feat, preflatten_feat.
-- [X] Add detection head, remember NO flatten -> yolo latest version (with no transformers)
-    - [/] watch for the YoloV11 loss function (i watched the YoloX instead)
 
 - [ ] (per la proposta di metodo) considerare di fare la loss di contrastive solo sulla bbox e tutto il resto considerarlo come negative
 - [ ] Refactor unimodal -> SingleModality. 
