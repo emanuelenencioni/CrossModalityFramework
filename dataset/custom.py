@@ -26,9 +26,7 @@ from utils import parse
 
 
 class CustomDataset(Dataset):
-    """Custom dataset for semantic segmentation. An example of file structure
-    is as followed.
-
+    """Custom dataset for semantic segmentation. An example of file structure is as followed.
     .. code-block:: none
 
         ├── data
@@ -138,8 +136,7 @@ class CustomDataset(Dataset):
         """Total number of samples of data."""
         return len(self.img_infos)
 
-    def load_annotations(self, img_dir, img_suffix, ann_dir, seg_map_suffix,
-                         split):
+    def load_annotations(self, img_dir, img_suffix, ann_dir, seg_map_suffix, split):
         """Load annotation from directory.
         Args:
             img_dir (str): Path to image directory
@@ -192,14 +189,14 @@ class CustomDataset(Dataset):
         if self.load_bboxes:
             idx = results.get('idx', 0)  # Get index if available
             bboxes = self.get_bbox_info(idx) if hasattr(self, 'get_bbox_info') else []
-            results['bboxes'] = bboxes
-            results['bbox_fields'] = ['bboxes'] if bboxes else []
+            results['BB'] = bboxes
+            results['BB_fields'] = ['bboxes'] if bboxes else []
         else:
-            results['bboxes'] = []
-            results['bbox_fields'] = []
-            
+            results['BB'] = []
+            results['BB_fields'] = []
+
         if self.custom_classes:
-            results['label_map'] = self.label_map
+            results['label_map'] = self.DETECTION_CLASSES
 
     def __getitem__(self, idx):
         """Get training/test data after pipeline.
@@ -359,9 +356,7 @@ class CustomDataset(Dataset):
                 label = obj.get('label', '')
                 polygon = obj.get('polygon', [])
                 
-                if not polygon or len(polygon) < 3:
-                    continue
-                
+                if not polygon or len(polygon) < 3: continue
                 # Map label to class index
                 class_id = -1
                 if self.CLASSES is not None and label in self.CLASSES:
@@ -370,10 +365,9 @@ class CustomDataset(Dataset):
                     # Handle custom class mapping if needed
                     original_class_id = self.CLASSES.index(label) if label in self.CLASSES else -1
                     class_id = self.label_map.get(original_class_id, -1) if original_class_id != -1 else -1
-                
+
                 # Skip if class not found or is ignore class
                 if class_id == -1 or class_id == self.ignore_index or class_id not in self.DETECTION_CLASSES.keys(): continue
-                
                 # Create binary mask from polygon
                 try:
                     # Convert polygon to binary mask
@@ -387,8 +381,7 @@ class CustomDataset(Dataset):
                     mask_array = np.array(mask, dtype=bool)
                     
                     # Check minimum area
-                    if np.sum(mask_array) < self.bbox_min_area:
-                        continue
+                    if np.sum(mask_array) < self.bbox_min_area: continue
                     
                     # Convert to torch tensor for masks_to_boxes
                     mask_tensor = torch.from_numpy(mask_array)

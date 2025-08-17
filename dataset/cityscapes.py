@@ -30,7 +30,7 @@ class CityscapesDataset(CustomDataset):
                'traffic light', 'traffic sign', 'vegetation', 'terrain', 'sky',
                'person', 'rider', 'car', 'truck', 'bus', 'train', 'motorcycle',
                'bicycle')
-    DSEC_DET_CLASSES = {
+    DSEC_DET_CLASSES = { # map to DSEC detection classes, order of labels is important, correspond to the same as dsec. so it needed to be the same index.
         11: "pedestrian", #the person class
         12: "rider", 
         13: "car",
@@ -39,6 +39,14 @@ class CityscapesDataset(CustomDataset):
         18: "bicycle",
         17: "motorcycle",
         16: "train",
+        "pedestrian": 0,
+        "rider": 1,
+        "car": 2,
+        "bus": 3,
+        "truck": 4,
+        "bicycle": 5,
+        "motorcycle": 6,
+        "train": 7
     }
     
     PALETTE = [[128, 64, 128], [244, 35, 232], [70, 70, 70], [102, 102, 156],
