@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-Simple script to extract and visualize Cityscapes dataset with bounding boxes using CityscapesDataset class.
-This script works independently and saves all visualizations to disk.
+Test script for CityscapesDataset class with bounding box extraction.
+This script tests the dataset loading, image processing, and bbox extraction functionality.
 
 Usage:
-    python simple_cityscapes_bbox_viz.py
+    python test_cityscapes_dataset.py
     
 Modify the paths at the top of the script to match your dataset location.
 """
@@ -21,10 +21,10 @@ from tqdm import tqdm
 # Disable matplotlib GUI backend for server usage
 import matplotlib
 matplotlib.use('Agg')
-sys.path.append(os.path.dirname(os.path.abspath(__file__)).split('tests')[0])  # Add parent directory to path
-from helpers import DEBUG
-# Add the current directory to Python path for imports
 
+# Add parent directory to path for imports
+sys.path.append(os.path.dirname(os.path.abspath(__file__)).split('tests')[0])
+from helpers import DEBUG
 
 # Import the CityscapesDataset class
 from dataset.cityscapes import CityscapesDataset
@@ -33,20 +33,9 @@ from dataset.cityscapes import CityscapesDataset
 DATA_ROOT = "./data"  # Change this to your dataset root
 IMG_DIR = "cityscapes/leftImg8bit/train/aachen"  # Relative to DATA_ROOT
 ANN_DIR = "cityscapes/gtFine/train/aachen"       # Relative to DATA_ROOT
-OUTPUT_DIR = "./bbox_visualizations"
+OUTPUT_DIR = "./cityscapes_dataset_test"
 MIN_BBOX_AREA = 500  # Minimum area for bounding boxes
 NUM_SAMPLES = 5      # Number of samples to process
-
-
-def create_minimal_pipeline():
-    """Create a minimal pipeline for loading images and annotations."""
-    pipeline = [
-        dict(type='LoadImageFromFile'),
-        dict(type='LoadAnnotations', with_bbox=True, with_seg=True),
-        dict(type='DefaultFormatBundle'),
-        dict(type='Collect', keys=['img', 'gt_semantic_seg'])
-    ]
-    return pipeline
 
 
 def initialize_cityscapes_dataset(data_root, img_dir, ann_dir, min_bbox_area):
@@ -67,256 +56,238 @@ def initialize_cityscapes_dataset(data_root, img_dir, ann_dir, min_bbox_area):
         return None
     
     try:
-        # Create a simplified pipeline for visualization
-        pipeline = create_minimal_pipeline()
-        
-        # Initialize CityscapesDataset with bounding box extraction
+        # Initialize CityscapesDataset with bounding box extraction and image loading
         dataset = CityscapesDataset(
-            pipeline=pipeline,
+            pipeline=[],  # Empty pipeline since we handle loading in pre_pipeline
             img_dir=img_path,
             ann_dir=ann_path,
             data_root=None,  # Already using absolute paths
             test_mode=True,   # For visualization purposes
-            load_bboxes=True,
+            load_bboxes=True,  # Enable bbox loading
             extract_bboxes_from_masks=True,
             bbox_min_area=min_bbox_area,
-            custom_classes=True,  # Assuming this is defined in dataset/custom.py
+            custom_classes=True,  # Enable detection classes mapping
+            DETECTION_CLASSES=CityscapesDataset.DSEC_DET_CLASSES  # Pass detection classes
         )
         
         print(f"✓ Initialized Cityscapes dataset with {len(dataset)} samples")
         print(f"✓ Classes: {len(dataset.CLASSES)} classes")
-        print(f"detection classes: {dataset.DSEC_DET_CLASSES}")
+        print(f"✓ Detection classes mapping: {dataset.DSEC_DET_CLASSES}")
         return dataset
         
     except Exception as e:
         print(f"❌ Error initializing dataset: {e}")
+        import traceback
+        traceback.print_exc()
         return None
 
 
-def load_sample_data(dataset, idx):
-    """Load image and segmentation data for a sample."""
+def test_sample_loading(dataset, idx):
+    """Test loading a single sample through the dataset interface."""
+    print(f"\n--- Testing Sample {idx} ---")
+    
     try:
-        # Get image info
-        img_info = dataset.img_infos[idx]
-        img_path = os.path.join(dataset.img_dir, img_info['filename'])
+        # Get sample data through dataset interface
+        sample = dataset[idx]
         
-        # Load image
-        image = Image.open(img_path).convert('RGB')
-        image_np = np.array(image)
+        print(f"✓ Sample loaded successfully")
+        print(f"  Keys in sample: {list(sample.keys())}")
         
-        # Load segmentation mask
-        if 'ann' in img_info:
-            seg_path = os.path.join(dataset.ann_dir, img_info['ann']['seg_map'])
-            segmentation_mask = np.array(Image.open(seg_path))
+        # Extract data from sample
+        image = sample.get('image', None)
+        bboxes = sample.get('BB', [])
+        class_ids = sample.get('BB_class_ids', [])
+        padding_info = sample.get('padding_info', {})
+        
+        # Print sample information
+        if image is not None:
+            print(f"  Image shape: {image.shape}")
+            print(f"  Image dtype: {image.dtype}")
+            print(f"  Image range: [{image.min():.3f}, {image.max():.3f}]")
         else:
-            print(f"⚠ No annotation found for sample {idx}")
-            segmentation_mask = np.zeros(image_np.shape[:2], dtype=np.uint8)
+            print(f"  ❌ No image found in sample")
+            return None
         
-        return image_np, segmentation_mask, img_info['filename']
+        print(f"  Number of bounding boxes: {len(bboxes)}")
+        print(f"  Class IDs: {class_ids}")
+        
+        if padding_info:
+            print(f"  Padding info:")
+            print(f"    Original size: {padding_info.get('original_size', 'N/A')}")
+            print(f"    Padding: left={padding_info.get('pad_left', 0)}, top={padding_info.get('pad_top', 0)}")
+            print(f"    Scale factor: {padding_info.get('scale_factor', 1.0):.3f}")
+        
+        return {
+            'image': image,
+            'bboxes': bboxes,
+            'class_ids': class_ids,
+            'padding_info': padding_info,
+            'filename': sample['img_info']['filename']
+        }
         
     except Exception as e:
         print(f"❌ Error loading sample {idx}: {e}")
-        return None, None, None
+        import traceback
+        traceback.print_exc()
+        return None
 
 
-def extract_bboxes_using_dataset(dataset, idx, segmentation_mask):
-    """Extract bounding boxes using the dataset's built-in methods."""
-    try:
-        # Try JSON polygon method first (most accurate)
-        bboxes, class_ids, _ = dataset.extract_bboxes_from_json_polygons(idx)
-        
-        if len(bboxes) > 0:
-            print(f"  ✓ Extracted {len(bboxes)} bboxes from JSON polygons")
-            return bboxes, class_ids
-        
-        # Fallback to segmentation mask method
-        bboxes, class_ids = dataset.extract_bboxes_from_mask(segmentation_mask)
-        print(f"  ✓ Extracted {len(bboxes)} bboxes from segmentation mask")
-        return bboxes, class_ids
-        
-    except Exception as e:
-        print(f"  ❌ Error extracting bboxes: {e}")
-        return [], []
-
-
-def create_colored_segmentation_mask(segmentation_mask, palette):
-    """Create colored segmentation mask using dataset palette."""
-    colored_mask = np.zeros((*segmentation_mask.shape, 3), dtype=np.uint8)
+def visualize_sample_with_dataset(dataset, sample_data, save_path):
+    """Create visualization using dataset methods and sample data."""
     
-    for class_id in range(len(palette)):
-        mask = segmentation_mask == class_id
-        colored_mask[mask] = palette[class_id]
+    image = sample_data['image']
+    bboxes = sample_data['bboxes']
+    class_ids = sample_data['class_ids']
+    filename = sample_data['filename']
     
-    return colored_mask
-
-
-def visualize_and_save(dataset, image_np, segmentation_mask, bboxes, class_ids, save_path):
-    """Create and save visualization with original image, segmentation, and bboxes."""
+    # Convert image from [0,1] to [0,255] for visualization
+    if image.max() <= 1.0:
+        vis_image = (image * 255).astype(np.uint8)
+    else:
+        vis_image = image.astype(np.uint8)
     
-    # Create colored segmentation mask using dataset palette
-    colored_mask = create_colored_segmentation_mask(segmentation_mask, dataset.PALETTE)
+    # Create figure with subplots
+    fig, axes = plt.subplots(1, 2, figsize=(15, 7))
     
-    # Create figure with three subplots
-    fig, axes = plt.subplots(1, 3, figsize=(18, 6))
-    
-    # 1. Original image
-    axes[0].imshow(image_np)
-    axes[0].set_title('Original Image', fontsize=14, fontweight='bold')
+    # 1. Original padded/resized image
+    axes[0].imshow(vis_image)
+    axes[0].set_title(f'Processed Image (512x512)\n{filename}', fontsize=12, fontweight='bold')
     axes[0].axis('off')
     
-    # 2. Segmentation mask
-    axes[1].imshow(colored_mask)
-    axes[1].set_title('Segmentation Mask', fontsize=14, fontweight='bold')
+    # 2. Image with bounding boxes
+    axes[1].imshow(vis_image)
+    axes[1].set_title(f'With Bounding Boxes ({len(bboxes)} boxes)', fontsize=12, fontweight='bold')
     axes[1].axis('off')
     
-    # 3. Combined: image with bounding boxes
-    axes[2].imshow(image_np, alpha=0.8)
-    axes[2].imshow(colored_mask, alpha=0.3)
-    axes[2].set_title(f'Image + Segmentation + Bboxes ({len(bboxes)} boxes)', 
-                     fontsize=14, fontweight='bold')
-    
-    # Draw bounding boxes
+    # Draw bounding boxes using detection class names
     colors = ['red', 'blue', 'green', 'yellow', 'purple', 'orange', 'pink', 'cyan']
     
     for i, (bbox, class_id) in enumerate(zip(bboxes, class_ids)):
         x1, y1, x2, y2 = bbox
-        color = colors[class_id % len(colors)]
+        color = colors[i % len(colors)]
         
         # Draw bounding box
         rect = patches.Rectangle((x1, y1), x2-x1, y2-y1, 
-                            linewidth=3, edgecolor=color, 
-                            facecolor='none', alpha=0.8)
-        axes[2].add_patch(rect)
+                               linewidth=2, edgecolor=color, 
+                               facecolor='none', alpha=0.8)
+        axes[1].add_patch(rect)
+        
+        # Get class name from detection classes mapping
+        if class_id in dataset.DSEC_DET_CLASSES:
+            class_name = dataset.DSEC_DET_CLASSES[class_id]
+        elif class_id < len(dataset.CLASSES):
+            class_name = dataset.CLASSES[class_id]
+        else:
+            class_name = f"Class_{class_id}"
         
         # Add class label
-        if class_id < len(dataset.CLASSES):
-            class_name = dataset.DSEC_DET_CLASSES[class_id]
-            axes[2].text(x1, y1-5, class_name, 
+        axes[1].text(x1, y1-5, class_name, 
                     bbox=dict(boxstyle="round,pad=0.3", facecolor=color, alpha=0.8),
                     fontsize=10, color='white', fontweight='bold')
     
-    axes[2].axis('off')
-    
-    # Save the figure
     plt.tight_layout()
     plt.savefig(save_path, dpi=150, bbox_inches='tight', 
                 facecolor='white', edgecolor='none')
-    plt.close()  # Close to free memory
+    plt.close()
     
     print(f"  ✓ Saved visualization: {save_path}")
 
 
-def save_bbox_info(dataset, bboxes, class_ids, info_path):
-    """Save bounding box information to text file."""
+def test_bbox_extraction_methods(dataset, idx):
+    """Test different bounding box extraction methods."""
+    print(f"\n--- Testing Bbox Extraction Methods for Sample {idx} ---")
+    
+    try:
+        # Test JSON polygon extraction
+        json_bboxes, json_class_ids, json_masks = dataset.extract_bboxes_from_json_polygons(idx)
+        print(f"  JSON polygons: {len(json_bboxes)} bboxes")
+        
+        # Test segmentation mask extraction
+        seg_bboxes, seg_class_ids = dataset.get_bboxes_from_segmentation(idx)
+        print(f"  Segmentation masks: {len(seg_bboxes)} bboxes")
+        
+        # Test combined method
+        combined_bboxes = dataset.get_bbox_info(idx)
+        print(f"  Combined method: {len(combined_bboxes)} bboxes")
+        
+        # Test padded and scaled bbox extraction
+        transformed_bboxes, transformed_class_ids, padding_info = dataset.get_padded_and_scaled_bbox_info(idx)
+        print(f"  Transformed (512x512): {len(transformed_bboxes)} bboxes")
+        
+        return {
+            'json': (json_bboxes, json_class_ids),
+            'segmentation': (seg_bboxes, seg_class_ids),
+            'transformed': (transformed_bboxes, transformed_class_ids, padding_info)
+        }
+        
+    except Exception as e:
+        print(f"❌ Error testing bbox extraction: {e}")
+        return None
+
+
+def save_sample_info(dataset, sample_data, bbox_results, info_path):
+    """Save detailed sample information to text file."""
     with open(info_path, 'w') as f:
-        f.write("Bounding Box Information\n")
-        f.write("=" * 40 + "\n")
-        f.write(f"Total bounding boxes: {len(bboxes)}\n")
-        f.write(f"Minimum area threshold: {MIN_BBOX_AREA}\n\n")
+        f.write("Cityscapes Dataset Sample Analysis\n")
+        f.write("=" * 50 + "\n")
+        f.write(f"Filename: {sample_data['filename']}\n")
+        f.write(f"Image shape: {sample_data['image'].shape}\n")
+        f.write(f"Image dtype: {sample_data['image'].dtype}\n")
+        f.write(f"Image range: [{sample_data['image'].min():.3f}, {sample_data['image'].max():.3f}]\n\n")
         
-        if len(bboxes) == 0:
-            f.write("No bounding boxes found.\n")
-            return
+        # Padding information
+        padding_info = sample_data['padding_info']
+        if padding_info:
+            f.write("Padding/Scaling Information:\n")
+            f.write("-" * 30 + "\n")
+            f.write(f"Original size: {padding_info.get('original_size', 'N/A')}\n")
+            f.write(f"Square size: {padding_info.get('square_size', 'N/A')}\n")
+            f.write(f"Padding left: {padding_info.get('pad_left', 0)}\n")
+            f.write(f"Padding top: {padding_info.get('pad_top', 0)}\n")
+            f.write(f"Scale factor: {padding_info.get('scale_factor', 1.0):.3f}\n\n")
         
-        # Group by class
-        class_counts = {}
-        for class_id in class_ids:
-            class_counts[class_id] = class_counts.get(class_id, 0) + 1
-        
-        f.write("Bounding boxes by class:\n")
-        for class_id, count in sorted(class_counts.items()):
-            class_name = dataset.CLASSES[class_id] if class_id < len(dataset.CLASSES) else f"class_{class_id}"
-            f.write(f"  {class_name} (ID {class_id}): {count} boxes\n")
-        
-        f.write("\nDetailed box information:\n")
-        f.write("-" * 40 + "\n")
-        
-        for i, (bbox, class_id) in enumerate(zip(bboxes, class_ids)):
-            x1, y1, x2, y2 = bbox
-            width = x2 - x1
-            height = y2 - y1
-            area = width * height
+        # Bounding box extraction results
+        if bbox_results:
+            f.write("Bounding Box Extraction Results:\n")
+            f.write("-" * 35 + "\n")
             
-            class_name = dataset.CLASSES[class_id] if class_id < len(dataset.CLASSES) else f"class_{class_id}"
+            json_bboxes, json_class_ids = bbox_results['json']
+            f.write(f"JSON polygons: {len(json_bboxes)} bboxes\n")
             
-            f.write(f"Box {i+1}: {class_name}\n")
-            f.write(f"  Coords: [{x1:.1f}, {y1:.1f}, {x2:.1f}, {y2:.1f}]\n")
-            f.write(f"  Size: {width:.1f} x {height:.1f} (area: {area:.1f})\n\n")
+            seg_bboxes, seg_class_ids = bbox_results['segmentation']
+            f.write(f"Segmentation masks: {len(seg_bboxes)} bboxes\n")
+            
+            transformed_bboxes, transformed_class_ids, _ = bbox_results['transformed']
+            f.write(f"Transformed (final): {len(transformed_bboxes)} bboxes\n\n")
+            
+            # Detailed bbox information
+            if transformed_bboxes:
+                f.write("Final Bounding Boxes (512x512 space):\n")
+                f.write("-" * 40 + "\n")
+                
+                for i, (bbox, class_id) in enumerate(zip(transformed_bboxes, transformed_class_ids)):
+                    x1, y1, x2, y2 = bbox
+                    width = x2 - x1
+                    height = y2 - y1
+                    area = width * height
+                    
+                    # Get class name
+                    if class_id in dataset.DSEC_DET_CLASSES:
+                        class_name = dataset.DSEC_DET_CLASSES[class_id]
+                    elif class_id < len(dataset.CLASSES):
+                        class_name = dataset.CLASSES[class_id]
+                    else:
+                        class_name = f"Class_{class_id}"
+                    
+                    f.write(f"Box {i+1}: {class_name} (ID: {class_id})\n")
+                    f.write(f"  Coords: [{x1:.1f}, {y1:.1f}, {x2:.1f}, {y2:.1f}]\n")
+                    f.write(f"  Size: {width:.1f} x {height:.1f} (area: {area:.1f})\n\n")
 
 
-def process_sample(dataset, idx, output_dir):
-    """Process a single sample using the dataset class."""
-    print(f"\nProcessing sample {idx + 1}")
-    
-    # Load sample data
-    image_np, segmentation_mask, filename = load_sample_data(dataset, idx)
-    
-    if image_np is None:
-        return False
-    
-    print(f"  Filename: {filename}")
-    print(f"  Image shape: {image_np.shape}")
-    print(f"  Mask shape: {segmentation_mask.shape}")
-    print(f"  Unique classes in mask: {len(np.unique(segmentation_mask))}")
-    
-    # Extract bounding boxes using dataset methods
-    bboxes, class_ids = extract_bboxes_using_dataset(dataset, idx, segmentation_mask)
-    
-    # Create output filename
-    base_name = os.path.splitext(filename)[0]
-    
-    # Save visualization
-    viz_path = os.path.join(output_dir, f"{base_name}_visualization.png")
-    visualize_and_save(dataset, image_np, segmentation_mask, bboxes, class_ids, viz_path)
-    
-    # Save individual images
-    Image.fromarray(image_np).save(
-        os.path.join(output_dir, f"{base_name}_original.png")
-    )
-    
-    colored_mask = create_colored_segmentation_mask(segmentation_mask, dataset.PALETTE)
-    Image.fromarray(colored_mask).save(
-        os.path.join(output_dir, f"{base_name}_segmentation.png")
-    )
-    
-    # Save bounding box info
-    info_path = os.path.join(output_dir, f"{base_name}_bbox_info.txt")
-    save_bbox_info(dataset, bboxes, class_ids, info_path)
-    
-    print(f"  ✓ Extracted {len(bboxes)} bounding boxes")
-    return True
-
-
-def create_class_legend(dataset, output_dir):
-    """Create a class legend using the dataset's palette."""
-    fig, ax = plt.subplots(figsize=(12, 8))
-    
-    # Create color patches for each class
-    patches_list = []
-    for i, (class_name, color) in enumerate(zip(dataset.CLASSES, dataset.PALETTE)):
-        color_normalized = [c/255.0 for c in color]  # Normalize to 0-1 range
-        patch = patches.Patch(color=color_normalized, label=class_name)
-        patches_list.append(patch)
-    
-    # Create legend
-    ax.legend(handles=patches_list, loc='center', ncol=3, 
-             frameon=False, fontsize=12)
-    ax.axis('off')
-    
-    plt.title('Cityscapes Dataset Class Legend', fontsize=16, fontweight='bold')
-    plt.tight_layout()
-    
-    legend_path = os.path.join(output_dir, "class_legend.png")
-    plt.savefig(legend_path, dpi=150, bbox_inches='tight')
-    plt.close()
-    
-    print(f"✓ Class legend saved: {legend_path}")
-
-
-def main():
-    """Main function."""
-    print("Cityscapes Bounding Box Visualization (Using CityscapesDataset Class)")
-    print("=" * 70)
+def test_dataset_functionality():
+    """Main test function."""
+    print("Cityscapes Dataset Class Test")
+    print("=" * 50)
     
     # Check dependencies
     try:
@@ -345,52 +316,132 @@ def main():
         print(f"   DATA_ROOT = {DATA_ROOT}")
         print(f"   IMG_DIR = {IMG_DIR}")
         print(f"   ANN_DIR = {ANN_DIR}")
-        print("\nExpected structure:")
-        print("   DATA_ROOT/IMG_DIR/<city>/<image>_leftImg8bit.png")
-        print("   DATA_ROOT/ANN_DIR/<city>/<image>_gtFine_labelTrainIds.png")
-        print("   DATA_ROOT/ANN_DIR/<city>/<image>_gtFine_polygons.json (optional)")
         return 1
     
-    # Create class legend
-    create_class_legend(dataset, OUTPUT_DIR)
-    
-    # Process samples
-    num_to_process = min(NUM_SAMPLES, len(dataset))
-    print(f"\nProcessing {num_to_process} samples...")
+    # Test samples
+    num_to_test = min(NUM_SAMPLES, len(dataset))
+    print(f"\nTesting {num_to_test} samples...")
     
     success_count = 0
-    for i in tqdm(range(num_to_process), desc="Processing samples"):
-        if process_sample(dataset, i, OUTPUT_DIR):
-            success_count += 1
+    for i in tqdm(range(num_to_test), desc="Testing samples"):
+        print(f"\n{'='*60}")
+        
+        # Test sample loading through dataset interface
+        sample_data = test_sample_loading(dataset, i)
+        
+        if sample_data is None:
+            continue
+        
+        # Test bbox extraction methods
+        bbox_results = test_bbox_extraction_methods(dataset, i)
+        
+        # Create output filename
+        base_name = os.path.splitext(sample_data['filename'])[0]
+        
+        # Save visualization
+        viz_path = os.path.join(OUTPUT_DIR, f"{base_name}_dataset_test.png")
+        visualize_sample_with_dataset(dataset, sample_data, viz_path)
+        
+        # Save processed image
+        processed_image = sample_data['image']
+        if processed_image.max() <= 1.0:
+            processed_image = (processed_image * 255).astype(np.uint8)
+        Image.fromarray(processed_image).save(
+            os.path.join(OUTPUT_DIR, f"{base_name}_processed_512x512.png")
+        )
+        
+        # Save detailed info
+        info_path = os.path.join(OUTPUT_DIR, f"{base_name}_test_info.txt")
+        save_sample_info(dataset, sample_data, bbox_results, info_path)
+        
+        success_count += 1
+        print(f"✓ Sample {i} test completed successfully")
     
-    # Save summary
-    summary_path = os.path.join(OUTPUT_DIR, "summary.txt")
-    with open(summary_path, 'w') as f:
-        f.write("Cityscapes Bounding Box Extraction Summary\n")
-        f.write("=" * 45 + "\n")
-        f.write(f"Samples processed: {success_count}/{num_to_process}\n")
-        f.write(f"Minimum bbox area: {MIN_BBOX_AREA}\n")
-        f.write(f"Dataset root: {DATA_ROOT}\n")
-        f.write(f"Image directory: {IMG_DIR}\n")
-        f.write(f"Annotation directory: {ANN_DIR}\n")
-        f.write(f"Output directory: {OUTPUT_DIR}\n")
-        f.write(f"Classes: {', '.join(dataset.CLASSES)}\n")
-        f.write(f"Extraction methods: JSON polygons (preferred), segmentation masks (fallback)\n")
+    # Create detection classes legend
+    create_detection_classes_legend(dataset, OUTPUT_DIR)
     
-    print(f"\n{'='*70}")
-    print("Processing complete!")
-    print(f"Successfully processed: {success_count}/{num_to_process} samples")
+    # Save test summary
+    save_test_summary(dataset, success_count, num_to_test, OUTPUT_DIR)
+    
+    print(f"\n{'='*60}")
+    print("Dataset Test Complete!")
+    print(f"Successfully tested: {success_count}/{num_to_test} samples")
     print(f"Output directory: {OUTPUT_DIR}")
     print("Generated files for each sample:")
-    print("  - *_visualization.png (combined view)")
-    print("  - *_original.png (original image)")
-    print("  - *_segmentation.png (colored segmentation)")
-    print("  - *_bbox_info.txt (bounding box details)")
-    print("  - class_legend.png (class color legend)")
-    print("  - summary.txt (overall summary)")
+    print("  - *_dataset_test.png (visualization)")
+    print("  - *_processed_512x512.png (processed image)")
+    print("  - *_test_info.txt (detailed information)")
+    print("  - detection_classes_legend.png (class legend)")
+    print("  - test_summary.txt (overall summary)")
     
     return 0
 
 
+def create_detection_classes_legend(dataset, output_dir):
+    """Create a legend for detection classes."""
+    fig, ax = plt.subplots(figsize=(10, 6))
+    
+    # Create patches for detection classes
+    patches_list = []
+    colors = ['red', 'blue', 'green', 'yellow', 'purple', 'orange', 'pink', 'cyan']
+    
+    # Extract detection class names (string keys only)
+    detection_classes = [v for k, v in dataset.DSEC_DET_CLASSES.items() if isinstance(k, int)]
+    
+    for i, class_name in enumerate(detection_classes):
+        color = colors[i % len(colors)]
+        patch = patches.Patch(color=color, label=class_name)
+        patches_list.append(patch)
+    
+    # Create legend
+    ax.legend(handles=patches_list, loc='center', ncol=3, 
+             frameon=False, fontsize=12)
+    ax.axis('off')
+    
+    plt.title('DSEC Detection Classes Legend', fontsize=16, fontweight='bold')
+    plt.tight_layout()
+    
+    legend_path = os.path.join(output_dir, "detection_classes_legend.png")
+    plt.savefig(legend_path, dpi=150, bbox_inches='tight')
+    plt.close()
+    
+    print(f"✓ Detection classes legend saved: {legend_path}")
+
+
+def save_test_summary(dataset, success_count, total_count, output_dir):
+    """Save test summary information."""
+    summary_path = os.path.join(output_dir, "test_summary.txt")
+    
+    with open(summary_path, 'w') as f:
+        f.write("Cityscapes Dataset Test Summary\n")
+        f.write("=" * 40 + "\n")
+        f.write(f"Samples tested: {success_count}/{total_count}\n")
+        f.write(f"Dataset size: {len(dataset)} total samples\n")
+        f.write(f"Minimum bbox area: {MIN_BBOX_AREA}\n")
+        f.write(f"Target image size: 512x512\n\n")
+        
+        f.write("Dataset Configuration:\n")
+        f.write("-" * 25 + "\n")
+        f.write(f"Image directory: {IMG_DIR}\n")
+        f.write(f"Annotation directory: {ANN_DIR}\n")
+        f.write(f"Image suffix: {dataset.img_suffix}\n")
+        f.write(f"Segmentation suffix: {dataset.seg_map_suffix}\n")
+        f.write(f"Load bboxes: {dataset.load_bboxes}\n")
+        f.write(f"Extract from masks: {dataset.extract_bboxes_from_masks}\n\n")
+        
+        f.write("Class Information:\n")
+        f.write("-" * 20 + "\n")
+        f.write(f"Total classes: {len(dataset.CLASSES)}\n")
+        f.write(f"Classes: {', '.join(dataset.CLASSES)}\n\n")
+        
+        f.write("Detection Classes Mapping:\n")
+        f.write("-" * 30 + "\n")
+        for k, v in dataset.DSEC_DET_CLASSES.items():
+            if isinstance(k, int):
+                f.write(f"  {k} -> {v}\n")
+        
+        f.write(f"\nTest completed successfully!\n")
+
+
 if __name__ == "__main__":
-    exit(main())
+    exit(test_dataset_functionality())

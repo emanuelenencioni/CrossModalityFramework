@@ -3,6 +3,7 @@
 # - Additional dataset location logging
 # Took from CMDA - https://github.com/CMDA/CMDA
 
+from ctypes.wintypes import RGB
 import os
 import os.path as osp
 from collections import OrderedDict
@@ -95,7 +96,7 @@ class CustomDataset(Dataset):
                  load_bboxes=False,
                  extract_bboxes_from_masks=True,
                  bbox_min_area=100, **kwargs):
-        self.pipeline = Compose(pipeline)
+        #self.pipeline = Compose(pipeline)
         self.img_dir = img_dir
         self.img_suffix = img_suffix
         self.ann_dir = ann_dir
@@ -187,12 +188,50 @@ class CustomDataset(Dataset):
         
         # Add bounding box information if available
         if self.load_bboxes:
-            idx = results.get('idx', 0)  # Get index if available
-            bboxes = self.get_bbox_info(idx) if hasattr(self, 'get_bbox_info') else []
-            results['BB'] = bboxes
-            results['BB_fields'] = ['bboxes'] if bboxes else []
+            idx = results.get('idx', 0)
+            
+            # Load image with padding and scaling to 512x512
+            padded_resized_image, scale_factor, padding_info = self.load_and_resize_image(idx, target_size=(512, 512))
+            
+            if padded_resized_image is not None:
+                # Convert PIL image to numpy array and normalize to [0, 1]
+                image_array = np.array(padded_resized_image, dtype=np.float32) / 255.0
+                results['image'] = image_array
+
+                results['padding_info'] = padding_info
+                
+                # Get transformed bounding boxes
+                transformed_bboxes, class_ids, _ = self.get_padded_and_scaled_bbox_info(idx, target_size=(512, 512))
+                results['BB'] = transformed_bboxes
+                results['BB_class_ids'] = class_ids
+                results['BB_fields'] = ['bboxes'] if transformed_bboxes else []
+                
+                if DEBUG >= 2:
+                    orig_size = padding_info.get('original_size', (0, 0))
+                    print(f"Loaded image: {orig_size} -> padded to square -> resized to (512, 512) "
+                          f"with {len(transformed_bboxes)} transformed bboxes")
+            else:
+                # Fallback: create empty image
+                results['image'] = np.zeros((512, 512, 3), dtype=np.float32)
+                results['padding_info'] = {}
+                results['BB'] = []
+                results['BB_class_ids'] = []
+                results['BB_fields'] = []
         else:
+            # If not loading bboxes, still load and process the image
+            idx = results.get('idx', 0)
+            padded_resized_image, scale_factor, padding_info = self.load_and_resize_image(idx, target_size=(512, 512))
+            
+            if padded_resized_image is not None:
+                image_array = np.array(padded_resized_image, dtype=np.float32) / 255.0
+                results['image'] = image_array
+            else:
+                results['image'] = np.zeros((512, 512, 3), dtype=np.float32)
+            
+            results['image_size'] = (512, 512)
+            results['padding_info'] = padding_info
             results['BB'] = []
+            results['BB_class_ids'] = []
             results['BB_fields'] = []
 
         if self.custom_classes:
@@ -218,7 +257,7 @@ class CustomDataset(Dataset):
         ann_info = self.get_ann_info(idx)
         results = dict(img_info=img_info, ann_info=ann_info, idx=idx)
         self.pre_pipeline(results)
-        return self.pipeline(results)
+        return results#self.pipeline(results)
 
     def prepare_test_img(self, idx):
         """Get testing data after pipeline.
@@ -228,7 +267,7 @@ class CustomDataset(Dataset):
         img_info = self.img_infos[idx]
         results = dict(img_info=img_info, idx=idx)
         self.pre_pipeline(results)
-        return self.pipeline(results)
+        return results#self.pipeline(results)
 
     def format_results(self, results, **kwargs):
         """Place holder to format result to dataset specific output."""
@@ -667,3 +706,194 @@ class CustomDataset(Dataset):
             for file_name in results:
                 os.remove(file_name)
         return eval_results
+
+    def load_and_resize_image(self, idx, target_size=(512, 512)):
+        """
+        Load image, add black padding to make it square, then resize to target size.
+        Args:
+            idx (int): Index of the sample
+            target_size (tuple): Target size (width, height). Default: (512, 512)
+        Returns:
+            tuple: (resized_image, scale_factor, padding_info) where:
+                   - resized_image is PIL Image resized to target_size
+                   - scale_factor is the uniform scale applied after padding
+                   - padding_info is dict with padding details
+        """
+        # Get image path
+        img_info = self.img_infos[idx]
+        img_path = osp.join(self.img_dir, img_info['filename'])
+        
+        if not osp.exists(img_path):
+            if DEBUG >= 1:
+                print(f"Image file not found: {img_path}")
+            return None, 1.0, {}
+        
+        try:
+            # Load image
+            image = Image.open(img_path).convert('RGB')
+            original_size = image.size  # (width, height)
+            
+            # Get original size from JSON if available (more accurate)
+            json_width, json_height = original_size
+            if self.ann_dir is not None:
+                seg_map_path = osp.join(self.ann_dir, img_info['ann']['seg_map'])
+                json_file_path = seg_map_path.replace(self.seg_map_suffix, '_gtFine_polygons.json')
+                
+                if osp.exists(json_file_path):
+                    try:
+                        with open(json_file_path, 'r') as f:
+                            annotation_data = json.load(f)
+                        
+                        json_width = annotation_data.get('imgWidth', original_size[0])
+                        json_height = annotation_data.get('imgHeight', original_size[1])
+                        
+                    except Exception as e:
+                        if DEBUG >= 2:
+                            print(f"Could not read size from JSON {json_file_path}: {e}")
+                        # Keep original_size from PIL
+            
+            # Create square image with black padding
+            max_dim = max(json_width, json_height)
+            
+            # Calculate padding needed
+            pad_width = max_dim - json_width
+            pad_height = max_dim - json_height
+            
+            # Split padding evenly on both sides
+            pad_left = pad_width // 2
+            pad_right = pad_width - pad_left
+            pad_top = pad_height // 2
+            pad_bottom = pad_height - pad_top
+            
+            # Create new square image with black background
+            square_image = Image.new('RGB', (max_dim, max_dim), color=(0, 0, 0))
+            
+            # Paste original image in the center
+            square_image.paste(image, (pad_left, pad_top))
+            
+            # Calculate uniform scale factor for resizing square to target
+            scale_factor = target_size[0] / max_dim  # Assuming target is square
+            
+            # Resize square image to target size
+            resized_image = square_image.resize(target_size, Image.LANCZOS)
+            
+            # Store padding information for bbox transformation
+            padding_info = {
+                'original_size': (json_width, json_height),
+                'square_size': max_dim,
+                'pad_left': pad_left,
+                'pad_top': pad_top,
+                'pad_right': pad_right,
+                'pad_bottom': pad_bottom,
+                'scale_factor': scale_factor
+            }
+            
+            if DEBUG >= 2:
+                print(f"Padded image from {(json_width, json_height)} to {(max_dim, max_dim)}, "
+                      f"then resized to {target_size}, scale: {scale_factor:.3f}")
+            
+            return resized_image, scale_factor, padding_info
+            
+        except Exception as e:
+            if DEBUG >= 1:
+                print(f"Error loading/processing image {img_path}: {e}")
+            return None, 1.0, {}
+
+    def transform_bboxes_with_padding(self, bboxes, padding_info):
+        """
+        Transform bounding boxes to account for padding and scaling.
+        Args:
+            bboxes (list): List of bounding boxes in [x1, y1, x2, y2] format
+            padding_info (dict): Padding information from load_and_resize_image
+        Returns: list: Transformed bounding boxes in [x1, y1, x2, y2] format
+        """
+        if not bboxes or not padding_info:
+            return []
+        
+        pad_left = padding_info['pad_left']
+        pad_top = padding_info['pad_top']
+        scale_factor = padding_info['scale_factor']
+        
+        transformed_bboxes = []
+        
+        for bbox in bboxes:
+            x1, y1, x2, y2 = bbox
+            
+            # Step 1: Add padding offset
+            x1_padded = x1 + pad_left
+            y1_padded = y1 + pad_top
+            x2_padded = x2 + pad_left
+            y2_padded = y2 + pad_top
+            
+            # Step 2: Apply uniform scaling
+            x1_scaled = x1_padded * scale_factor
+            y1_scaled = y1_padded * scale_factor
+            x2_scaled = x2_padded * scale_factor
+            y2_scaled = y2_padded * scale_factor
+            
+            transformed_bboxes.append([x1_scaled, y1_scaled, x2_scaled, y2_scaled])
+        
+        return transformed_bboxes
+
+    def get_padded_and_scaled_bbox_info(self, idx, target_size=(512, 512)):
+        """
+        Get bounding box information transformed for padded and scaled image.
+        Args:
+            idx (int): Index of the sample
+            target_size (tuple): Target size (width, height). Default: (512, 512)
+        Returns:
+            tuple: (transformed_bboxes, class_ids, padding_info) where:
+                   - transformed_bboxes are bounding boxes for the final image
+                   - class_ids are the corresponding class IDs
+                   - padding_info contains transformation details
+        """
+        # Get original bounding boxes
+        bboxes, class_ids, _ = self.extract_bboxes_from_json_polygons(idx)
+        
+        if len(bboxes) == 0:
+            # Fallback to segmentation masks
+            bboxes, class_ids = self.get_bboxes_from_segmentation(idx)
+        
+        # Get padding and scaling information
+        _, _, padding_info = self.load_and_resize_image(idx, target_size)
+        
+        # Transform bounding boxes
+        transformed_bboxes = self.transform_bboxes_with_padding(bboxes, padding_info)
+        
+        return transformed_bboxes, class_ids, padding_info
+
+    def reverse_bbox_transformation(self, transformed_bboxes, padding_info):
+        """
+        Reverse the bbox transformation to get original coordinates.
+        Args:
+            transformed_bboxes (list): Bounding boxes in transformed space
+            padding_info (dict): Padding information from load_and_resize_image
+        Returns: list: Bounding boxes in original image coordinates
+        """
+        if not transformed_bboxes or not padding_info:
+            return []
+        
+        pad_left = padding_info['pad_left']
+        pad_top = padding_info['pad_top']
+        scale_factor = padding_info['scale_factor']
+        
+        original_bboxes = []
+        
+        for bbox in transformed_bboxes:
+            x1_scaled, y1_scaled, x2_scaled, y2_scaled = bbox
+            
+            # Step 1: Reverse scaling
+            x1_padded = x1_scaled / scale_factor
+            y1_padded = y1_scaled / scale_factor
+            x2_padded = x2_scaled / scale_factor
+            y2_padded = y2_scaled / scale_factor
+            
+            # Step 2: Remove padding offset
+            x1_original = x1_padded - pad_left
+            y1_original = y1_padded - pad_top
+            x2_original = x2_padded - pad_left
+            y2_original = y2_padded - pad_top
+            
+            original_bboxes.append([x1_original, y1_original, x2_original, y2_original])
+        
+        return original_bboxes
