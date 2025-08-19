@@ -9,6 +9,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch import meshgrid
+from helpers import DEBUG
 
 #from yolox.utils import bboxes_iou, meshgrid  #visualize_assign, cxcywh2xyxy
 
@@ -325,7 +326,7 @@ class YOLOXHead(nn.Module):
         cls_preds = outputs[:, :, 5:]  # [batch, n_anchors_all, n_cls]
 
         # calculate targets
-        nlabel = (labels.sum(dim=2) > 0).sum(dim=1)  # number of objects
+        nlabel = (labels[:, :, 0] >= 0).sum(dim=1)  # number of objects
 
         total_num_anchors = outputs.shape[1]
         x_shifts = torch.cat(x_shifts, 1)  # [1, n_anchors_all]
@@ -514,6 +515,30 @@ class YOLOXHead(nn.Module):
         obj_preds_ = obj_preds[batch_idx][fg_mask]
         num_in_boxes_anchor = bboxes_preds_per_image.shape[0]
 
+        # Handle case when no predictions pass geometry constraints
+        if num_in_boxes_anchor == 0:
+            if DEBUG>=1: print("Warning: No anchors passed geometry constraints, skipping assignment.")
+            # If no anchors pass the geometry
+            # Return empty assignments
+            gt_matched_classes = gt_classes.new_zeros(0, dtype=torch.long)
+            pred_ious_this_matching = gt_classes.new_zeros(0, dtype=torch.float)
+            matched_gt_inds = gt_classes.new_zeros(0, dtype=torch.long)
+            num_fg = 0
+            
+            if mode == "cpu":
+                gt_matched_classes = gt_matched_classes.cpu()
+                pred_ious_this_matching = pred_ious_this_matching.cpu()
+                matched_gt_inds = matched_gt_inds.cpu()
+                fg_mask = fg_mask.cpu()
+
+            return (
+                gt_matched_classes,
+                fg_mask,
+                pred_ious_this_matching,
+                matched_gt_inds,
+                num_fg,
+            )
+
         if mode == "cpu":
             gt_bboxes_per_image = gt_bboxes_per_image.cpu()
             bboxes_preds_per_image = bboxes_preds_per_image.cpu()
@@ -545,7 +570,6 @@ class YOLOXHead(nn.Module):
             + 3.0 * pair_wise_ious_loss
             + float(1e6) * (~geometry_relation)
         )
-
         (
             num_fg,
             gt_matched_classes,
@@ -600,14 +624,25 @@ class YOLOXHead(nn.Module):
         return anchor_filter, geometry_relation
 
     def simota_matching(self, cost, pair_wise_ious, gt_classes, num_gt, fg_mask):
+        # Handle empty cost matrix
+        if cost.numel() == 0 or cost.size(1) == 0:
+            # Return empty assignments
+            gt_matched_classes = gt_classes.new_zeros(0, dtype=torch.long)
+            pred_ious_this_matching = gt_classes.new_zeros(0, dtype=torch.float)
+            matched_gt_inds = gt_classes.new_zeros(0, dtype=torch.long)
+            num_fg = 0
+            return num_fg, gt_matched_classes, pred_ious_this_matching, matched_gt_inds
+            
         matching_matrix = torch.zeros_like(cost, dtype=torch.uint8)
 
         n_candidate_k = min(10, pair_wise_ious.size(1))
         topk_ious, _ = torch.topk(pair_wise_ious, n_candidate_k, dim=1)
         dynamic_ks = torch.clamp(topk_ious.sum(1).int(), min=1)
         for gt_idx in range(num_gt):
+            # Ensure k doesn't exceed the number of available candidates
+            k = min(dynamic_ks[gt_idx].item(), cost.size(1))
             _, pos_idx = torch.topk(
-                cost[gt_idx], k=dynamic_ks[gt_idx], largest=False
+                cost[gt_idx], k=k, largest=False
             )
             matching_matrix[gt_idx][pos_idx] = 1
 
