@@ -83,7 +83,7 @@ def parse_arguments():
     # Add arguments for all parameters in the YAML file
     parser.add_argument("--experiment_name", type=str, help="Experiment name", default=None)
     parser.add_argument("--seed", type=int, help="Seed value", default=None)
-    parser.add_argument("--device", type=str, help="Device to use (cuda or cpu)", default=None)
+    parser.add_argument("--device", type=str, help="Device to use (cuda or cpu)", default="cuda")
     parser.add_argument("--checkpoint_path", type=str, help="Path to the checkpoint file", default=None)
     # Dataset parameters
     parser.add_argument("--dataset-name", type=str, help="Dataset name", default=None, dest="dataset-name")
@@ -310,8 +310,7 @@ if __name__ == "__main__":
             wandb.watch(model)
             wandb_log = True
 
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    print(device)
+    device = cfg['device'] if 'device' in cfg.keys() else "cuda"
     model.to(device)    
 
     # Place this right after model.to(device)
@@ -327,5 +326,5 @@ if __name__ == "__main__":
     else:
         trainer = Trainer(model,train_dl, opti, criterion, device,  cfg, root_folder=dir_path, wandb_log=wandb_log, pretrained_checkpoint=pretrained_checkpoint)
     in_size = cfg['model']['backbone']['input_size']
-    evaluator = DSECEvaluator(test_dl, img_size=(in_size, in_size), confthre=0.001, nmsthre=0.65, num_classes=cfg['dataset']['bb_num_classes'], device=device)
+    evaluator = None#DSECEvaluator(test_dl, img_size=(in_size, in_size), confthre=0.001, nmsthre=0.65, num_classes=cfg['dataset']['bb_num_classes'], device=device)
     trainer.train(evaluator=evaluator)
