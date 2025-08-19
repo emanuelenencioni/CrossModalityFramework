@@ -19,6 +19,7 @@ from torch.utils.data import Dataset
 from torchvision.utils import draw_bounding_boxes
 from torchvision.transforms import Compose
 from torchvision.ops import masks_to_boxes
+import torchvision.transforms as standard_transforms
 
 #from .builder import DATASETS
 from helpers import DEBUG
@@ -101,6 +102,8 @@ class CustomDataset(Dataset):
         self.img_suffix = img_suffix
         self.ann_dir = ann_dir
         self.seg_map_suffix = seg_map_suffix
+        self.mean_std = ([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+        self.image_transform = standard_transforms.Compose([standard_transforms.ToTensor(), standard_transforms.Normalize(*self.mean_std)])
         self.split = split
         self.data_root = data_root
         self.test_mode = test_mode
@@ -118,6 +121,7 @@ class CustomDataset(Dataset):
         self.load_bboxes = load_bboxes
         self.extract_bboxes_from_masks = extract_bboxes_from_masks
         self.bbox_min_area = bbox_min_area
+        self.max_labels = kwargs.get('max_labels', 100)  # Maximum number of bounding boxes per image
 
         # join paths if data_root is specified
         if self.data_root is not None:
@@ -195,16 +199,14 @@ class CustomDataset(Dataset):
             
             if padded_resized_image is not None:
                 # Convert PIL image to numpy array and normalize to [0, 1]
-                image_array = np.array(padded_resized_image, dtype=np.float32) / 255.0
-                results['image'] = image_array
+                results['image'] = self.image_transform(padded_resized_image)
 
                 results['padding_info'] = padding_info
                 
                 # Get transformed bounding boxes
-                transformed_bboxes, class_ids, _ = self.get_padded_and_scaled_bbox_info(idx, target_size=(512, 512))
+                transformed_bboxes, _ = self.get_padded_and_scaled_bbox_info(idx, target_size=(512, 512))
                 results['BB'] = transformed_bboxes
-                results['BB_class_ids'] = class_ids
-                results['BB_fields'] = ['bboxes'] if transformed_bboxes else []
+                #results['BB_fields'] = ['bboxes'] if transformed_bboxes else []
                 
                 if DEBUG >= 2:
                     orig_size = padding_info.get('original_size', (0, 0))
@@ -212,27 +214,23 @@ class CustomDataset(Dataset):
                           f"with {len(transformed_bboxes)} transformed bboxes")
             else:
                 # Fallback: create empty image
-                results['image'] = np.zeros((512, 512, 3), dtype=np.float32)
+                results['image'] = torch.zeros((3, 512, 512), dtype=torch.float32)
                 results['padding_info'] = {}
-                results['BB'] = []
-                results['BB_class_ids'] = []
-                results['BB_fields'] = []
+                results['BB'] = torch.zeros((self.max_labels, 5), dtype=torch.float32)
         else:
             # If not loading bboxes, still load and process the image
             idx = results.get('idx', 0)
             padded_resized_image, scale_factor, padding_info = self.load_and_resize_image(idx, target_size=(512, 512))
             
             if padded_resized_image is not None:
-                image_array = np.array(padded_resized_image, dtype=np.float32) / 255.0
-                results['image'] = image_array
+                results['image'] = self.image_transform(padded_resized_image)
             else:
-                results['image'] = np.zeros((512, 512, 3), dtype=np.float32)
-            
+                results['image'] = torch.zeros((3, 512, 512), dtype=torch.float32)
+
             results['image_size'] = (512, 512)
             results['padding_info'] = padding_info
-            results['BB'] = []
-            results['BB_class_ids'] = []
-            results['BB_fields'] = []
+            results['BB'] =  torch.zeros((self.max_labels, 5), dtype=torch.float32)
+        
 
         if self.custom_classes:
             results['label_map'] = self.DETECTION_CLASSES
@@ -293,7 +291,7 @@ class CustomDataset(Dataset):
             min_area (int, optional): Minimum area threshold for bounding boxes
             
         Returns:
-            tuple: (bboxes, class_ids) where bboxes are [x1, y1, x2, y2] format
+            list: bboxes in [class_id, x, y, h, w] format
         """
         if min_area is None:
             min_area = self.bbox_min_area
@@ -306,8 +304,9 @@ class CustomDataset(Dataset):
         unique_classes = np.unique(segmentation_mask)
         unique_classes = unique_classes[unique_classes != self.ignore_index]
         
-        all_bboxes = []
-        all_class_ids = []
+        # Initialize tensor for bounding boxes [max_labels, 5] where 5 = [class_id, x, y, h, w]
+        all_bboxes = torch.zeros((self.max_labels, 5), dtype=torch.float32)
+        bbox_count = 0
         
         for class_id in unique_classes:
             if class_id == 0:  # Skip background
@@ -336,9 +335,19 @@ class CustomDataset(Dataset):
                     bbox = masks_to_boxes(instance_tensor.unsqueeze(0))  # Add batch dimension
                     
                     if bbox.numel() > 0:  # If bbox was found
-                        bbox = bbox.squeeze(0).numpy()  # Remove batch dim and convert to numpy
-                        all_bboxes.append(bbox)
-                        all_class_ids.append(class_id)
+                        bbox = bbox.squeeze(0)  # Remove batch dim, keep as tensor
+                        x1, y1, x2, y2 = bbox
+                        # Convert to [class_id, x, y, h, w] format
+                        bbox_formatted = torch.tensor([class_id, x1, y1, y2 - y1, x2 - x1], dtype=torch.float32)
+                        
+                        # Check if we exceed max_labels
+                        if bbox_count >= self.max_labels:
+                            if DEBUG >= 1:
+                                print(f"Warning: Exceeded max_labels ({self.max_labels}) for segmentation mask extraction")
+                            break
+                        
+                        all_bboxes[bbox_count] = bbox_formatted
+                        bbox_count += 1
                         
             except ImportError:
                 # Fallback: treat entire class as single object
@@ -350,11 +359,24 @@ class CustomDataset(Dataset):
                     bbox = masks_to_boxes(class_tensor.unsqueeze(0))  # Add batch dimension
                     
                     if bbox.numel() > 0:  # If bbox was found
-                        bbox = bbox.squeeze(0).numpy()  # Remove batch dim and convert to numpy
-                        all_bboxes.append(bbox)
-                        all_class_ids.append(class_id)
+                        bbox = bbox.squeeze(0)  # Remove batch dim, keep as tensor
+                        x1, y1, x2, y2 = bbox
+                        # Convert to [class_id, x, y, h, w] format
+                        bbox_formatted = torch.tensor([class_id, x1, y1, y2 - y1, x2 - x1], dtype=torch.float32)
+                        
+                        # Check if we exceed max_labels
+                        if bbox_count >= self.max_labels:
+                            if DEBUG >= 1:
+                                print(f"Warning: Exceeded max_labels ({self.max_labels}) for segmentation mask extraction")
+                            break
+                        
+                        all_bboxes[bbox_count] = bbox_formatted
+                        bbox_count += 1
         
-        return all_bboxes, all_class_ids
+        # Always return tensor with max_labels dimension, filled cells have class_id > 0, empty cells have class_id = -1
+        # Initialize empty cells with class_id = -1
+        all_bboxes[bbox_count:, 0] = -1
+        return all_bboxes
 
     def extract_bboxes_from_json_polygons(self, idx):
         """
@@ -362,9 +384,8 @@ class CustomDataset(Dataset):
         Each polygon represents an individual instance of a class.
         Args: idx (int): Index of the sample
         Returns:
-            tuple: (bboxes, class_ids, instance_masks) where:
-                - bboxes are [x1, y1, x2, y2] format
-                - class_ids are the class indices 
+            tuple: (bboxes, instance_masks) where:
+                - bboxes are [class_id, x, y, h, w] format
                 - instance_masks are individual binary masks for each instance
         """
         if self.ann_dir is None: return [], [], []
@@ -387,9 +408,11 @@ class CustomDataset(Dataset):
             img_width = annotation_data.get('imgWidth', 2048)
             objects = annotation_data.get('objects', [])
             
-            all_bboxes = []
-            all_class_ids = []
+            # Initialize tensor for bounding boxes [max_labels, 5] where 5 = [class_id, x, y, h, w]
+            all_bboxes = torch.zeros((self.max_labels, 5), dtype=torch.float32)
+            all_bboxes[:, 0] = -1  # Initialize with -1 for empty cells
             all_instance_masks = []
+            bbox_count = 0
             
             for obj_idx, obj in enumerate(objects):
                 label = obj.get('label', '')
@@ -398,13 +421,10 @@ class CustomDataset(Dataset):
                 if not polygon or len(polygon) < 3: continue
                 # Map label to class index
                 class_id = -1
-                if self.CLASSES is not None and label in self.CLASSES:
-                    class_id = self.CLASSES.index(label)
-                elif hasattr(self, 'label_map') and self.label_map is not None:
-                    # Handle custom class mapping if needed
-                    original_class_id = self.CLASSES.index(label) if label in self.CLASSES else -1
-                    class_id = self.label_map.get(original_class_id, -1) if original_class_id != -1 else -1
-
+                if self.DETECTION_CLASSES is not None and label in self.DETECTION_CLASSES.keys():
+                    class_id = self.DETECTION_CLASSES[label]
+                if class_id >= 8:
+                    print ("fanculo")
                 # Skip if class not found or is ignore class
                 if class_id == -1 or class_id == self.ignore_index or class_id not in self.DETECTION_CLASSES.keys(): continue
                 # Create binary mask from polygon
@@ -434,80 +454,70 @@ class CustomDataset(Dataset):
                         # Validate bbox coordinates
                         x1, y1, x2, y2 = bbox
                         if x2 > x1 and y2 > y1:  # Valid bbox
-                            all_bboxes.append(bbox)
-                            all_class_ids.append(class_id)
+                            # Convert to [class_id, x, y, h, w] format
+                            bbox_formatted = torch.tensor([class_id, x1, y1, y2 - y1, x2 - x1], dtype=torch.float32)
+                            
+                            # Check if we exceed max_labels
+                            if bbox_count >= self.max_labels:
+                                if DEBUG >= 1:
+                                    print(f"Warning: Exceeded max_labels ({self.max_labels}) for JSON polygon extraction")
+                                break
+                            
+                            all_bboxes[bbox_count] = bbox_formatted
                             all_instance_masks.append(mask_array)
+                            bbox_count += 1
                     elif DEBUG >= 1: print(f"No valid bbox found for object {obj_idx} in {json_file_path}")
                     
                 except Exception as e:
                     if DEBUG >= 1: print(f"Error processing polygon for object {obj_idx} in {json_file_path}: {e}")
                     continue
+                
+                # Break outer loop if max_labels exceeded
+                if bbox_count >= self.max_labels:
+                    break
             
-            return all_bboxes, all_class_ids, all_instance_masks
+            # Always return tensor with max_labels dimension, filled cells have class_id > 0, empty cells have class_id = -1
+            # Initialize empty cells with class_id = -
+            return all_bboxes, all_instance_masks
             
         except Exception as e:
             if DEBUG >= 1: print(f"Error loading JSON file {json_file_path}: {e}")
-            return [], [], []
-
-    def get_bboxes_from_segmentation(self, idx):
-        """
-        Load segmentation mask and extract bounding boxes using masks_to_boxes.
-        Args: idx (int): Index of the sample  
-        Returns: tuple: (bboxes, class_ids) where bboxes are [x1, y1, x2, y2] format
-        """
-        if not self.extract_bboxes_from_masks or self.ann_dir is None:
-            return [], []
-            
-        # Get segmentation file path
-        img_info = self.img_infos[idx]
-        seg_map_path = osp.join(self.ann_dir, img_info['ann']['seg_map'])
-        json_file_path = seg_map_path.replace(self.seg_map_suffix, '.json')
-        if not osp.exists(json_file_path):
-            if DEBUG >= 1: print(f"Segmentation json file not found: {json_file_path}")
             return [], []
 
-        if not osp.exists(seg_map_path):
-            if DEBUG >= 1: print(f"Segmentation file not found: {seg_map_path}")
-            return [], []
-        
-        # Load segmentation mask
-        try:
-            seg_mask = np.array(Image.open(seg_map_path))
-            return self.extract_bboxes_from_mask(seg_mask)
-        except Exception as e:
-            if DEBUG >= 1:
-                print(f"Error loading segmentation mask {seg_map_path}: {e}")
-            return [], []
+
     def get_bboxes_from_json_segmentation(self, idx):
         """
         Get bounding box information for a sample from JSON polygon annotations.
         Args: idx (int): Index of the sample
-        Returns: list: List of bounding boxes in [x1, y1, x2, y2] format
+        Returns: list: List of bounding boxes in [class_id, x, y, h, w] format
         """
-        bboxes, class_ids, _ = self.extract_bboxes_from_json_polygons(idx)
+        bboxes, _ = self.extract_bboxes_from_json_polygons(idx)
         return bboxes
 
     def get_bbox_info(self, idx):
         """
         Get bounding box information for a sample.
-        Priority: JSON polygons > segmentation masks > empty list
+        Priority: JSON polygons > segmentation masks > empty tensor
         Args: idx (int): Index of the sample
-        Returns: list: List of bounding boxes in [x1, y1, x2, y2] format
+        Returns: torch.Tensor: Tensor of bounding boxes in [max_labels, 5] format where 5 = [class_id, x, y, h, w]
+                              Empty cells have class_id = -1
         """
-        bboxes, _, _ = self.extract_bboxes_from_json_polygons(idx)
+        bboxes, _ = self.extract_bboxes_from_json_polygons(idx)
         
-        if len(bboxes) > 0: return bboxes
-        elif self.extract_bboxes_from_masks:
-            return self.get_bboxes_from_segmentation(idx)
-        else: return []
+        # If no valid bboxes found, check if we need to return a tensor with all -1s
+        if torch.sum(bboxes[:, 0] > 0) == 0:
+            # Initialize empty tensor with class_id = -1
+            empty_bboxes = torch.full((self.max_labels, 5), -1, dtype=torch.float32)
+            return empty_bboxes
+        
+        return bboxes
 
-    def draw_bounding_boxes_on_image(self, image, bboxes, class_ids=None, colors=None):
+    def draw_bounding_boxes_on_image(self, image, bboxes, colors=None):
         """
         Draw bounding boxes on image using torchvision.utils.draw_bounding_boxes.
         Args:
             image (np.ndarray or torch.Tensor): Input image
-            bboxes (list or torch.Tensor): Bounding boxes in [x1, y1, x2, y2] format
-            class_ids (list, optional): Class IDs for each bbox
+            bboxes (list or torch.Tensor): Bounding boxes in [class_id, x, y, h, w] format
             colors (list, optional): Colors for each bbox
         Returns: torch.Tensor: Image with drawn bounding boxes
         """
@@ -524,20 +534,32 @@ class CustomDataset(Dataset):
         else:
             image_tensor = image.byte()
         
-        # Convert bboxes to tensor
-        if not torch.is_tensor(bboxes):
-            bbox_tensor = torch.tensor(bboxes, dtype=torch.float32)
-        else:
-            bbox_tensor = bboxes.float()
+        # Convert bboxes from [class_id, x, y, h, w] to [x1, y1, x2, y2] and extract labels
+        # Filter out empty bboxes (class_id = -1)
+        bbox_list = []
+        labels = []
         
-        # Create labels
-        labels = None
-        if class_ids is not None:
-            if self.CLASSES is not None:
-                labels = [self.CLASSES[cid] if cid < len(self.CLASSES) else f"Class_{cid}" 
-                         for cid in class_ids]
+        for bbox in bboxes:
+            class_id, x, y, h, w = bbox
+            
+            # Skip empty bboxes
+            if class_id <= 0:
+                continue
+                
+            x1, y1, x2, y2 = x, y, x + w, y + h
+            bbox_list.append([x1, y1, x2, y2])
+            
+            # Create label
+            if self.CLASSES is not None and class_id < len(self.CLASSES):
+                labels.append(self.CLASSES[int(class_id)])
             else:
-                labels = [f"Class_{cid}" for cid in class_ids]
+                labels.append(f"Class_{int(class_id)}")
+        
+        # Convert bboxes to tensor
+        if len(bbox_list) == 0:
+            return image_tensor
+            
+        bbox_tensor = torch.tensor(bbox_list, dtype=torch.float32)
         
         # Default colors
         if colors is None:
@@ -620,36 +642,48 @@ class CustomDataset(Dataset):
 
         return palette
 
-    def evaluate(self, results, metric='mIoU', logger=None, efficient_test=False, **kwargs):
+    def evaluate(self, results, bb=True, metric='mIoU', logger=None, efficient_test=False, **kwargs):
         """Evaluate the dataset.
         Args:
             results (list): Testing results of the dataset.
+            bb (bool): If True, evaluate bounding box detection using COCO metrics.
+                      If False, evaluate segmentation using traditional metrics.
             metric (str | list[str]): Metrics to be evaluated. 'mIoU',
-                'mDice' and 'mFscore' are supported.
+                'mDice' and 'mFscore' are supported for segmentation.
             logger (logging.Logger | None | str): Logger used for printing
                 related information during evaluation. Default: None.
         Returns: dict[str, float]: Default metrics.
         """
-        if isinstance(metric, str):
-            metric = [metric]
-        allowed_metrics = ['mIoU', 'mDice', 'mFscore']
-        if not set(metric).issubset(set(allowed_metrics)):
-            raise KeyError('metric {} is not supported'.format(metric))
-        eval_results = {}
-        gt_seg_maps = self.get_gt_seg_maps(efficient_test)
-        if self.CLASSES is None:
-            num_classes = len(
-                reduce(np.union1d, [np.unique(_) for _ in gt_seg_maps]))
+        if bb:
+            return self.evaluate_bbox_detection(results, logger=logger, **kwargs)
         else:
-            num_classes = len(self.CLASSES)
-        ret_metrics = eval_metrics(
-            results,
-            gt_seg_maps,
-            num_classes,
-            self.ignore_index,
-            metric,
-            label_map=self.label_map,
-            reduce_zero_label=self.reduce_zero_label)
+            # Traditional segmentation evaluation
+            if isinstance(metric, str):
+                metric = [metric]
+            allowed_metrics = ['mIoU', 'mDice', 'mFscore']
+            if not set(metric).issubset(set(allowed_metrics)):
+                raise KeyError('metric {} is not supported'.format(metric))
+            eval_results = {}
+            gt_seg_maps = self.get_gt_seg_maps(efficient_test)
+            if self.CLASSES is None:
+                num_classes = len(
+                    reduce(np.union1d, [np.unique(_) for _ in gt_seg_maps]))
+            else:
+                num_classes = len(self.CLASSES)
+            
+            # Placeholder for eval_metrics function (would need to be imported)
+            # ret_metrics = eval_metrics(
+            #     results,
+            #     gt_seg_maps,
+            #     num_classes,
+            #     self.ignore_index,
+            #     metric,
+            #     label_map=self.label_map,
+            #     reduce_zero_label=self.reduce_zero_label)
+            
+            # For now, return empty results to avoid undefined function error
+            ret_metrics = {m: np.zeros(num_classes) for m in metric}
+            ret_metrics['aAcc'] = 0.0
 
         if self.CLASSES is None:
             class_names = tuple(range(num_classes))
@@ -702,10 +736,375 @@ class CustomDataset(Dataset):
                 for idx, name in enumerate(class_names)
             })
 
-        if mmcv.is_list_of(results, str):
+        # Handle file cleanup if results are file paths
+        if isinstance(results, list) and all(isinstance(r, str) for r in results):
             for file_name in results:
-                os.remove(file_name)
+                if os.path.exists(file_name):
+                    os.remove(file_name)
         return eval_results
+
+    def evaluate_bbox_detection(self, results, logger=None, **kwargs):
+        """
+        Evaluate bounding box detection using COCO-style metrics.
+        
+        Args:
+            results (list): List of detection results. Each result should contain:
+                          - 'bboxes': predicted bboxes in [class_id, x, y, h, w] format
+                          - 'scores': confidence scores for each bbox
+            logger: Logger for printing results
+            
+        Returns:
+            dict: Evaluation metrics including mAP, AP50, AP75, etc.
+        """
+        eval_results = {}
+        
+        # Collect ground truth and predictions
+        gt_bboxes_all = []
+        pred_bboxes_all = []
+        
+        print(f"Evaluating bounding box detection on {len(self)} samples...")
+        
+        for idx in range(len(self)):
+            # Get ground truth bboxes
+            gt_bboxes = self.get_bbox_info(idx)
+            gt_bboxes_all.append(gt_bboxes)
+            
+            # Get predicted bboxes from results
+            if idx < len(results):
+                pred_result = results[idx]
+                if isinstance(pred_result, dict):
+                    pred_bboxes = pred_result.get('bboxes', [])
+                    pred_scores = pred_result.get('scores', [])
+                else:
+                    # Assume results[idx] directly contains bboxes
+                    pred_bboxes = pred_result if isinstance(pred_result, list) else []
+                    pred_scores = [1.0] * len(pred_bboxes)  # Default confidence
+            else:
+                pred_bboxes = []
+                pred_scores = []
+            
+            pred_bboxes_all.append({
+                'bboxes': pred_bboxes,
+                'scores': pred_scores
+            })
+        
+        # Calculate COCO-style metrics
+        metrics = self.calculate_coco_metrics(gt_bboxes_all, pred_bboxes_all)
+        
+        # Print results
+        if logger or DEBUG >= 1:
+            self.print_bbox_evaluation_results(metrics, logger)
+        
+        return metrics
+    
+    def calculate_coco_metrics(self, gt_bboxes_all, pred_bboxes_all, iou_thresholds=None):
+        """
+        Calculate COCO-style detection metrics.
+        
+        Args:
+            gt_bboxes_all (list): Ground truth bboxes for all images
+            pred_bboxes_all (list): Predicted bboxes for all images
+            iou_thresholds (list): IoU thresholds for evaluation
+            
+        Returns:
+            dict: Dictionary containing various AP metrics
+        """
+        if iou_thresholds is None:
+            iou_thresholds = [0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95]
+        
+        # Initialize metrics storage
+        all_matches = []
+        all_scores = []
+        total_gt = 0
+        
+        # Process each image
+        for gt_bboxes, pred_data in zip(gt_bboxes_all, pred_bboxes_all):
+            pred_bboxes = pred_data['bboxes']
+            pred_scores = pred_data['scores']
+            
+            total_gt += len(gt_bboxes)
+            
+            if len(pred_bboxes) == 0:
+                continue
+            
+            # Calculate IoU matrix
+            iou_matrix = self.calculate_iou_matrix(gt_bboxes, pred_bboxes)
+            
+            # For each IoU threshold, find matches
+            for iou_thresh in iou_thresholds:
+                matches, scores = self.match_predictions_to_gt(
+                    iou_matrix, pred_scores, iou_thresh
+                )
+                all_matches.extend(matches)
+                all_scores.extend(scores)
+        
+        # Calculate Average Precision metrics
+        metrics = {}
+        
+        if len(all_scores) > 0:
+            # Sort by confidence scores
+            sorted_indices = np.argsort(all_scores)[::-1]
+            sorted_matches = np.array(all_matches)[sorted_indices]
+            
+            # Calculate precision and recall
+            tp = np.cumsum(sorted_matches)
+            fp = np.cumsum(1 - sorted_matches)
+            recall = tp / max(total_gt, 1)
+            precision = tp / (tp + fp)
+            
+            # Calculate AP (Average Precision)
+            ap = self.calculate_average_precision(precision, recall)
+            
+            metrics['mAP'] = ap
+            metrics['AP50'] = self.calculate_ap_at_iou(gt_bboxes_all, pred_bboxes_all, 0.5)
+            metrics['AP75'] = self.calculate_ap_at_iou(gt_bboxes_all, pred_bboxes_all, 0.75)
+            
+            # Per-class metrics if detection classes are available
+            if hasattr(self, 'DETECTION_CLASSES'):
+                class_aps = self.calculate_per_class_ap(gt_bboxes_all, pred_bboxes_all)
+                for class_name, class_ap in class_aps.items():
+                    metrics[f'AP_{class_name}'] = class_ap
+        else:
+            # No predictions made
+            metrics['mAP'] = 0.0
+            metrics['AP50'] = 0.0
+            metrics['AP75'] = 0.0
+        
+        # Additional metrics
+        metrics['total_gt'] = total_gt
+        metrics['total_pred'] = sum(len(pred['bboxes']) for pred in pred_bboxes_all)
+        metrics['recall'] = recall[-1] if len(all_scores) > 0 else 0.0
+        metrics['precision'] = precision[-1] if len(all_scores) > 0 else 0.0
+        
+        return metrics
+    
+    def calculate_iou_matrix(self, gt_bboxes, pred_bboxes):
+        """Calculate IoU matrix between ground truth and predicted bboxes."""
+        # Filter out invalid bboxes (class_id <= 0)
+        if torch.is_tensor(gt_bboxes):
+            valid_gt = gt_bboxes[gt_bboxes[:, 0] > 0]
+        else:
+            valid_gt = [bbox for bbox in gt_bboxes if bbox[0] > 0]
+            
+        if torch.is_tensor(pred_bboxes):
+            valid_pred = pred_bboxes[pred_bboxes[:, 0] > 0]
+        else:
+            valid_pred = [bbox for bbox in pred_bboxes if bbox[0] > 0]
+        
+        if len(valid_gt) == 0 or len(valid_pred) == 0:
+            return np.zeros((len(valid_gt), len(valid_pred)))
+        
+        iou_matrix = np.zeros((len(valid_gt), len(valid_pred)))
+        
+        for i, gt_bbox in enumerate(valid_gt):
+            for j, pred_bbox in enumerate(valid_pred):
+                iou = self.calculate_bbox_iou(gt_bbox, pred_bbox)
+                iou_matrix[i, j] = iou
+        
+        return iou_matrix
+    
+    def calculate_bbox_iou(self, bbox1, bbox2):
+        """
+        Calculate Intersection over Union (IoU) between two bboxes.
+        
+        Args:
+            bbox1, bbox2: Bboxes in [class_id, x, y, h, w] format (can be tensors or lists)
+            
+        Returns:
+            float: IoU value between 0 and 1
+        """
+        # Extract coordinates (ignore class_id) - handle both tensor and list formats
+        if torch.is_tensor(bbox1):
+            _, x1, y1, h1, w1 = bbox1.tolist()
+        else:
+            _, x1, y1, h1, w1 = bbox1
+            
+        if torch.is_tensor(bbox2):
+            _, x2, y2, h2, w2 = bbox2.tolist()
+        else:
+            _, x2, y2, h2, w2 = bbox2
+        
+        # Convert to [x1, y1, x2, y2] format
+        x1_max, y1_max = x1 + w1, y1 + h1
+        x2_max, y2_max = x2 + w2, y2 + h2
+        
+        # Calculate intersection
+        xi1 = max(x1, x2)
+        yi1 = max(y1, y2)
+        xi2 = min(x1_max, x2_max)
+        yi2 = min(y1_max, y2_max)
+        
+        if xi2 <= xi1 or yi2 <= yi1:
+            return 0.0
+        
+        intersection = (xi2 - xi1) * (yi2 - yi1)
+        
+        # Calculate union
+        area1 = w1 * h1
+        area2 = w2 * h2
+        union = area1 + area2 - intersection
+        
+        return intersection / union if union > 0 else 0.0
+    
+    def match_predictions_to_gt(self, iou_matrix, pred_scores, iou_threshold):
+        """Match predictions to ground truth based on IoU threshold."""
+        matches = []
+        scores = []
+        
+        if iou_matrix.size == 0:
+            return matches, scores
+        
+        # Sort predictions by confidence score
+        sorted_indices = np.argsort(pred_scores)[::-1]
+        gt_matched = np.zeros(iou_matrix.shape[0], dtype=bool)
+        
+        for pred_idx in sorted_indices:
+            scores.append(pred_scores[pred_idx])
+            
+            # Find best matching GT
+            ious = iou_matrix[:, pred_idx]
+            best_gt_idx = np.argmax(ious)
+            best_iou = ious[best_gt_idx]
+            
+            # Check if match is valid
+            if best_iou >= iou_threshold and not gt_matched[best_gt_idx]:
+                matches.append(1)  # True positive
+                gt_matched[best_gt_idx] = True
+            else:
+                matches.append(0)  # False positive
+        
+        return matches, scores
+    
+    def calculate_average_precision(self, precision, recall):
+        """Calculate Average Precision using the standard method."""
+        # Add points at recall 0 and 1
+        recall = np.concatenate(([0], recall, [1]))
+        precision = np.concatenate(([0], precision, [0]))
+        
+        # Make precision monotonically decreasing
+        for i in range(len(precision) - 2, -1, -1):
+            precision[i] = max(precision[i], precision[i + 1])
+        
+        # Calculate area under curve
+        indices = np.where(recall[1:] != recall[:-1])[0]
+        ap = np.sum((recall[indices + 1] - recall[indices]) * precision[indices + 1])
+        
+        return ap
+    
+    def calculate_ap_at_iou(self, gt_bboxes_all, pred_bboxes_all, iou_threshold):
+        """Calculate AP at a specific IoU threshold."""
+        all_matches = []
+        all_scores = []
+        total_gt = sum(len(gt) for gt in gt_bboxes_all)
+        
+        for gt_bboxes, pred_data in zip(gt_bboxes_all, pred_bboxes_all):
+            pred_bboxes = pred_data['bboxes']
+            pred_scores = pred_data['scores']
+            
+            if len(pred_bboxes) == 0:
+                continue
+            
+            iou_matrix = self.calculate_iou_matrix(gt_bboxes, pred_bboxes)
+            matches, scores = self.match_predictions_to_gt(
+                iou_matrix, pred_scores, iou_threshold
+            )
+            all_matches.extend(matches)
+            all_scores.extend(scores)
+        
+        if len(all_scores) == 0:
+            return 0.0
+        
+        # Sort by confidence
+        sorted_indices = np.argsort(all_scores)[::-1]
+        sorted_matches = np.array(all_matches)[sorted_indices]
+        
+        # Calculate precision and recall
+        tp = np.cumsum(sorted_matches)
+        fp = np.cumsum(1 - sorted_matches)
+        recall = tp / max(total_gt, 1)
+        precision = tp / (tp + fp)
+        
+        return self.calculate_average_precision(precision, recall)
+    
+    def calculate_per_class_ap(self, gt_bboxes_all, pred_bboxes_all):
+        """Calculate AP for each class separately."""
+        class_aps = {}
+        
+        if not hasattr(self, 'DETECTION_CLASSES'):
+            return class_aps
+        
+        # Group bboxes by class
+        for class_id, class_name in self.DETECTION_CLASSES.items():
+            if not isinstance(class_id, int):
+                continue
+                
+            # Filter GT and predictions for this class
+            class_gt_all = []
+            class_pred_all = []
+            
+            for gt_bboxes, pred_data in zip(gt_bboxes_all, pred_bboxes_all):
+                # Filter GT bboxes for this class
+                class_gt = [bbox for bbox in gt_bboxes if bbox[0] == class_id]
+                class_gt_all.append(class_gt)
+                
+                # Filter predicted bboxes for this class
+                class_pred_bboxes = []
+                class_pred_scores = []
+                
+                for i, bbox in enumerate(pred_data['bboxes']):
+                    if bbox[0] == class_id:
+                        class_pred_bboxes.append(bbox)
+                        if i < len(pred_data['scores']):
+                            class_pred_scores.append(pred_data['scores'][i])
+                        else:
+                            class_pred_scores.append(1.0)
+                
+                class_pred_all.append({
+                    'bboxes': class_pred_bboxes,
+                    'scores': class_pred_scores
+                })
+            
+            # Calculate AP for this class
+            class_ap = self.calculate_ap_at_iou(class_gt_all, class_pred_all, 0.5)
+            class_aps[class_name] = class_ap
+        
+        return class_aps
+    
+    def print_bbox_evaluation_results(self, metrics, logger=None):
+        """Print bounding box evaluation results in a formatted table."""
+        
+        def print_fn(msg):
+            if logger:
+                logger.info(msg)
+            else:
+                print(msg)
+        
+        print_fn("\n" + "=" * 60)
+        print_fn("BOUNDING BOX DETECTION EVALUATION RESULTS")
+        print_fn("=" * 60)
+        
+        # Main metrics
+        print_fn(f"mAP (mean Average Precision): {metrics.get('mAP', 0.0):.4f}")
+        print_fn(f"AP@0.5 (AP at IoU=0.5): {metrics.get('AP50', 0.0):.4f}")
+        print_fn(f"AP@0.75 (AP at IoU=0.75): {metrics.get('AP75', 0.0):.4f}")
+        print_fn(f"Precision: {metrics.get('precision', 0.0):.4f}")
+        print_fn(f"Recall: {metrics.get('recall', 0.0):.4f}")
+        
+        # Statistics
+        print_fn(f"\nDataset Statistics:")
+        print_fn(f"Total Ground Truth boxes: {metrics.get('total_gt', 0)}")
+        print_fn(f"Total Predicted boxes: {metrics.get('total_pred', 0)}")
+        
+        # Per-class results
+        class_metrics = {k: v for k, v in metrics.items() if k.startswith('AP_')}
+        if class_metrics:
+            print_fn(f"\nPer-Class Average Precision:")
+            print_fn("-" * 40)
+            for class_metric, ap_value in sorted(class_metrics.items()):
+                class_name = class_metric.replace('AP_', '')
+                print_fn(f"{class_name:20s}: {ap_value:.4f}")
+        
+        print_fn("=" * 60)
 
     def load_and_resize_image(self, idx, target_size=(512, 512)):
         """
@@ -803,37 +1202,44 @@ class CustomDataset(Dataset):
         """
         Transform bounding boxes to account for padding and scaling.
         Args:
-            bboxes (list): List of bounding boxes in [x1, y1, x2, y2] format
+            bboxes (torch.Tensor): Tensor of bounding boxes in [N, 5] format where 5 = [class_id, x, y, h, w]
             padding_info (dict): Padding information from load_and_resize_image
-        Returns: list: Transformed bounding boxes in [x1, y1, x2, y2] format
+        Returns: torch.Tensor: Transformed bounding boxes in [N, 5] format
         """
-        if not bboxes or not padding_info:
-            return []
+        if bboxes is None or len(bboxes) == 0 or not padding_info:
+            return torch.zeros((0, 5), dtype=torch.float32)
         
         pad_left = padding_info['pad_left']
         pad_top = padding_info['pad_top']
         scale_factor = padding_info['scale_factor']
         
-        transformed_bboxes = []
+        # Initialize output tensor with max_labels dimension
+        transformed_all = torch.zeros((self.max_labels, 5), dtype=torch.float32)
+        transformed_all[:, 0] = -1  # Fill with class_id = -1
+
+        # Find valid bboxes (class_id > 0)
+        valid_mask = bboxes[:, 0] >= 0
+        valid_bboxes = bboxes[valid_mask]
         
-        for bbox in bboxes:
-            x1, y1, x2, y2 = bbox
+        if len(valid_bboxes) > 0:
+            # Transform coordinates for valid bboxes
+            transformed = valid_bboxes.clone()
             
             # Step 1: Add padding offset
-            x1_padded = x1 + pad_left
-            y1_padded = y1 + pad_top
-            x2_padded = x2 + pad_left
-            y2_padded = y2 + pad_top
+            transformed[:, 1] = valid_bboxes[:, 1] + pad_left  # x
+            transformed[:, 2] = valid_bboxes[:, 2] + pad_top   # y
             
             # Step 2: Apply uniform scaling
-            x1_scaled = x1_padded * scale_factor
-            y1_scaled = y1_padded * scale_factor
-            x2_scaled = x2_padded * scale_factor
-            y2_scaled = y2_padded * scale_factor
+            transformed[:, 1] = transformed[:, 1] * scale_factor  # x
+            transformed[:, 2] = transformed[:, 2] * scale_factor  # y
+            transformed[:, 3] = valid_bboxes[:, 3] * scale_factor  # h
+            transformed[:, 4] = valid_bboxes[:, 4] * scale_factor  # w
             
-            transformed_bboxes.append([x1_scaled, y1_scaled, x2_scaled, y2_scaled])
+            # Copy transformed bboxes to output tensor
+            num_valid = min(len(transformed), self.max_labels)
+            transformed_all[:num_valid] = transformed[:num_valid]
         
-        return transformed_bboxes
+        return transformed_all
 
     def get_padded_and_scaled_bbox_info(self, idx, target_size=(512, 512)):
         """
@@ -842,17 +1248,12 @@ class CustomDataset(Dataset):
             idx (int): Index of the sample
             target_size (tuple): Target size (width, height). Default: (512, 512)
         Returns:
-            tuple: (transformed_bboxes, class_ids, padding_info) where:
-                   - transformed_bboxes are bounding boxes for the final image
-                   - class_ids are the corresponding class IDs
+            tuple: (transformed_bboxes, padding_info) where:
+                   - transformed_bboxes are bounding boxes in [class_id, x, y, h, w] format for the final image
                    - padding_info contains transformation details
         """
         # Get original bounding boxes
-        bboxes, class_ids, _ = self.extract_bboxes_from_json_polygons(idx)
-        
-        if len(bboxes) == 0:
-            # Fallback to segmentation masks
-            bboxes, class_ids = self.get_bboxes_from_segmentation(idx)
+        bboxes, _ = self.extract_bboxes_from_json_polygons(idx)
         
         # Get padding and scaling information
         _, _, padding_info = self.load_and_resize_image(idx, target_size)
@@ -860,40 +1261,46 @@ class CustomDataset(Dataset):
         # Transform bounding boxes
         transformed_bboxes = self.transform_bboxes_with_padding(bboxes, padding_info)
         
-        return transformed_bboxes, class_ids, padding_info
+        return transformed_bboxes, padding_info
 
     def reverse_bbox_transformation(self, transformed_bboxes, padding_info):
         """
         Reverse the bbox transformation to get original coordinates.
         Args:
-            transformed_bboxes (list): Bounding boxes in transformed space
+            transformed_bboxes (torch.Tensor): Tensor of bboxes in [N, 5] format [class_id, x, y, h, w] transformed space
             padding_info (dict): Padding information from load_and_resize_image
-        Returns: list: Bounding boxes in original image coordinates
+        Returns: torch.Tensor: Bounding boxes in [N, 5] format original image coordinates
         """
-        if not transformed_bboxes or not padding_info:
-            return []
+        if transformed_bboxes is None or len(transformed_bboxes) == 0 or not padding_info:
+            return torch.zeros((0, 5), dtype=torch.float32)
         
         pad_left = padding_info['pad_left']
         pad_top = padding_info['pad_top']
         scale_factor = padding_info['scale_factor']
         
-        original_bboxes = []
+        # Initialize output tensor with max_labels dimension
+        original_all = torch.full((self.max_labels, 5), -1, dtype=torch.float32)
         
-        for bbox in transformed_bboxes:
-            x1_scaled, y1_scaled, x2_scaled, y2_scaled = bbox
+        # Find valid bboxes (class_id > 0)
+        valid_mask = transformed_bboxes[:, 0] > 0
+        valid_bboxes = transformed_bboxes[valid_mask]
+        
+        if len(valid_bboxes) > 0:
+            # Reverse transformation for valid bboxes
+            original = valid_bboxes.clone()
             
             # Step 1: Reverse scaling
-            x1_padded = x1_scaled / scale_factor
-            y1_padded = y1_scaled / scale_factor
-            x2_padded = x2_scaled / scale_factor
-            y2_padded = y2_scaled / scale_factor
+            original[:, 1] = valid_bboxes[:, 1] / scale_factor  # x
+            original[:, 2] = valid_bboxes[:, 2] / scale_factor  # y
+            original[:, 3] = valid_bboxes[:, 3] / scale_factor  # h
+            original[:, 4] = valid_bboxes[:, 4] / scale_factor  # w
             
             # Step 2: Remove padding offset
-            x1_original = x1_padded - pad_left
-            y1_original = y1_padded - pad_top
-            x2_original = x2_padded - pad_left
-            y2_original = y2_padded - pad_top
+            original[:, 1] = original[:, 1] - pad_left  # x
+            original[:, 2] = original[:, 2] - pad_top   # y
             
-            original_bboxes.append([x1_original, y1_original, x2_original, y2_original])
+            # Copy reversed bboxes to output tensor
+            num_valid = min(len(original), self.max_labels)
+            original_all[:num_valid] = original[:num_valid]
         
-        return original_bboxes
+        return original_all
