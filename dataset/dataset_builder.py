@@ -61,7 +61,9 @@ def build_from_config(cfg):
         
         cfg["data_root"] = cfg["data_dir"]
         cfg["custom_classes"] = cfg.get("DSEC_classes", False)
-        if cfg["custom_classes"] == True: cfg["extract_bboxes_from_masks"] = True
+        if cfg["custom_classes"] == True: 
+            cfg["extract_bboxes_from_masks"] = True
+            cfg["load_bboxes"] = True
         cfg["pipeline"] = cfg.get("pipeline", [])
         cfg["img_dir"] = "cityscapes/leftImg8bit/train/aachen"
         cfg["ann_dir"] = "cityscapes/gtFine/train/aachen"
