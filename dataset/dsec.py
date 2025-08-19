@@ -233,13 +233,13 @@ class DSECDataset(Dataset):
 
         now_image_index = int(image_path.split('/')[-1].split('.')[0])
         if 'image' in self.outputs:
-            if DEBUG>2: start_time= time.perf_counter()
+            if DEBUG>2: start_time= time.perf_counter() #TODO: Understand WTF is happening here
             image = Image.open(image_path).convert('RGB')
-            _resize_size = (960, 720)  # (720, 540)
+            _resize_size = (720, 540)
             image = image.resize(size=_resize_size, resample=Image.BILINEAR)
-            image_x = random.randint(0, _resize_size[0] - 512)  # error 680
-            image_y = random.randint(0, _resize_size[1] - 512)
-            image = image.crop(box=(image_x, image_y, image_x + 512, image_y + 512))
+            # image_x = random.randint(0, _resize_size[0] - 512)  # error 680 # AND HERE WHY RANDOM CROPPING HERE?
+            # image_y = random.randint(0, _resize_size[1] - 512)
+            # image = image.crop(box=(image_x, image_y, image_x + 512, image_y + 512))
             if flip_flag:
                 image = self.HorizontalFlip(image)
             image = self.image_transform(image)
