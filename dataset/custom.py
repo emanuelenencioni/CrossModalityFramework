@@ -20,6 +20,7 @@ from torchvision.utils import draw_bounding_boxes
 from torchvision.transforms import Compose
 from torchvision.ops import masks_to_boxes
 import torchvision.transforms as standard_transforms
+from .utils.data_container import DataContainer
 
 #from .builder import DATASETS
 from helpers import DEBUG
@@ -235,6 +236,49 @@ class CustomDataset(Dataset):
         if self.custom_classes:
             results['label_map'] = self.DETECTION_CLASSES
 
+        # Add img_metas similar to DSEC dataset
+        idx = results.get('idx', 0)
+        img_info = self.img_infos[idx]
+        
+        # Create img_metas dictionary
+        img_metas = dict()
+        img_metas['img_norm_cfg'] = dict()
+        img_metas['img_norm_cfg']['mean'] = [123.675, 116.28, 103.53]
+        img_metas['img_norm_cfg']['std'] = [58.395, 57.12, 57.375]
+        img_metas['img_norm_cfg']['to_rgb'] = True
+        
+        # Get original image dimensions
+        padding_info = results.get('padding_info', {})
+        if padding_info and 'original_size' in padding_info:
+            orig_width, orig_height = padding_info['original_size']
+        else:
+            # Fallback to default or try to get from image file
+            orig_width, orig_height = 2048, 1024  # Default for Cityscapes
+            
+            # Try to get actual size from image
+            img_path = osp.join(self.img_dir, img_info['filename'])
+            if osp.exists(img_path):
+                try:
+                    from PIL import Image
+                    with Image.open(img_path) as pil_img:
+                        orig_width, orig_height = pil_img.size
+                except Exception:
+                    pass
+        
+        img_metas['img_shape'] = (512, 512)  # Current processed size
+        img_metas['pad_shape'] = (512, 512)
+        img_metas['ori_shape'] = (512, 512)  # Size after initial processing
+        img_metas['orig_shape'] = (orig_height, orig_width)  # Original image size
+        img_metas['ori_filename'] = img_info['filename']
+        img_metas['idx'] = idx
+        
+        img_metas['flip'] = False
+        if img_metas['flip']:
+            img_metas['flip_direction'] = 'horizontal'
+        
+        # Wrap in DataContainer similar to DSEC
+        results['img_metas'] = DataContainer(img_metas, cpu_only=True)
+
     def __getitem__(self, idx):
         """Get training/test data after pipeline.
         Args: idx (int): Index of data.
@@ -398,7 +442,8 @@ class CustomDataset(Dataset):
         if not osp.exists(json_file_path):
             if DEBUG >= 1: print(f"JSON annotation file not found: {json_file_path}")
             return [], [], []
-        
+        all_bboxes = torch.zeros((self.max_labels, 5), dtype=torch.float32)
+        all_bboxes[:, 0] = -1  # Initialize with -1 for empty cells
         try:
             # Load JSON annotation
             with open(json_file_path, 'r') as f:
@@ -409,8 +454,7 @@ class CustomDataset(Dataset):
             objects = annotation_data.get('objects', [])
             
             # Initialize tensor for bounding boxes [max_labels, 5] where 5 = [class_id, x, y, h, w]
-            all_bboxes = torch.zeros((self.max_labels, 5), dtype=torch.float32)
-            all_bboxes[:, 0] = -1  # Initialize with -1 for empty cells
+            
             all_instance_masks = []
             bbox_count = 0
             
@@ -423,8 +467,7 @@ class CustomDataset(Dataset):
                 class_id = -1
                 if self.DETECTION_CLASSES is not None and label in self.DETECTION_CLASSES.keys():
                     class_id = self.DETECTION_CLASSES[label]
-                if class_id >= 8:
-                    print ("fanculo")
+
                 # Skip if class not found or is ignore class
                 if class_id == -1 or class_id == self.ignore_index or class_id not in self.DETECTION_CLASSES.keys(): continue
                 # Create binary mask from polygon
@@ -482,7 +525,7 @@ class CustomDataset(Dataset):
             
         except Exception as e:
             if DEBUG >= 1: print(f"Error loading JSON file {json_file_path}: {e}")
-            return [], []
+            return all_bboxes, []
 
 
     def get_bboxes_from_json_segmentation(self, idx):
@@ -767,7 +810,9 @@ class CustomDataset(Dataset):
         for idx in range(len(self)):
             # Get ground truth bboxes
             gt_bboxes = self.get_bbox_info(idx)
-            gt_bboxes_all.append(gt_bboxes)
+            # Filter out empty bboxes (class_id = -1)
+            valid_gt = gt_bboxes[gt_bboxes[:, 0] > 0] if len(gt_bboxes) > 0 else []
+            gt_bboxes_all.append(valid_gt)
             
             # Get predicted bboxes from results
             if idx < len(results):
@@ -776,9 +821,9 @@ class CustomDataset(Dataset):
                     pred_bboxes = pred_result.get('bboxes', [])
                     pred_scores = pred_result.get('scores', [])
                 else:
-                    # Assume results[idx] directly contains bboxes
-                    pred_bboxes = pred_result if isinstance(pred_result, list) else []
-                    pred_scores = [1.0] * len(pred_bboxes)  # Default confidence
+                    # Assume results[idx] is model output tensor or list
+                    # Process model output to extract bboxes and scores
+                    pred_bboxes, pred_scores = self._process_model_output(pred_result)
             else:
                 pred_bboxes = []
                 pred_scores = []
@@ -796,7 +841,42 @@ class CustomDataset(Dataset):
             self.print_bbox_evaluation_results(metrics, logger)
         
         return metrics
-    
+
+    def _process_model_output(self, model_output):
+        """
+        Process raw model output to extract bboxes and scores.
+        Adapt this based on your model's output format.
+        """
+        if model_output is None:
+            return [], []
+        
+        # Assuming model_output is tensor with format [x1, y1, x2, y2, conf, cls_conf, cls_id]
+        if hasattr(model_output, 'cpu'):
+            output = model_output.cpu().numpy()
+        else:
+            output = np.array(model_output)
+        
+        if len(output.shape) == 1:
+            output = output.reshape(1, -1)
+        
+        bboxes = []
+        scores = []
+        
+        for detection in output:
+            if len(detection) >= 7:  # [x1, y1, x2, y2, obj_conf, cls_conf, cls_id]
+                x1, y1, x2, y2, obj_conf, cls_conf, cls_id = detection[:7]
+                
+                # Convert to [class_id, x, y, w, h] format
+                w = x2 - x1
+                h = y2 - y1
+                bbox = [cls_id, x1, y1, w, h]
+                score = obj_conf * cls_conf
+                
+                bboxes.append(bbox)
+                scores.append(score)
+        
+        return bboxes, scores
+
     def calculate_coco_metrics(self, gt_bboxes_all, pred_bboxes_all, iou_thresholds=None):
         """
         Calculate COCO-style detection metrics.
