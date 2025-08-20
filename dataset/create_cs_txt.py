@@ -43,7 +43,7 @@ if __name__ == "__main__":
     dataset_folder = os.path.dirname(os.path.abspath(__file__))
     folder1_path = os.path.join(dataset_folder.split("dataset")[0],"data/cityscapes/leftImg8bit/train")
     folder2_path = os.path.join(dataset_folder.split("dataset")[0], "data/cityscapes/leftImg8bit/val")
-    output_txt_file1 = os.path.join(dataset_folder, "train.txt")
-    output_txt_file2 = os.path.join(dataset_folder, "val.txt")
+    output_txt_file1 = os.path.join(dataset_folder, "cs_train.txt")
+    output_txt_file2 = os.path.join(dataset_folder, "cs_val.txt")
 
     scan_folders_and_create_txt(folder1_path, folder2_path, output_txt_file1, output_txt_file2)
