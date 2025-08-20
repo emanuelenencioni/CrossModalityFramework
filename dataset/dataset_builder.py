@@ -9,14 +9,14 @@ def build_from_config(cfg):
     
     Currently implemented: DSEC_Night dataset.
     """
-
+    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
     dataset_name = cfg.get("name", None)
     if dataset_name is None:
         raise ValueError("Specify the 'name' parameter under dataset in the cfg.")
 
     if dataset_name.lower() in ["dsec_night", "dsec_night_dataset", "dsecnight"]:
         # Determine the project root by navigating two levels up from this file's directory.
-        project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+        
         txt_dir = project_root + "/dataset/"
         # Construct the dataset_txt_path (adjust the filename if needed)
         dataset_txt_path = os.path.join(txt_dir, cfg.get("train_split", "night_dataset.txt"))
@@ -67,6 +67,8 @@ def build_from_config(cfg):
         cfg["pipeline"] = cfg.get("pipeline", [])
         cfg["img_dir"] = "cityscapes/leftImg8bit/train/aachen"
         cfg["ann_dir"] = "cityscapes/gtFine/train/aachen"
-        return CityscapesDataset(**cfg), None
+        train_txt = os.path.join(project_root,"dataset", cfg.get("train_split", "train.txt"))
+        val_txt = os.path.join(project_root,"dataset", cfg.get("val_split", "val.txt"))
+        return CityscapesDataset(**cfg, split=train_txt), CityscapesDataset(**cfg, split=val_txt)
     else:
         raise NotImplementedError(f"Dataset {dataset_name} not implemented yet.")
