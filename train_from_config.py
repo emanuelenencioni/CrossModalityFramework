@@ -19,6 +19,7 @@ import random
 import numpy as np
 from helpers import DEBUG
 from evaluator.dsec_evaluator import DSECEvaluator
+from evaluator.cityscapes_evaluator import CityscapesEvaluator
 import dataset.dataset_builder as dataset_builder
 
 
@@ -326,5 +327,5 @@ if __name__ == "__main__":
     else:
         trainer = Trainer(model,train_dl, opti, criterion, device,  cfg, root_folder=dir_path, wandb_log=wandb_log, pretrained_checkpoint=pretrained_checkpoint)
     in_size = cfg['model']['backbone']['input_size']
-    evaluator = None#DSECEvaluator(test_dl, img_size=(in_size, in_size), confthre=0.001, nmsthre=0.65, num_classes=cfg['dataset']['bb_num_classes'], device=device)
+    evaluator = CityscapesEvaluator(test_dl, img_size=(in_size, in_size), confthre=0.001, nmsthre=0.65, num_classes=cfg['dataset']['bb_num_classes'], device=device)
     trainer.train(evaluator=evaluator)
