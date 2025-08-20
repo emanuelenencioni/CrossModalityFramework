@@ -60,15 +60,21 @@ def build_from_config(cfg):
     elif dataset_name.lower() in ["cityscape", "cityscapes", "cityscapes_dataset", "cityscape_dataset", "cityscapesdataset", "cityscapedataset"]:
         
         cfg["data_root"] = cfg["data_dir"]
-        cfg["custom_classes"] = cfg.get("DSEC_classes", False)
-        if cfg["custom_classes"] == True: 
+        if cfg.get("custom_classes", False) == True: 
             cfg["extract_bboxes_from_masks"] = True
             cfg["load_bboxes"] = True
+        else:
+            print("\033[93m"+"WARNING: custom_classes is set to False, using default Cityscapes classes"+"\033[0m")
         cfg["pipeline"] = cfg.get("pipeline", [])
-        cfg["img_dir"] = "cityscapes/leftImg8bit/train/aachen"
-        cfg["ann_dir"] = "cityscapes/gtFine/train/aachen"
+
+        cfg["img_dir"] = "cityscapes/leftImg8bit/train/"
+        cfg["ann_dir"] = "cityscapes/gtFine/train/"
         train_txt = os.path.join(project_root,"dataset", cfg.get("train_split", "train.txt"))
         val_txt = os.path.join(project_root,"dataset", cfg.get("val_split", "val.txt"))
-        return CityscapesDataset(**cfg, split=train_txt), CityscapesDataset(**cfg, split=val_txt)
+        train_ds =  CityscapesDataset(**cfg, split=train_txt)
+        cfg["img_dir"] = "cityscapes/leftImg8bit/val/"
+        cfg["ann_dir"] = "cityscapes/gtFine/val/"
+        test_ds = CityscapesDataset(**cfg, split=val_txt)
+        return train_ds, test_ds
     else:
         raise NotImplementedError(f"Dataset {dataset_name} not implemented yet.")

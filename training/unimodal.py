@@ -45,7 +45,6 @@ class Trainer:
 
         self.device = device
         
-       
         self.scheduler = scheduler
         self.wandb_log = True if wandb.run is not None else False
         if self.wandb_log: assert wandb.run is not None, "Wandb run must be initialized before setting wandb_log to True"

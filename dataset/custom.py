@@ -159,11 +159,11 @@ class CustomDataset(Dataset):
         if split is not None:
             with open(split) as f:
                 for line in f:
-                    img_name = line.strip()
+                    img_name = line.strip().split("/")[-1]
                     img_info = dict(filename=img_name + img_suffix)
                     if ann_dir is not None:
                         seg_map = img_name + seg_map_suffix
-                        img_info['ann'] = dict(seg_map=seg_map)
+                        img_info['ann'] = dict(subfolder= img_name.split("_")[0], seg_map=seg_map)  # Add subfolder info
                     img_infos.append(img_info)
         else:
             for entry in os.scandir(img_dir):
@@ -171,7 +171,7 @@ class CustomDataset(Dataset):
                     img_info = dict(filename=entry.name)
                     if ann_dir is not None:
                         seg_map = entry.name.replace(img_suffix, seg_map_suffix)
-                        img_info['ann'] = dict(seg_map=seg_map)
+                        img_info['ann'] = dict(subfolder= img_name.split("_")[0], seg_map=seg_map)  # Add subfolder info
                     img_infos.append(img_info)
 
         if DEBUG>=1: print(
@@ -436,7 +436,7 @@ class CustomDataset(Dataset):
             
         # Get JSON file path
         img_info = self.img_infos[idx]
-        seg_map_path = osp.join(self.ann_dir, img_info['ann']['seg_map'])
+        seg_map_path = osp.join(self.ann_dir, img_info['ann']['subfolder'], img_info['ann']['seg_map'])
         json_file_path = seg_map_path.replace(self.seg_map_suffix, '_gtFine_polygons.json')
         
         if not osp.exists(json_file_path):
@@ -446,8 +446,8 @@ class CustomDataset(Dataset):
         all_bboxes[:, 0] = -1  # Initialize with -1 for empty cells
         try:
             # Load JSON annotation
-            with open(json_file_path, 'r') as f:
-                annotation_data = json.load(f)
+            f = open(json_file_path, 'r')
+            annotation_data = json.load(f)
             
             img_height = annotation_data.get('imgHeight', 1024)
             img_width = annotation_data.get('imgWidth', 2048)
@@ -469,7 +469,8 @@ class CustomDataset(Dataset):
                     class_id = self.DETECTION_CLASSES[label]
 
                 # Skip if class not found or is ignore class
-                if class_id == -1 or class_id == self.ignore_index or class_id not in self.DETECTION_CLASSES.keys(): continue
+                if class_id == -1 or class_id == self.ignore_index or class_id not in self.DETECTION_CLASSES.values(): 
+                    continue
                 # Create binary mask from polygon
                 try:
                     # Convert polygon to binary mask
@@ -1200,7 +1201,7 @@ class CustomDataset(Dataset):
         """
         # Get image path
         img_info = self.img_infos[idx]
-        img_path = osp.join(self.img_dir, img_info['filename'])
+        img_path = osp.join(self.img_dir, img_info['ann']['subfolder'], img_info['filename'])
         
         if not osp.exists(img_path):
             if DEBUG >= 1:
@@ -1215,7 +1216,7 @@ class CustomDataset(Dataset):
             # Get original size from JSON if available (more accurate)
             json_width, json_height = original_size
             if self.ann_dir is not None:
-                seg_map_path = osp.join(self.ann_dir, img_info['ann']['seg_map'])
+                seg_map_path = osp.join(self.ann_dir,img_info['ann']['subfolder'], img_info['ann']['seg_map'])
                 json_file_path = seg_map_path.replace(self.seg_map_suffix, '_gtFine_polygons.json')
                 
                 if osp.exists(json_file_path):

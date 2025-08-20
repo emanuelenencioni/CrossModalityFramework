@@ -113,7 +113,7 @@ class CityscapesEvaluator(DSECEvaluator):
                         class_id, x1, y1, w, h = bbox[:5]
 
                         # Skip invalid bboxes
-                        if class_id <= 0 or w <= 0 or h <= 0:
+                        if class_id < 0 or w <= 0 or h <= 0:
                             continue
 
                         # Convert to COCO format (x, y, width, height)
