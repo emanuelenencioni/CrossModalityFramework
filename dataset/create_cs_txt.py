@@ -17,16 +17,12 @@ def scan_folders_and_create_txt(folder1, folder2, output_file1, output_file2):
     for root, dirs, files in os.walk(folder1):
         for file in files:
             file_path = os.path.join(root, file)
-            # Remove "_leftImg8bit.png" from the file path
-            file_path = file_path.replace("_leftImg8bit.png", "")
             files1.append(file_path)
     
     # Scan second folder
     for root, dirs, files in os.walk(folder2):
         for file in files:
             file_path = os.path.join(root, file)
-            # Remove "_leftImg8bit.png" from the file path
-            file_path = file_path.replace("_leftImg8bit.png", "")
             files2.append(file_path)
     
     # Write file paths from folder1 to first output file
