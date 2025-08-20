@@ -20,11 +20,7 @@ import tqdm
 
 
 class CityscapesDataset(CustomDataset):
-    """Cityscapes dataset.
-
-    The ``img_suffix`` is fixed to '_leftImg8bit.png' and ``seg_map_suffix`` is
-    fixed to '_gtFine_labelTrainIds.png' for Cityscapes dataset.
-    """
+    """Cityscapes dataset with enhanced path support."""
 
     CLASSES = ('road', 'sidewalk', 'building', 'wall', 'fence', 'pole',
                'traffic light', 'traffic sign', 'vegetation', 'terrain', 'sky',
@@ -58,11 +54,20 @@ class CityscapesDataset(CustomDataset):
     def __init__(self,
                  img_suffix='_leftImg8bit.png',
                  seg_map_suffix='_gtFine_labelTrainIds.png',
+                 split=None,  # New parameter for list of paths
                  **kwargs):
+        # Store path list if provided
+        self.path_list = []
+        with open(split) as f:
+            self.path_list = [line.strip() for line in f.readlines()]
+        if len(self.path_list) == 0:
+            raise ValueError(f"No paths found in the provided split file: {split}")
+        
         # Extract bounding box parameters if provided
         bbox_ann_suffix = kwargs.get('bbox_ann_suffix', '.json')
         load_bboxes = kwargs.get('load_bboxes', False)
         kwargs["DETECTION_CLASSES"] = self.DSEC_DET_CLASSES if kwargs.get('custom_classes', False) else None
+        
         super(CityscapesDataset, self).__init__(
             img_suffix=img_suffix, 
             seg_map_suffix=seg_map_suffix, 
@@ -435,3 +440,157 @@ class CityscapesDataset(CustomDataset):
             tmp_dir.cleanup()
 
         return eval_results
+
+    def load_annotations(self, img_dir, img_suffix, ann_dir, seg_map_suffix, split):
+        """Enhanced annotation loading with support for path lists and flexible text files."""
+        img_infos = []
+        
+        # Priority 1: Use path_list if provided
+        if self.path_list is not None:
+            return self._load_from_path_list(img_dir, img_suffix, ann_dir, seg_map_suffix)
+        
+        # Priority 2: Use split file if provided
+        elif split is not None:
+            return self._load_from_split_file(img_dir, img_suffix, ann_dir, seg_map_suffix, split)
+        
+        # Priority 3: Load all files from directory
+        else:
+            return self._load_from_directory(img_dir, img_suffix, ann_dir, seg_map_suffix)
+
+    def _load_from_path_list(self, img_dir, img_suffix, ann_dir, seg_map_suffix):
+        """Load annotations from a list of paths."""
+        img_infos = []
+        
+        for path_item in self.path_list:
+            if isinstance(path_item, str):
+                # Single path string
+                img_path = path_item
+            elif isinstance(path_item, dict):
+                # Dictionary with 'img' key and optional 'ann' key
+                img_path = path_item['img']
+            else:
+                continue
+            
+            # Determine if it's a full path or relative name
+            if osp.isabs(img_path):
+                # Full absolute path
+                filename = osp.basename(img_path)
+                img_info = dict(filename=filename, full_path=img_path)
+            else:
+                # Relative path/name
+                filename = img_path if img_path.endswith(img_suffix) else img_path + img_suffix
+                img_info = dict(filename=filename)
+            
+            # Handle annotation
+            if ann_dir is not None:
+                if isinstance(path_item, dict) and 'ann' in path_item:
+                    # Custom annotation path provided
+                    ann_path = path_item['ann']
+                    if osp.isabs(ann_path):
+                        seg_map = osp.basename(ann_path)
+                        img_info['ann'] = dict(seg_map=seg_map, full_path=ann_path)
+                    else:
+                        img_info['ann'] = dict(seg_map=ann_path)
+                else:
+                    # Generate annotation path from image path
+                    base_name = osp.splitext(filename)[0]
+                    if img_suffix in base_name:
+                        base_name = base_name.replace(img_suffix.replace('.', ''), '')
+                    seg_map = base_name + seg_map_suffix
+                    img_info['ann'] = dict(seg_map=seg_map)
+            
+            img_infos.append(img_info)
+        
+        if DEBUG >= 1:
+            print(f'Loaded {len(img_infos)} images from path list')
+        return img_infos
+
+    def _load_from_split_file(self, img_dir, img_suffix, ann_dir, seg_map_suffix, split):
+        """Enhanced split file loading with support for full paths."""
+        img_infos = []
+        
+        with open(split) as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith('#'):  # Skip empty lines and comments
+                    continue
+                
+                # Check if line contains full path or just filename
+                if osp.isabs(line):
+                    # Full path provided
+                    img_path = line
+                    filename = osp.basename(img_path)
+                    img_info = dict(filename=filename, full_path=img_path)
+                    
+                    # Generate annotation path
+                    if ann_dir is not None:
+                        base_name = osp.splitext(filename)[0]
+                        if img_suffix.replace('.', '') in base_name:
+                            base_name = base_name.replace(img_suffix.replace('.', ''), '')
+                        seg_map = base_name + seg_map_suffix
+                        
+                        # Try to find annotation in same directory as image or use ann_dir
+                        img_dir_path = osp.dirname(img_path)
+                        ann_full_path = osp.join(img_dir_path.replace('images', 'annotations'), seg_map)
+                        if osp.exists(ann_full_path):
+                            img_info['ann'] = dict(seg_map=seg_map, full_path=ann_full_path)
+                        else:
+                            img_info['ann'] = dict(seg_map=seg_map)
+                else:
+                    # Relative name (original behavior)
+                    img_name = line
+                    img_info = dict(filename=img_name + img_suffix)
+                    if ann_dir is not None:
+                        seg_map = img_name + seg_map_suffix
+                        img_info['ann'] = dict(seg_map=seg_map)
+                
+                img_infos.append(img_info)
+        
+        if DEBUG >= 1:
+            print(f'Loaded {len(img_infos)} images from split file: {split}')
+        return img_infos
+
+    def _load_from_directory(self, img_dir, img_suffix, ann_dir, seg_map_suffix):
+        """Original directory loading method."""
+        img_infos = []
+        
+        for entry in os.scandir(img_dir):
+            if entry.is_file() and entry.name.endswith(img_suffix):
+                img_info = dict(filename=entry.name)
+                if ann_dir is not None:
+                    seg_map = entry.name.replace(img_suffix, seg_map_suffix)
+                    img_info['ann'] = dict(seg_map=seg_map)
+                img_infos.append(img_info)
+        
+        if DEBUG >= 1:
+            print(f'Loaded {len(img_infos)} images from directory: {img_dir}')
+        return img_infos
+
+    def prepare_train_img(self, idx):
+        """Enhanced image preparation with full path support."""
+        img_info = self.img_infos[idx]
+        ann_info = self.get_ann_info(idx) if not self.test_mode else None
+        results = dict(img_info=img_info, ann_info=ann_info, idx=idx)
+        
+        # Override img_prefix if full_path is provided
+        if 'full_path' in img_info:
+            results['img_prefix'] = osp.dirname(img_info['full_path'])
+        
+        # Override seg_prefix if annotation has full_path
+        if ann_info and 'full_path' in ann_info:
+            results['seg_prefix'] = osp.dirname(ann_info['full_path'])
+        
+        self.pre_pipeline(results)
+        return results
+
+    def prepare_test_img(self, idx):
+        """Enhanced test image preparation with full path support."""
+        img_info = self.img_infos[idx]
+        results = dict(img_info=img_info, idx=idx)
+        
+        # Override img_prefix if full_path is provided
+        if 'full_path' in img_info:
+            results['img_prefix'] = osp.dirname(img_info['full_path'])
+        
+        self.pre_pipeline(results)
+        return results
