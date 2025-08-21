@@ -119,7 +119,7 @@ def parse_arguments():
     parser.add_argument("--val_interval", type=int, help="Validation interval (steps)", default=None)
     parser.add_argument("--checkpoint_interval", type=int, help="Checkpoint interval (epochs)", default=None)
     parser.add_argument("--save_folder", type=str,  help="Save folder", default=None)
-
+    parser.add_argument("--checkpoint_interval_epochs", type=int, help="Checkpoint interval in epochs", default=None)
     # Scheduler parameters
     parser.add_argument("--scheduler-name", type=str, help="Scheduler name", default=None, dest="scheduler-name")
     parser.add_argument("--factor", type=float, help="Scheduler factor", default=None)
