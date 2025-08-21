@@ -430,16 +430,6 @@ class CustomDataset(Dataset):
             if DEBUG >= 1: print(f"Error loading JSON file {json_file_path}: {e}")
             return all_bboxes, []
 
-
-    def get_bboxes_from_json_segmentation(self, idx):
-        """
-        Get bounding box information for a sample from JSON polygon annotations.
-        Args: idx (int): Index of the sample
-        Returns: list: List of bounding boxes in [class_id, x, y, h, w] format
-        """
-        bboxes, _ = self.extract_bboxes_from_json_polygons(idx)
-        return bboxes
-
     def get_bbox_info(self, idx):
         """
         Get bounding box information for a sample.
@@ -489,15 +479,15 @@ class CustomDataset(Dataset):
             class_id, x, y, h, w = bbox
             
             # Skip empty bboxes
-            if class_id <= 0:
+            if class_id < 0:
                 continue
                 
             x1, y1, x2, y2 = x, y, x + w, y + h
             bbox_list.append([x1, y1, x2, y2])
             
             # Create label
-            if self.CLASSES is not None and class_id < len(self.CLASSES):
-                labels.append(self.CLASSES[int(class_id)])
+            if self.DETECTION_CLASSES is not None and class_id in self.DETECTION_CLASSES.values():
+                labels.append([key for key, value in self.DETECTION_CLASSES.items() if value == class_id][0])
             else:
                 labels.append(f"Class_{int(class_id)}")
         
@@ -588,506 +578,106 @@ class CustomDataset(Dataset):
 
         return palette
 
-    def evaluate(self, results, bb=True, metric='mIoU', logger=None, efficient_test=False, **kwargs):
-        """Evaluate the dataset.
-        Args:
-            results (list): Testing results of the dataset.
-            bb (bool): If True, evaluate bounding box detection using COCO metrics.
-                      If False, evaluate segmentation using traditional metrics.
-            metric (str | list[str]): Metrics to be evaluated. 'mIoU',
-                'mDice' and 'mFscore' are supported for segmentation.
-            logger (logging.Logger | None | str): Logger used for printing
-                related information during evaluation. Default: None.
-        Returns: dict[str, float]: Default metrics.
-        """
-        if bb:
-            return self.evaluate_bbox_detection(results, logger=logger, **kwargs)
-        else:
-            # Traditional segmentation evaluation
-            if isinstance(metric, str):
-                metric = [metric]
-            allowed_metrics = ['mIoU', 'mDice', 'mFscore']
-            if not set(metric).issubset(set(allowed_metrics)):
-                raise KeyError('metric {} is not supported'.format(metric))
-            eval_results = {}
-            gt_seg_maps = self.get_gt_seg_maps(efficient_test)
-            if self.CLASSES is None:
-                num_classes = len(
-                    reduce(np.union1d, [np.unique(_) for _ in gt_seg_maps]))
-            else:
-                num_classes = len(self.CLASSES)
+    # def evaluate(self, results, bb=True, metric='mIoU', logger=None, efficient_test=False, **kwargs):
+    #     """Evaluate the dataset.
+    #     Args:
+    #         results (list): Testing results of the dataset.
+    #         bb (bool): If True, evaluate bounding box detection using COCO metrics.
+    #                   If False, evaluate segmentation using traditional metrics.
+    #         metric (str | list[str]): Metrics to be evaluated. 'mIoU',
+    #             'mDice' and 'mFscore' are supported for segmentation.
+    #         logger (logging.Logger | None | str): Logger used for printing
+    #             related information during evaluation. Default: None.
+    #     Returns: dict[str, float]: Default metrics.
+    #     """
+    #     if bb:
+    #         return self.evaluate_bbox_detection(results, logger=logger, **kwargs)
+    #     else:
+    #         # Traditional segmentation evaluation
+    #         if isinstance(metric, str):
+    #             metric = [metric]
+    #         allowed_metrics = ['mIoU', 'mDice', 'mFscore']
+    #         if not set(metric).issubset(set(allowed_metrics)):
+    #             raise KeyError('metric {} is not supported'.format(metric))
+    #         eval_results = {}
+    #         gt_seg_maps = self.get_gt_seg_maps(efficient_test)
+    #         if self.CLASSES is None:
+    #             num_classes = len(
+    #                 reduce(np.union1d, [np.unique(_) for _ in gt_seg_maps]))
+    #         else:
+    #             num_classes = len(self.CLASSES)
             
-            # Placeholder for eval_metrics function (would need to be imported)
-            # ret_metrics = eval_metrics(
-            #     results,
-            #     gt_seg_maps,
-            #     num_classes,
-            #     self.ignore_index,
-            #     metric,
-            #     label_map=self.label_map,
-            #     reduce_zero_label=self.reduce_zero_label)
+    #         # Placeholder for eval_metrics function (would need to be imported)
+    #         # ret_metrics = eval_metrics(
+    #         #     results,
+    #         #     gt_seg_maps,
+    #         #     num_classes,
+    #         #     self.ignore_index,
+    #         #     metric,
+    #         #     label_map=self.label_map,
+    #         #     reduce_zero_label=self.reduce_zero_label)
             
-            # For now, return empty results to avoid undefined function error
-            ret_metrics = {m: np.zeros(num_classes) for m in metric}
-            ret_metrics['aAcc'] = 0.0
+    #         # For now, return empty results to avoid undefined function error
+    #         ret_metrics = {m: np.zeros(num_classes) for m in metric}
+    #         ret_metrics['aAcc'] = 0.0
 
-        if self.CLASSES is None:
-            class_names = tuple(range(num_classes))
-        else:
-            class_names = self.CLASSES
+    #     if self.CLASSES is None:
+    #         class_names = tuple(range(num_classes))
+    #     else:
+    #         class_names = self.CLASSES
 
-        # summary table
-        ret_metrics_summary = OrderedDict({
-            ret_metric: np.round(np.nanmean(ret_metric_value) * 100, 2)
-            for ret_metric, ret_metric_value in ret_metrics.items()
-        })
+    #     # summary table
+    #     ret_metrics_summary = OrderedDict({
+    #         ret_metric: np.round(np.nanmean(ret_metric_value) * 100, 2)
+    #         for ret_metric, ret_metric_value in ret_metrics.items()
+    #     })
 
-        # each class table
-        ret_metrics.pop('aAcc', None)
-        ret_metrics_class = OrderedDict({
-            ret_metric: np.round(ret_metric_value * 100, 2)
-            for ret_metric, ret_metric_value in ret_metrics.items()
-        })
-        ret_metrics_class.update({'Class': class_names})
-        ret_metrics_class.move_to_end('Class', last=False)
+    #     # each class table
+    #     ret_metrics.pop('aAcc', None)
+    #     ret_metrics_class = OrderedDict({
+    #         ret_metric: np.round(ret_metric_value * 100, 2)
+    #         for ret_metric, ret_metric_value in ret_metrics.items()
+    #     })
+    #     ret_metrics_class.update({'Class': class_names})
+    #     ret_metrics_class.move_to_end('Class', last=False)
 
-        # for logger
-        class_table_data = PrettyTable()
-        for key, val in ret_metrics_class.items():
-            class_table_data.add_column(key, val)
+    #     # for logger
+    #     class_table_data = PrettyTable()
+    #     for key, val in ret_metrics_class.items():
+    #         class_table_data.add_column(key, val)
 
-        summary_table_data = PrettyTable()
-        for key, val in ret_metrics_summary.items():
-            if key == 'aAcc':
-                summary_table_data.add_column(key, [val])
-            else:
-                summary_table_data.add_column('m' + key, [val])
-        if DEBUG >= 1:
-            print('per class results:')
-            print('\n' + class_table_data.get_string())
-            print('Summary:')
-            print('\n' + summary_table_data.get_string())
+    #     summary_table_data = PrettyTable()
+    #     for key, val in ret_metrics_summary.items():
+    #         if key == 'aAcc':
+    #             summary_table_data.add_column(key, [val])
+    #         else:
+    #             summary_table_data.add_column('m' + key, [val])
+    #     if DEBUG >= 1:
+    #         print('per class results:')
+    #         print('\n' + class_table_data.get_string())
+    #         print('Summary:')
+    #         print('\n' + summary_table_data.get_string())
 
-        # each metric dict
-        for key, value in ret_metrics_summary.items():
-            if key == 'aAcc':
-                eval_results[key] = value / 100.0
-            else:
-                eval_results['m' + key] = value / 100.0
+    #     # each metric dict
+    #     for key, value in ret_metrics_summary.items():
+    #         if key == 'aAcc':
+    #             eval_results[key] = value / 100.0
+    #         else:
+    #             eval_results['m' + key] = value / 100.0
 
-        ret_metrics_class.pop('Class', None)
-        for key, value in ret_metrics_class.items():
-            eval_results.update({
-                key + '.' + str(name): value[idx] / 100.0
-                for idx, name in enumerate(class_names)
-            })
+    #     ret_metrics_class.pop('Class', None)
+    #     for key, value in ret_metrics_class.items():
+    #         eval_results.update({
+    #             key + '.' + str(name): value[idx] / 100.0
+    #             for idx, name in enumerate(class_names)
+    #         })
 
-        # Handle file cleanup if results are file paths
-        if isinstance(results, list) and all(isinstance(r, str) for r in results):
-            for file_name in results:
-                if os.path.exists(file_name):
-                    os.remove(file_name)
-        return eval_results
-
-    def evaluate_bbox_detection(self, results, logger=None, **kwargs):
-        """
-        Evaluate bounding box detection using COCO-style metrics.
-        
-        Args:
-            results (list): List of detection results. Each result should contain:
-                          - 'bboxes': predicted bboxes in [class_id, x, y, h, w] format
-                          - 'scores': confidence scores for each bbox
-            logger: Logger for printing results
-            
-        Returns:
-            dict: Evaluation metrics including mAP, AP50, AP75, etc.
-        """
-        eval_results = {}
-        
-        # Collect ground truth and predictions
-        gt_bboxes_all = []
-        pred_bboxes_all = []
-        
-        print(f"Evaluating bounding box detection on {len(self)} samples...")
-        
-        for idx in range(len(self)):
-            # Get ground truth bboxes
-            gt_bboxes = self.get_bbox_info(idx)
-            # Filter out empty bboxes (class_id = -1)
-            valid_gt = gt_bboxes[gt_bboxes[:, 0] > 0] if len(gt_bboxes) > 0 else []
-            gt_bboxes_all.append(valid_gt)
-            
-            # Get predicted bboxes from results
-            if idx < len(results):
-                pred_result = results[idx]
-                if isinstance(pred_result, dict):
-                    pred_bboxes = pred_result.get('bboxes', [])
-                    pred_scores = pred_result.get('scores', [])
-                else:
-                    # Assume results[idx] is model output tensor or list
-                    # Process model output to extract bboxes and scores
-                    pred_bboxes, pred_scores = self._process_model_output(pred_result)
-            else:
-                pred_bboxes = []
-                pred_scores = []
-            
-            pred_bboxes_all.append({
-                'bboxes': pred_bboxes,
-                'scores': pred_scores
-            })
-        
-        # Calculate COCO-style metrics
-        metrics = self.calculate_coco_metrics(gt_bboxes_all, pred_bboxes_all)
-        
-        # Print results
-        if logger or DEBUG >= 1:
-            self.print_bbox_evaluation_results(metrics, logger)
-        
-        return metrics
-
-    def _process_model_output(self, model_output):
-        """
-        Process raw model output to extract bboxes and scores.
-        Adapt this based on your model's output format.
-        """
-        if model_output is None:
-            return [], []
-        
-        # Assuming model_output is tensor with format [x1, y1, x2, y2, conf, cls_conf, cls_id]
-        if hasattr(model_output, 'cpu'):
-            output = model_output.cpu().numpy()
-        else:
-            output = np.array(model_output)
-        
-        if len(output.shape) == 1:
-            output = output.reshape(1, -1)
-        
-        bboxes = []
-        scores = []
-        
-        for detection in output:
-            if len(detection) >= 7:  # [x1, y1, x2, y2, obj_conf, cls_conf, cls_id]
-                x1, y1, x2, y2, obj_conf, cls_conf, cls_id = detection[:7]
-                
-                # Convert to [class_id, x, y, w, h] format
-                w = x2 - x1
-                h = y2 - y1
-                bbox = [cls_id, x1, y1, w, h]
-                score = obj_conf * cls_conf
-                
-                bboxes.append(bbox)
-                scores.append(score)
-        
-        return bboxes, scores
-
-    def calculate_coco_metrics(self, gt_bboxes_all, pred_bboxes_all, iou_thresholds=None):
-        """
-        Calculate COCO-style detection metrics.
-        
-        Args:
-            gt_bboxes_all (list): Ground truth bboxes for all images
-            pred_bboxes_all (list): Predicted bboxes for all images
-            iou_thresholds (list): IoU thresholds for evaluation
-            
-        Returns:
-            dict: Dictionary containing various AP metrics
-        """
-        if iou_thresholds is None:
-            iou_thresholds = [0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95]
-        
-        # Initialize metrics storage
-        all_matches = []
-        all_scores = []
-        total_gt = 0
-        
-        # Process each image
-        for gt_bboxes, pred_data in zip(gt_bboxes_all, pred_bboxes_all):
-            pred_bboxes = pred_data['bboxes']
-            pred_scores = pred_data['scores']
-            
-            total_gt += len(gt_bboxes)
-            
-            if len(pred_bboxes) == 0:
-                continue
-            
-            # Calculate IoU matrix
-            iou_matrix = self.calculate_iou_matrix(gt_bboxes, pred_bboxes)
-            
-            # For each IoU threshold, find matches
-            for iou_thresh in iou_thresholds:
-                matches, scores = self.match_predictions_to_gt(
-                    iou_matrix, pred_scores, iou_thresh
-                )
-                all_matches.extend(matches)
-                all_scores.extend(scores)
-        
-        # Calculate Average Precision metrics
-        metrics = {}
-        
-        if len(all_scores) > 0:
-            # Sort by confidence scores
-            sorted_indices = np.argsort(all_scores)[::-1]
-            sorted_matches = np.array(all_matches)[sorted_indices]
-            
-            # Calculate precision and recall
-            tp = np.cumsum(sorted_matches)
-            fp = np.cumsum(1 - sorted_matches)
-            recall = tp / max(total_gt, 1)
-            precision = tp / (tp + fp)
-            
-            # Calculate AP (Average Precision)
-            ap = self.calculate_average_precision(precision, recall)
-            
-            metrics['mAP'] = ap
-            metrics['AP50'] = self.calculate_ap_at_iou(gt_bboxes_all, pred_bboxes_all, 0.5)
-            metrics['AP75'] = self.calculate_ap_at_iou(gt_bboxes_all, pred_bboxes_all, 0.75)
-            
-            # Per-class metrics if detection classes are available
-            if hasattr(self, 'DETECTION_CLASSES'):
-                class_aps = self.calculate_per_class_ap(gt_bboxes_all, pred_bboxes_all)
-                for class_name, class_ap in class_aps.items():
-                    metrics[f'AP_{class_name}'] = class_ap
-        else:
-            # No predictions made
-            metrics['mAP'] = 0.0
-            metrics['AP50'] = 0.0
-            metrics['AP75'] = 0.0
-        
-        # Additional metrics
-        metrics['total_gt'] = total_gt
-        metrics['total_pred'] = sum(len(pred['bboxes']) for pred in pred_bboxes_all)
-        metrics['recall'] = recall[-1] if len(all_scores) > 0 else 0.0
-        metrics['precision'] = precision[-1] if len(all_scores) > 0 else 0.0
-        
-        return metrics
-    
-    def calculate_iou_matrix(self, gt_bboxes, pred_bboxes):
-        """Calculate IoU matrix between ground truth and predicted bboxes."""
-        # Filter out invalid bboxes (class_id <= 0)
-        if torch.is_tensor(gt_bboxes):
-            valid_gt = gt_bboxes[gt_bboxes[:, 0] > 0]
-        else:
-            valid_gt = [bbox for bbox in gt_bboxes if bbox[0] > 0]
-            
-        if torch.is_tensor(pred_bboxes):
-            valid_pred = pred_bboxes[pred_bboxes[:, 0] > 0]
-        else:
-            valid_pred = [bbox for bbox in pred_bboxes if bbox[0] > 0]
-        
-        if len(valid_gt) == 0 or len(valid_pred) == 0:
-            return np.zeros((len(valid_gt), len(valid_pred)))
-        
-        iou_matrix = np.zeros((len(valid_gt), len(valid_pred)))
-        
-        for i, gt_bbox in enumerate(valid_gt):
-            for j, pred_bbox in enumerate(valid_pred):
-                iou = self.calculate_bbox_iou(gt_bbox, pred_bbox)
-                iou_matrix[i, j] = iou
-        
-        return iou_matrix
-    
-    def calculate_bbox_iou(self, bbox1, bbox2):
-        """
-        Calculate Intersection over Union (IoU) between two bboxes.
-        
-        Args:
-            bbox1, bbox2: Bboxes in [class_id, x, y, h, w] format (can be tensors or lists)
-            
-        Returns:
-            float: IoU value between 0 and 1
-        """
-        # Extract coordinates (ignore class_id) - handle both tensor and list formats
-        if torch.is_tensor(bbox1):
-            _, x1, y1, h1, w1 = bbox1.tolist()
-        else:
-            _, x1, y1, h1, w1 = bbox1
-            
-        if torch.is_tensor(bbox2):
-            _, x2, y2, h2, w2 = bbox2.tolist()
-        else:
-            _, x2, y2, h2, w2 = bbox2
-        
-        # Convert to [x1, y1, x2, y2] format
-        x1_max, y1_max = x1 + w1, y1 + h1
-        x2_max, y2_max = x2 + w2, y2 + h2
-        
-        # Calculate intersection
-        xi1 = max(x1, x2)
-        yi1 = max(y1, y2)
-        xi2 = min(x1_max, x2_max)
-        yi2 = min(y1_max, y2_max)
-        
-        if xi2 <= xi1 or yi2 <= yi1:
-            return 0.0
-        
-        intersection = (xi2 - xi1) * (yi2 - yi1)
-        
-        # Calculate union
-        area1 = w1 * h1
-        area2 = w2 * h2
-        union = area1 + area2 - intersection
-        
-        return intersection / union if union > 0 else 0.0
-    
-    def match_predictions_to_gt(self, iou_matrix, pred_scores, iou_threshold):
-        """Match predictions to ground truth based on IoU threshold."""
-        matches = []
-        scores = []
-        
-        if iou_matrix.size == 0:
-            return matches, scores
-        
-        # Sort predictions by confidence score
-        sorted_indices = np.argsort(pred_scores)[::-1]
-        gt_matched = np.zeros(iou_matrix.shape[0], dtype=bool)
-        
-        for pred_idx in sorted_indices:
-            scores.append(pred_scores[pred_idx])
-            
-            # Find best matching GT
-            ious = iou_matrix[:, pred_idx]
-            best_gt_idx = np.argmax(ious)
-            best_iou = ious[best_gt_idx]
-            
-            # Check if match is valid
-            if best_iou >= iou_threshold and not gt_matched[best_gt_idx]:
-                matches.append(1)  # True positive
-                gt_matched[best_gt_idx] = True
-            else:
-                matches.append(0)  # False positive
-        
-        return matches, scores
-    
-    def calculate_average_precision(self, precision, recall):
-        """Calculate Average Precision using the standard method."""
-        # Add points at recall 0 and 1
-        recall = np.concatenate(([0], recall, [1]))
-        precision = np.concatenate(([0], precision, [0]))
-        
-        # Make precision monotonically decreasing
-        for i in range(len(precision) - 2, -1, -1):
-            precision[i] = max(precision[i], precision[i + 1])
-        
-        # Calculate area under curve
-        indices = np.where(recall[1:] != recall[:-1])[0]
-        ap = np.sum((recall[indices + 1] - recall[indices]) * precision[indices + 1])
-        
-        return ap
-    
-    def calculate_ap_at_iou(self, gt_bboxes_all, pred_bboxes_all, iou_threshold):
-        """Calculate AP at a specific IoU threshold."""
-        all_matches = []
-        all_scores = []
-        total_gt = sum(len(gt) for gt in gt_bboxes_all)
-        
-        for gt_bboxes, pred_data in zip(gt_bboxes_all, pred_bboxes_all):
-            pred_bboxes = pred_data['bboxes']
-            pred_scores = pred_data['scores']
-            
-            if len(pred_bboxes) == 0:
-                continue
-            
-            iou_matrix = self.calculate_iou_matrix(gt_bboxes, pred_bboxes)
-            matches, scores = self.match_predictions_to_gt(
-                iou_matrix, pred_scores, iou_threshold
-            )
-            all_matches.extend(matches)
-            all_scores.extend(scores)
-        
-        if len(all_scores) == 0:
-            return 0.0
-        
-        # Sort by confidence
-        sorted_indices = np.argsort(all_scores)[::-1]
-        sorted_matches = np.array(all_matches)[sorted_indices]
-        
-        # Calculate precision and recall
-        tp = np.cumsum(sorted_matches)
-        fp = np.cumsum(1 - sorted_matches)
-        recall = tp / max(total_gt, 1)
-        precision = tp / (tp + fp)
-        
-        return self.calculate_average_precision(precision, recall)
-    
-    def calculate_per_class_ap(self, gt_bboxes_all, pred_bboxes_all):
-        """Calculate AP for each class separately."""
-        class_aps = {}
-        
-        if not hasattr(self, 'DETECTION_CLASSES'):
-            return class_aps
-        
-        # Group bboxes by class
-        for class_id, class_name in self.DETECTION_CLASSES.items():
-            if not isinstance(class_id, int):
-                continue
-                
-            # Filter GT and predictions for this class
-            class_gt_all = []
-            class_pred_all = []
-            
-            for gt_bboxes, pred_data in zip(gt_bboxes_all, pred_bboxes_all):
-                # Filter GT bboxes for this class
-                class_gt = [bbox for bbox in gt_bboxes if bbox[0] == class_id]
-                class_gt_all.append(class_gt)
-                
-                # Filter predicted bboxes for this class
-                class_pred_bboxes = []
-                class_pred_scores = []
-                
-                for i, bbox in enumerate(pred_data['bboxes']):
-                    if bbox[0] == class_id:
-                        class_pred_bboxes.append(bbox)
-                        if i < len(pred_data['scores']):
-                            class_pred_scores.append(pred_data['scores'][i])
-                        else:
-                            class_pred_scores.append(1.0)
-                
-                class_pred_all.append({
-                    'bboxes': class_pred_bboxes,
-                    'scores': class_pred_scores
-                })
-            
-            # Calculate AP for this class
-            class_ap = self.calculate_ap_at_iou(class_gt_all, class_pred_all, 0.5)
-            class_aps[class_name] = class_ap
-        
-        return class_aps
-    
-    def print_bbox_evaluation_results(self, metrics, logger=None):
-        """Print bounding box evaluation results in a formatted table."""
-        
-        def print_fn(msg):
-            if logger:
-                logger.info(msg)
-            else:
-                print(msg)
-        
-        print_fn("\n" + "=" * 60)
-        print_fn("BOUNDING BOX DETECTION EVALUATION RESULTS")
-        print_fn("=" * 60)
-        
-        # Main metrics
-        print_fn(f"mAP (mean Average Precision): {metrics.get('mAP', 0.0):.4f}")
-        print_fn(f"AP@0.5 (AP at IoU=0.5): {metrics.get('AP50', 0.0):.4f}")
-        print_fn(f"AP@0.75 (AP at IoU=0.75): {metrics.get('AP75', 0.0):.4f}")
-        print_fn(f"Precision: {metrics.get('precision', 0.0):.4f}")
-        print_fn(f"Recall: {metrics.get('recall', 0.0):.4f}")
-        
-        # Statistics
-        print_fn(f"\nDataset Statistics:")
-        print_fn(f"Total Ground Truth boxes: {metrics.get('total_gt', 0)}")
-        print_fn(f"Total Predicted boxes: {metrics.get('total_pred', 0)}")
-        
-        # Per-class results
-        class_metrics = {k: v for k, v in metrics.items() if k.startswith('AP_')}
-        if class_metrics:
-            print_fn(f"\nPer-Class Average Precision:")
-            print_fn("-" * 40)
-            for class_metric, ap_value in sorted(class_metrics.items()):
-                class_name = class_metric.replace('AP_', '')
-                print_fn(f"{class_name:20s}: {ap_value:.4f}")
-        
-        print_fn("=" * 60)
+    #     # Handle file cleanup if results are file paths
+    #     if isinstance(results, list) and all(isinstance(r, str) for r in results):
+    #         for file_name in results:
+    #             if os.path.exists(file_name):
+    #                 os.remove(file_name)
+    #     return eval_results
 
     def load_and_resize_image(self, idx, target_size=(512, 512)):
         """
