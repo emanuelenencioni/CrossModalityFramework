@@ -181,8 +181,8 @@ def denormalize_image(tensor_image, mean=[0.485, 0.456, 0.406], std=[0.229, 0.22
     return image_np
 
 
-def visualize_sample_with_bboxes(sample_data, save_path):
-    """Create visualization with bounding boxes."""
+def visualize_sample_with_bboxes(dataset, sample_data, save_path):
+    """Create visualization with bounding boxes using the dataset's built-in method."""
     
     image = sample_data['image']
     bboxes = sample_data['bboxes']
@@ -192,11 +192,21 @@ def visualize_sample_with_bboxes(sample_data, save_path):
     # Denormalize the image properly
     image_np = denormalize_image(image)
     
-    # Convert tensors to numpy arrays if needed
+    # Convert numpy back to tensor for the dataset's draw method
+    image_tensor = torch.from_numpy(image_np).permute(2, 0, 1)  # HWC to CHW
+    
+    # Convert tensors to numpy arrays if needed for counting
     if torch.is_tensor(bboxes):
-        bboxes = bboxes.numpy()
-    if torch.is_tensor(class_ids):
-        class_ids = class_ids.numpy()
+        bboxes_np = bboxes.numpy()
+    else:
+        bboxes_np = bboxes
+        
+    # Count valid bboxes
+    valid_bboxes = 0
+    if len(bboxes_np) > 0:
+        for bbox in bboxes_np:
+            if len(bbox) >= 5 and bbox[0] >= 0:  # Valid bbox has class_id >= 0
+                valid_bboxes += 1
     
     # Create figure with subplots
     fig, axes = plt.subplots(1, 2, figsize=(15, 7))
@@ -207,49 +217,59 @@ def visualize_sample_with_bboxes(sample_data, save_path):
                      fontsize=12, fontweight='bold')
     axes[0].axis('off')
     
-    # 2. Image with bounding boxes
-    axes[1].imshow(image_np)
-    
-    # Count valid bboxes
-    valid_bboxes = 0
-    if len(bboxes) > 0:
-        for i, bbox in enumerate(bboxes):
-            if len(bbox) >= 5 and bbox[0] >= 0:  # Valid bbox has class_id >= 0
-                valid_bboxes += 1
+    # 2. Image with bounding boxes using dataset's method
+    try:
+        # Use the dataset's draw_bounding_boxes_on_image method
+        image_with_bboxes = dataset.draw_bounding_boxes_on_image(image_tensor, bboxes)
+        
+        # Convert back to numpy for display
+        if torch.is_tensor(image_with_bboxes):
+            if image_with_bboxes.dim() == 3 and image_with_bboxes.shape[0] == 3:  # CHW format
+                image_with_bboxes_np = image_with_bboxes.permute(1, 2, 0).numpy()
+            else:
+                image_with_bboxes_np = image_with_bboxes.numpy()
+        else:
+            image_with_bboxes_np = image_with_bboxes
+        
+        axes[1].imshow(image_with_bboxes_np.astype(np.uint8))
+        
+    except Exception as e:
+        print(f"  ⚠ Error using dataset's draw method: {e}")
+        # Fallback to manual drawing
+        axes[1].imshow(image_np)
+        
+        # Draw bounding boxes manually as fallback
+        colors = ['red', 'blue', 'green', 'yellow', 'purple', 'orange', 'pink', 'cyan', 'magenta', 'brown']
+        
+        if len(bboxes_np) > 0:
+            for i, bbox in enumerate(bboxes_np):
+                if len(bbox) < 5 or bbox[0] < 0:  # Skip invalid bboxes
+                    continue
+                    
+                # bbox format: [class_id, x, y, h, w]
+                class_id, x, y, h, w = bbox[0], bbox[1], bbox[2], bbox[3], bbox[4]
+                color = colors[i % len(colors)]
+                
+                # Draw bounding box
+                rect = patches.Rectangle((x, y), w, h, 
+                                       linewidth=2, edgecolor=color, 
+                                       facecolor='none', alpha=0.8)
+                axes[1].add_patch(rect)
+                
+                # Get class name
+                if hasattr(dataset, 'DSEC_DET_CLASSES') and int(class_id) in dataset.DSEC_DET_CLASSES:
+                    class_name = dataset.DSEC_DET_CLASSES[int(class_id)]
+                else:
+                    class_name = f"Class_{int(class_id)}"
+                
+                # Add class label
+                axes[1].text(x, y-5, f"{class_name} ({int(class_id)})", 
+                            bbox=dict(boxstyle="round,pad=0.3", facecolor=color, alpha=0.8),
+                            fontsize=9, color='white', fontweight='bold')
     
     axes[1].set_title(f'With Bounding Boxes ({valid_bboxes} boxes)', 
                      fontsize=12, fontweight='bold')
     axes[1].axis('off')
-    
-    # Draw bounding boxes
-    colors = ['red', 'blue', 'green', 'yellow', 'purple', 'orange', 'pink', 'cyan', 'magenta', 'brown']
-    
-    if len(bboxes) > 0:
-        for i, bbox in enumerate(bboxes):
-            if len(bbox) < 5 or bbox[0] < 0:  # Skip invalid bboxes
-                continue
-                
-            # bbox format: [class_id, x, y, h, w]
-            class_id, x, y, h, w = bbox[0], bbox[1], bbox[2], bbox[3], bbox[4]
-            color = colors[i % len(colors)]
-            
-            # Draw bounding box
-            rect = patches.Rectangle((x, y), w, h, 
-                                   linewidth=2, edgecolor=color, 
-                                   facecolor='none', alpha=0.8)
-            axes[1].add_patch(rect)
-            
-            # Get class name from DSEC detection classes
-            if int(class_id) in CityscapesDataset.DSEC_DET_CLASSES.values():
-                class_name = [key for key in CityscapesDataset.DSEC_DET_CLASSES.keys() 
-                              if CityscapesDataset.DSEC_DET_CLASSES[key] == class_id][0]
-            else:
-                class_name = f"Class_{int(class_id)}"
-            
-            # Add class label
-            axes[1].text(x, y-5, f"{class_name} ({int(class_id)})", 
-                        bbox=dict(boxstyle="round,pad=0.3", facecolor=color, alpha=0.8),
-                        fontsize=9, color='white', fontweight='bold')
     
     plt.tight_layout()
     plt.savefig(save_path, dpi=150, bbox_inches='tight', 
@@ -380,9 +400,9 @@ def main():
         # Create output filename based on the original filename
         base_name = os.path.splitext(os.path.basename(sample_data['filename']))[0]
         
-        # Save visualization
+        # Save visualization using dataset's draw method
         viz_path = os.path.join(OUTPUT_DIR, f"{base_name}_random_viz.png")
-        visualize_sample_with_bboxes(sample_data, viz_path)
+        visualize_sample_with_bboxes(dataset, sample_data, viz_path)  # Pass dataset as parameter
         
         # Save processed image (denormalized)
         image = sample_data['image']
