@@ -52,7 +52,8 @@ trainer:
   epochs: 50
   log_interval: 500 # steps
   #val_interval: 500 # steps
-  checkpoint_interval: 50 # steps
+  #checkpoint_interval: 50 # steps
+  checkpoint_interval_epochs: 5 # save checkpoint every 5 epochs
   save_folder: unimodal_rgb_checkpoints
 
 # Scheduler parameters (optional)
