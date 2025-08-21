@@ -96,7 +96,6 @@ class CustomDataset(Dataset):
                  classes=None,
                  palette=None,
                  load_bboxes=False,
-                 extract_bboxes_from_masks=True,
                  bbox_min_area=100, **kwargs):
         #self.pipeline = Compose(pipeline)
         self.img_dir = img_dir
@@ -120,7 +119,6 @@ class CustomDataset(Dataset):
 
         # Bounding box support
         self.load_bboxes = load_bboxes
-        self.extract_bboxes_from_masks = extract_bboxes_from_masks
         self.bbox_min_area = bbox_min_area
         self.max_labels = kwargs.get('max_labels', 100)  # Maximum number of bounding boxes per image
 
@@ -325,102 +323,6 @@ class CustomDataset(Dataset):
                 gt_seg_map = np.array(Image.open(seg_map))
             gt_seg_maps.append(gt_seg_map)
         return gt_seg_maps
-
-    def extract_bboxes_from_mask(self, segmentation_mask, min_area=None):
-        """
-        Extract bounding boxes from segmentation mask using torchvision.ops.masks_to_boxes.
-        
-        Args:
-            segmentation_mask (np.ndarray): Segmentation mask with class IDs
-            min_area (int, optional): Minimum area threshold for bounding boxes
-            
-        Returns:
-            list: bboxes in [class_id, x, y, h, w] format
-        """
-        if min_area is None:
-            min_area = self.bbox_min_area
-            
-        # Ensure mask is numpy array
-        if torch.is_tensor(segmentation_mask):
-            segmentation_mask = segmentation_mask.numpy()
-        
-        # Get unique classes (excluding ignore_index)
-        unique_classes = np.unique(segmentation_mask)
-        unique_classes = unique_classes[unique_classes != self.ignore_index]
-        
-        # Initialize tensor for bounding boxes [max_labels, 5] where 5 = [class_id, x, y, h, w]
-        all_bboxes = torch.zeros((self.max_labels, 5), dtype=torch.float32)
-        bbox_count = 0
-        
-        for class_id in unique_classes:
-            if class_id == 0:  # Skip background
-                continue
-                
-            # Create binary mask for this class
-            class_mask = (segmentation_mask == class_id).astype(np.uint8)
-            
-            # Find connected components for multiple instances
-            try:
-                from scipy import ndimage
-                labeled_mask, num_features = ndimage.label(class_mask)
-                
-                for instance_id in range(1, num_features + 1):
-                    # Create mask for this instance
-                    instance_mask = (labeled_mask == instance_id).astype(bool)
-                    
-                    # Check minimum area
-                    if np.sum(instance_mask) < min_area:
-                        continue
-                    
-                    # Convert to torch tensor for masks_to_boxes
-                    instance_tensor = torch.from_numpy(instance_mask)
-                    
-                    # Extract bounding box using torchvision.ops.masks_to_boxes
-                    bbox = masks_to_boxes(instance_tensor.unsqueeze(0))  # Add batch dimension
-                    
-                    if bbox.numel() > 0:  # If bbox was found
-                        bbox = bbox.squeeze(0)  # Remove batch dim, keep as tensor
-                        x1, y1, x2, y2 = bbox
-                        # Convert to [class_id, x, y, h, w] format
-                        bbox_formatted = torch.tensor([class_id, x1, y1, y2 - y1, x2 - x1], dtype=torch.float32)
-                        
-                        # Check if we exceed max_labels
-                        if bbox_count >= self.max_labels:
-                            if DEBUG >= 1:
-                                print(f"Warning: Exceeded max_labels ({self.max_labels}) for segmentation mask extraction")
-                            break
-                        
-                        all_bboxes[bbox_count] = bbox_formatted
-                        bbox_count += 1
-                        
-            except ImportError:
-                # Fallback: treat entire class as single object
-                if np.sum(class_mask) >= min_area:
-                    # Convert to torch tensor for masks_to_boxes
-                    class_tensor = torch.from_numpy(class_mask.astype(bool))
-                    
-                    # Extract bounding box using torchvision.ops.masks_to_boxes
-                    bbox = masks_to_boxes(class_tensor.unsqueeze(0))  # Add batch dimension
-                    
-                    if bbox.numel() > 0:  # If bbox was found
-                        bbox = bbox.squeeze(0)  # Remove batch dim, keep as tensor
-                        x1, y1, x2, y2 = bbox
-                        # Convert to [class_id, x, y, h, w] format
-                        bbox_formatted = torch.tensor([class_id, x1, y1, y2 - y1, x2 - x1], dtype=torch.float32)
-                        
-                        # Check if we exceed max_labels
-                        if bbox_count >= self.max_labels:
-                            if DEBUG >= 1:
-                                print(f"Warning: Exceeded max_labels ({self.max_labels}) for segmentation mask extraction")
-                            break
-                        
-                        all_bboxes[bbox_count] = bbox_formatted
-                        bbox_count += 1
-        
-        # Always return tensor with max_labels dimension, filled cells have class_id > 0, empty cells have class_id = -1
-        # Initialize empty cells with class_id = -1
-        all_bboxes[bbox_count:, 0] = -1
-        return all_bboxes
 
     def extract_bboxes_from_json_polygons(self, idx):
         """
