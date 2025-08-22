@@ -400,8 +400,10 @@ class CustomDataset(Dataset):
                         # Validate bbox coordinates
                         x1, y1, x2, y2 = bbox
                         if x2 > x1 and y2 > y1:  # Valid bbox
-                            # Convert to [class_id, x, y, h, w] format
-                            bbox_formatted = torch.tensor([class_id, x1, y1, y2 - y1, x2 - x1], dtype=torch.float32)
+                            # Convert to [class_id, x_center, y_center, h, w] format
+                            h = y2 - y1
+                            w = x2 - x1
+                            bbox_formatted = torch.tensor([class_id, x1+w/2, y1+h/2, h, w], dtype=torch.float32)
                             
                             # Check if we exceed max_labels
                             if bbox_count >= self.max_labels:
@@ -435,7 +437,7 @@ class CustomDataset(Dataset):
         Get bounding box information for a sample.
         Priority: JSON polygons > segmentation masks > empty tensor
         Args: idx (int): Index of the sample
-        Returns: torch.Tensor: Tensor of bounding boxes in [max_labels, 5] format where 5 = [class_id, x, y, h, w]
+        Returns: torch.Tensor: Tensor of bounding boxes in [max_labels, 5] format where 5 = [class_id, x_center, y_center, h, w]
                               Empty cells have class_id = -1
         """
         bboxes, _ = self.extract_bboxes_from_json_polygons(idx)
@@ -453,7 +455,7 @@ class CustomDataset(Dataset):
         Draw bounding boxes on image using torchvision.utils.draw_bounding_boxes.
         Args:
             image (np.ndarray or torch.Tensor): Input image
-            bboxes (list or torch.Tensor): Bounding boxes in [class_id, x, y, h, w] format
+            bboxes (list or torch.Tensor): Bounding boxes in [class_id, x_center, y_center, h, w] format
             colors (list, optional): Colors for each bbox
         Returns: torch.Tensor: Image with drawn bounding boxes
         """
@@ -470,19 +472,19 @@ class CustomDataset(Dataset):
         else:
             image_tensor = image.byte()
         
-        # Convert bboxes from [class_id, x, y, h, w] to [x1, y1, x2, y2] and extract labels
+        # Convert bboxes from [class_id, x_center, y_center, h, w] to [x1, y1, x2, y2] and extract labels
         # Filter out empty bboxes (class_id = -1)
         bbox_list = []
         labels = []
         
         for bbox in bboxes:
-            class_id, x, y, h, w = bbox
+            class_id, x_center, y_center, h, w = bbox
             
             # Skip empty bboxes
             if class_id < 0:
                 continue
-                
-            x1, y1, x2, y2 = x, y, x + w, y + h
+            x1, y1 = x_center-w/2, y_center-h/2
+            x2, y2 = x1 + w, y1 + h
             bbox_list.append([x1, y1, x2, y2])
             
             # Create label
@@ -775,7 +777,7 @@ class CustomDataset(Dataset):
         """
         Transform bounding boxes to account for padding and scaling.
         Args:
-            bboxes (torch.Tensor): Tensor of bounding boxes in [N, 5] format where 5 = [class_id, x, y, h, w]
+            bboxes (torch.Tensor): Tensor of bounding boxes in [N, 5] format where 5 = [class_id, x_center, y_center, h, w]
             padding_info (dict): Padding information from load_and_resize_image
         Returns: torch.Tensor: Transformed bounding boxes in [N, 5] format
         """
@@ -822,7 +824,7 @@ class CustomDataset(Dataset):
             target_size (tuple): Target size (width, height). Default: (512, 512)
         Returns:
             tuple: (transformed_bboxes, padding_info) where:
-                   - transformed_bboxes are bounding boxes in [class_id, x, y, h, w] format for the final image
+                   - transformed_bboxes are bounding boxes in [class_id, x_center, y_center, h, w] format for the final image
                    - padding_info contains transformation details
         """
         # Get original bounding boxes
@@ -840,7 +842,7 @@ class CustomDataset(Dataset):
         """
         Reverse the bbox transformation to get original coordinates.
         Args:
-            transformed_bboxes (torch.Tensor): Tensor of bboxes in [N, 5] format [class_id, x, y, h, w] transformed space
+            transformed_bboxes (torch.Tensor): Tensor of bboxes in [N, 5] format [class_id, x_center, y_center, h, w] transformed space
             padding_info (dict): Padding information from load_and_resize_image
         Returns: torch.Tensor: Bounding boxes in [N, 5] format original image coordinates
         """
