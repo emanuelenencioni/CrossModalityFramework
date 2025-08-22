@@ -95,7 +95,7 @@ class DSECEvaluator:
         per_class_AP: bool = True,
         per_class_AR: bool = True,
         device = "cpu",
-        input_format = "xywh"  # or "xyxy"
+        input_format = "cxcywh"  # or "xyxy"
     ):
         """
         Args:
@@ -210,6 +210,10 @@ class DSECEvaluator:
             # })
             if self.input_format == "xyxy":
                 bboxes = xyxy2xywh(bboxes)
+            elif self.input_format == "cxcywh":
+                bboxes = bboxes.clone()
+                bboxes[:, 0] = bboxes[:, 0] - bboxes[:, 2] * 0.5
+                bboxes[:, 1] = bboxes[:, 1] - bboxes[:, 3] * 0.5
 
             for ind in range(bboxes.shape[0]):
                 label = int(cls[ind]) # TODO: check if this is correct
