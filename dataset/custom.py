@@ -403,7 +403,7 @@ class CustomDataset(Dataset):
                             # Convert to [class_id, x_center, y_center, h, w] format
                             h = y2 - y1
                             w = x2 - x1
-                            bbox_formatted = torch.tensor([class_id, x1+w/2, y1+h/2, h, w], dtype=torch.float32)
+                            bbox_formatted = torch.tensor([class_id, x1+w*0.5, y1+h*0.5, h, w], dtype=torch.float32)
                             
                             # Check if we exceed max_labels
                             if bbox_count >= self.max_labels:
@@ -483,7 +483,7 @@ class CustomDataset(Dataset):
             # Skip empty bboxes
             if class_id < 0:
                 continue
-            x1, y1 = x_center-w/2, y_center-h/2
+            x1, y1 = x_center-w*0.5, y_center-h*0.5
             x2, y2 = x1 + w, y1 + h
             bbox_list.append([x1, y1, x2, y2])
             
