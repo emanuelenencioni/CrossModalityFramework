@@ -141,6 +141,8 @@ def parse_arguments():
     pretrained_checkpoint = None
     # If a checkpoint path is provided, load the checkpoint
     if cfg.get("checkpoint_path", None) is not None:
+        if args.checkpoint_path is not None:
+            cfg["checkpoint_path"] = args.checkpoint_path
         #root_dir = os.path.dirname(os.path.realpath(__file__))
         checkpoint_path = cfg["checkpoint_path"]
         print(f"Loading pretrained model from {checkpoint_path}")
