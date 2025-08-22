@@ -35,7 +35,8 @@ class CityscapesEvaluator(DSECEvaluator):
         testdev: bool = False,
         per_class_AP: bool = True,
         per_class_AR: bool = True,
-        device = "cpu"
+        device = "cpu",
+        input_format = "xywh"  # or "xyxy"
     ):
         """
         Args:
@@ -49,7 +50,7 @@ class CityscapesEvaluator(DSECEvaluator):
             per_class_AR: Show per class AR during evalution or not. Default to True.
         """
         super().__init__(dataloader, img_size, confthre, nmsthre, num_classes, 
-                         testdev, per_class_AP, per_class_AR, device)
+                         testdev, per_class_AP, per_class_AR, device, input_format)
         
         # Override class names for Cityscapes
         self.class_names = self._get_cityscapes_class_names()
@@ -60,9 +61,9 @@ class CityscapesEvaluator(DSECEvaluator):
             # Use detection classes if available
             det_classes = self.dataloader.dataset.DSEC_DET_CLASSES
             return [det_classes[i] for i in [key  for key in det_classes.keys() if isinstance(key, str)]]
-        elif hasattr(self.dataloader.dataset, 'CLASSES'):
+        elif hasattr(self.dataloader.dataset, 'DETECTION_CLASSES'):
             # Fallback to segmentation classes
-            return list(self.dataloader.dataset.CLASSES)
+            return list(self.dataloader.dataset.DETECTION_CLASSES)
         else:
             # Generic class names
             return [f"class_{i}" for i in range(self.num_classes)]
@@ -110,8 +111,9 @@ class CityscapesEvaluator(DSECEvaluator):
                 for ann_idx in range(target.shape[0]):
                     bbox = target[ann_idx]
                     if len(bbox) >= 5:  # class_id, x, y, w, h
-                        class_id, x1, y1, w, h = bbox[:5]
-
+                        class_id, x_center, y_center, w, h = bbox[:5]
+                        x1 = x_center - w / 2
+                        y1 = y_center - h / 2
                         # Skip invalid bboxes
                         if class_id < 0 or w <= 0 or h <= 0:
                             continue
