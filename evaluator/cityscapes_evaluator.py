@@ -36,7 +36,7 @@ class CityscapesEvaluator(DSECEvaluator):
         per_class_AP: bool = True,
         per_class_AR: bool = True,
         device = "cpu",
-        input_format = "xywh"  # or "xyxy"
+        input_format = "cxcywh"  # or "xyxy"
     ):
         """
         Args:
@@ -112,8 +112,8 @@ class CityscapesEvaluator(DSECEvaluator):
                     bbox = target[ann_idx]
                     if len(bbox) >= 5:  # class_id, x, y, w, h
                         class_id, x_center, y_center, w, h = bbox[:5]
-                        x1 = x_center - w / 2
-                        y1 = y_center - h / 2
+                        x1 = x_center - w * 0.5
+                        y1 = y_center - h * 0.5
                         # Skip invalid bboxes
                         if class_id < 0 or w <= 0 or h <= 0:
                             continue
