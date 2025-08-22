@@ -248,8 +248,8 @@ def visualize_sample_with_bboxes(dataset, sample_data, save_path):
                     
                 # bbox format: [class_id, x, y, h, w]
                 class_id, x_center, y_center, h, w = bbox[0], bbox[1], bbox[2], bbox[3], bbox[4]
-                x = x_center - w / 2
-                y = y_center - h / 2
+                x = x_center - w * 0.5
+                y = y_center - h * 0.5
                 color = colors[i % len(colors)]
                 
                 # Draw bounding box
