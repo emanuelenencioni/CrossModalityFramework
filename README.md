@@ -3,14 +3,17 @@
 ## Description
 This project provides a flexible framework for cross-modality learning, enabling the integration and training of models across different data modalities (e.g., images and events). It supports unimodal and multimodal architectures, domain adaptation, and tasks such as detection and segmentation. The framework is designed for extensibility, allowing easy configuration, modular backbone and head selection. It is suitable for research and development in multi-domain and multi-task machine learning scenarios.
 
+
+
 ## Table of Contents
 - [Dependencies Installation](#dependencies-installation)
 - [Usage](#usage)
 - [Contributing](#contributing)
 - [License](#license)
+- [Model Output Format](#model-output-format)
 
 ## Dependencies Installation
-
+ 
 You can set up the environment using the following commands:
 
 ```bash
@@ -77,3 +80,36 @@ This guide provides instructions to set up and run the framework:
 
 - [ ] (per la proposta di metodo) considerare di fare la loss di contrastive solo sulla bbox e tutto il resto considerarlo come negative
 - [ ] Refactor unimodal -> SingleModality. 
+
+
+## Model Output Format
+
+### YOLOXHead Input and Output Specifications
+
+#### **Input Format (Training)**
+During training, the YOLOXHead expects ground truth labels in the following format:
+- **Labels tensor shape**: `[batch_size, max_objects, 5]`
+- **Label format**: `[class_id, x_center, y_center, width, height]`
+  - `class_id`: Integer class identifier (0-based indexing)
+  - `x_center, y_center`: Center coordinates of the bounding box (absolute pixel coordinates)
+  - `width, height`: Width and height of the bounding box (absolute pixel values)
+- **Coordinate system**: Center-based format with absolute pixel coordinates
+- **Padding**: Unused label slots should be filled with negative values (e.g., `-1`)
+
+#### **Output Format (Inference)**
+By default, the model outputs bounding boxes in the format: `[x_center, y_center, width, height, objectness_score, class_confidence_0, class_confidence_1, ...]`
+
+**Detailed breakdown:**
+- **Bounding box coordinates**: `[x_center, y_center, width, height]` (center coordinates with width/height)
+- **Objectness score**: Confidence that the box contains an object
+- **Class confidences**: Per-class confidence scores (one for each class)
+- **Coordinate system**: Center-based format with absolute pixel coordinates
+- **Output tensor shape**: `[batch_size, num_detections, 5 + num_classes]`
+
+
+#### **Internal Processing**
+The YOLOXHead uses center-based coordinates throughout its internal processing:
+- Loss computation uses `[x_center, y_center, width, height]` format
+- Assignment algorithms expect center-based ground truth
+- IoU calculations support both coordinate formats via the `xyxy` parameter
+- Multi-scale feature processing maintains center-based representation
