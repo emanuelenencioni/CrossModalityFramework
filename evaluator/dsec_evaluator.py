@@ -94,7 +94,8 @@ class DSECEvaluator:
         testdev: bool = False,
         per_class_AP: bool = True,
         per_class_AR: bool = True,
-        device = "cpu"
+        device = "cpu",
+        input_format = "cxcywh"  # or "xyxy"
     ):
         """
         Args:
@@ -116,6 +117,7 @@ class DSECEvaluator:
         self.per_class_AP = per_class_AP
         self.per_class_AR = per_class_AR
         self.device = device
+        self.input_format = input_format
         self.input_type = 'events_vg' if 'events_vg' in dataloader.dataset[0] else 'image'
 
     def evaluate(
@@ -191,10 +193,10 @@ class DSECEvaluator:
             bboxes = output[:, 0:4]
 
             # preprocessing: resize, 0 -> height, 1 -> width
-            scale = min(
-                self.img_size[0] / float(img_info.data['orig_shape'][0]), self.img_size[1] / float(img_info.data['orig_shape'][1])
-            )
-            bboxes /= scale
+            # scale = min(
+            #     float(self.img_size[0]) / float(img_info.data['orig_shape'][0]), float(self.img_size[1]) / float(img_info.data['orig_shape'][1])
+            # )
+            #bboxes /= scale
             cls = output[:, 6]
             scores = output[:, 4] * output[:, 5]
 
@@ -206,8 +208,12 @@ class DSECEvaluator:
             #         ],
             #     }
             # })
-
-            bboxes = xyxy2xywh(bboxes)
+            if self.input_format == "xyxy":
+                bboxes = xyxy2xywh(bboxes)
+            elif self.input_format == "cxcywh":
+                bboxes = bboxes.clone()
+                bboxes[:, 0] = bboxes[:, 0] - bboxes[:, 2] * 0.5
+                bboxes[:, 1] = bboxes[:, 1] - bboxes[:, 3] * 0.5
 
             for ind in range(bboxes.shape[0]):
                 label = int(cls[ind]) # TODO: check if this is correct
@@ -268,7 +274,12 @@ class DSECEvaluator:
                 for ann_idx in range(target.shape[0]):
                     bbox = target[ann_idx]
                     if len(bbox) >= 5:  # class_id, x1, y1, x2, y2, 
-                        class_id, x1, y1, w, h= bbox[:5]
+                        if self.input_format == "xyxy":
+                            class_id, x1, y1, x2, y2 = bbox[:5]
+                            w = x2 - x1
+                            h = y2 - y1
+                        else:   
+                            class_id, x1, y1, w, h= bbox[:5]
 
                         # Convert to COCO format (x, y, width, height)
                         coco_bbox = [

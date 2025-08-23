@@ -42,10 +42,17 @@ class Trainer:
                 self.epoch = pretrained_checkpoint['epoch'] + 1
                 self.total_epochs = int(self.trainer_cfg['epochs']) + self.epoch - 1
                 if DEBUG >= 1: print(f"Resuming training from epoch {self.epoch}")
+        
+
+        self.checkpoint_interval_epochs = cfg['trainer'].get('checkpoint_interval_epochs', 0)
+        
+        if self.checkpoint_interval_epochs > 0:
+            self.checkpoint_interval = 0
+        else: 
+            self.checkpoint_interval = cfg['trainer'].get('checkpoint_interval', 0)
 
         self.device = device
         
-       
         self.scheduler = scheduler
         self.wandb_log = True if wandb.run is not None else False
         if self.wandb_log: assert wandb.run is not None, "Wandb run must be initialized before setting wandb_log to True"
@@ -72,7 +79,6 @@ class Trainer:
         self.best_optimizer = self.optimizer.state_dict()
         self.best_sch_params = self.scheduler.state_dict() if self.scheduler is not None else None
         self.best_ap50_95 = 0
-        self.saving_stride = cfg['trainer']['log_interval'] if 'log_interval' in cfg['trainer'].keys() else 500
         self.step = 0
 
     def _train_step(self, batch):
@@ -115,7 +121,7 @@ class Trainer:
             epoch_time = time.time() - start_time
             if self.scheduler is not None:
                 self.scheduler.step()
-            if (epoch + 1) % self.saving_stride == 0:
+            if (self.checkpoint_interval > 0 and (self.step % self.checkpoint_interval == 0)) or (self.checkpoint_interval_epochs > 0 and (epoch + 1) % self.checkpoint_interval_epochs == 0):
                 if self.save_folder is not None:
                     self._save_checkpoint(epoch)
                 else:
@@ -164,7 +170,8 @@ class Trainer:
         print(f"Saved best model to {save_path}")
 
     def _save_checkpoint(self, epoch):
-        checkpoint_path = f"{self.save_folder}{self.save_name}_checkpoint_epoch_{epoch}.pth"
+        timestamp = datetime.datetime.now().strftime('%Y%m%d%H%M')
+        checkpoint_path = f"{self.save_folder}{self.save_name}_checkpoint_epoch_{epoch}_{timestamp}.pth"
         torch.save({
             'epoch': epoch,
             'model_state_dict': self.model.state_dict(),

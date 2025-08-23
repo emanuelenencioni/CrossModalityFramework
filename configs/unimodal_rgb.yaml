@@ -11,6 +11,7 @@ dataset:
   batch_size: 2
   num_workers: 4
   outputs: ["image", "BB", "labels", "img_metas"] # these mandatory for unimodal training
+  custom_classes: True # if True, the model will use custom classes defined in the dataset
   bb_num_classes: 8 # according to DSEC
   train_split: "cs_train.txt"
   val_split: "cs_val.txt"
@@ -31,7 +32,6 @@ model:
     pretrained_weights: #'detr_resnet50_weights.pth' # path to pretrained weights if needed
     embed_dim: 128
     input_size: 512
-    custom_classes: True # if True, the model will use custom classes defined in the dataset
     output_indices: [1, 2, 3, 4] # indices of the output layers to be used
     #dropout: 0.25
 
@@ -52,7 +52,8 @@ trainer:
   epochs: 50
   log_interval: 500 # steps
   #val_interval: 500 # steps
-  checkpoint_interval: 50 # steps
+  #checkpoint_interval: 50 # steps
+  checkpoint_interval_epochs: 5 # save checkpoint every 5 epochs
   save_folder: unimodal_rgb_checkpoints
 
 # Scheduler parameters (optional)

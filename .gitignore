@@ -8,3 +8,4 @@ backbone_saves/
 *.pth
 dataset/*.txt
 .cache_dir/
+cityscapes_random_viz/*
