@@ -65,8 +65,59 @@ class BarlowTwinsLoss(nn.Module):
         return total_loss
 
 class IOUloss(nn.Module):
-    def __init__(self, reduction="none"): super().__init__()
-    def forward(self, pred, target): return torch.abs(pred - target).sum()
+    def __init__(self, reduction="none", eps=1e-7):
+        super().__init__()
+        self.reduction = reduction
+        self.eps = eps
+    
+    def forward(self, pred, target):
+        """
+        Calculate IoU loss for bounding boxes in [cx, cy, w, h] format
+        Args:
+            pred: [N, 4] predicted boxes [center_x, center_y, width, height]
+            target: [N, 4] target boxes [center_x, center_y, width, height]
+        """
+        # Convert [cx, cy, w, h] to [x1, y1, x2, y2]
+        pred_x1 = pred[..., 0] - pred[..., 2] / 2
+        pred_y1 = pred[..., 1] - pred[..., 3] / 2
+        pred_x2 = pred[..., 0] + pred[..., 2] / 2
+        pred_y2 = pred[..., 1] + pred[..., 3] / 2
+        
+        target_x1 = target[..., 0] - target[..., 2] / 2
+        target_y1 = target[..., 1] - target[..., 3] / 2
+        target_x2 = target[..., 0] + target[..., 2] / 2
+        target_y2 = target[..., 1] + target[..., 3] / 2
+        
+        # Calculate intersection coordinates
+        inter_x1 = torch.max(pred_x1, target_x1)
+        inter_y1 = torch.max(pred_y1, target_y1)
+        inter_x2 = torch.min(pred_x2, target_x2)
+        inter_y2 = torch.min(pred_y2, target_y2)
+        
+        # Calculate intersection area
+        inter_w = torch.clamp(inter_x2 - inter_x1, min=0)
+        inter_h = torch.clamp(inter_y2 - inter_y1, min=0)
+        inter_area = inter_w * inter_h
+        
+        # Calculate areas of both boxes
+        pred_area = pred[..., 2] * pred[..., 3]  # width * height
+        target_area = target[..., 2] * target[..., 3]  # width * height
+        
+        # Calculate union area
+        union_area = pred_area + target_area - inter_area + self.eps
+        
+        # Calculate IoU
+        iou = inter_area / union_area
+        
+        # IoU loss = 1 - IoU
+        iou_loss = 1 - iou
+        
+        if self.reduction == "mean":
+            return iou_loss.mean()
+        elif self.reduction == "sum":
+            return iou_loss.sum()
+        else:
+            return iou_loss
 
 
 def build_from_config(cfg):
