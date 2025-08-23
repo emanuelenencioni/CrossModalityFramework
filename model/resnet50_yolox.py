@@ -41,7 +41,8 @@ class Resnet50_yolox(nn.Module):
         self.head = YOLOXHead(
             num_classes=head['num_classes'],
             in_channels=in_channels,
-            strides=strides
+            strides=strides,
+            losses_weights=head.get('losses_weights', [5.0, 1.0, 1.0, 1.0])
         )
 
     def get_name(self): return self.name

@@ -63,6 +63,7 @@ class YOLOXHead(nn.Module):
         in_channels=[256, 512, 1024],
         act="silu",
         depthwise=False,
+        losses_weights=[5.0, 1.0, 1.0, 1.0]  # [iou, obj, cls, l1]
     ):
         """
         Args:
@@ -160,12 +161,13 @@ class YOLOXHead(nn.Module):
                 )
             )
 
-        self.use_l1 = False
+        self.use_l1 = True
         self.l1_loss = nn.L1Loss(reduction="none")
         self.bcewithlog_loss = nn.BCEWithLogitsLoss(reduction="none")
         self.iou_loss = IOUloss(reduction="none")
         self.strides = strides
         self.grids = [torch.zeros(1)] * len(in_channels)
+        self.loss_weight = losses_weights  # [iou_loss_weight, obj_loss_weight, cls_loss_weight, l1_loss_weight]
 
     def initialize_biases(self, prior_prob):
         for conv in self.cls_preds:
@@ -458,15 +460,14 @@ class YOLOXHead(nn.Module):
         else:
             loss_l1 = 0.0
 
-        reg_weight = 5.0
-        loss = reg_weight * loss_iou + loss_obj + loss_cls + loss_l1
+        loss = self.loss_weight[0] * loss_iou + self.loss_weight[1] * loss_obj + self.loss_weight[2] * loss_cls + self.loss_weight[3] * loss_l1
 
         return (
             loss,
-            reg_weight * loss_iou,
-            loss_obj,
-            loss_cls,
-            loss_l1,
+            self.loss_weight[0] * loss_iou,  # weighted_iou_loss (index 1)
+            self.loss_weight[1] * loss_obj,   # loss_obj (index 2)
+            self.loss_weight[2] * loss_cls,   # loss_cls (index 3)
+            self.loss_weight[3] * loss_l1,   # loss_l1 (index 4)
             num_fg / max(num_gts, 1),
         )
 
@@ -624,6 +625,16 @@ class YOLOXHead(nn.Module):
         return anchor_filter, geometry_relation
 
     def simota_matching(self, cost, pair_wise_ious, gt_classes, num_gt, fg_mask):
+        # Debug information
+        if DEBUG >= 2:
+            print(f"simota_matching debug:")
+            print(f"  cost shape: {cost.shape}")
+            print(f"  pair_wise_ious shape: {pair_wise_ious.shape}")
+            print(f"  gt_classes shape: {gt_classes.shape}")
+            print(f"  num_gt: {num_gt}")
+            print(f"  cost device: {cost.device}")
+            print(f"  cost dtype: {cost.dtype}")
+        
         # Handle empty cost matrix
         if cost.numel() == 0 or cost.size(1) == 0:
             # Return empty assignments
@@ -637,8 +648,21 @@ class YOLOXHead(nn.Module):
 
         n_candidate_k = min(10, pair_wise_ious.size(1))
         topk_ious, _ = torch.topk(pair_wise_ious, n_candidate_k, dim=1)
-        dynamic_ks = torch.clamp(topk_ious.sum(1).int(), min=1)
+        if DEBUG >= 2:
+            print(f"  topk_ious shape: {topk_ious.shape}")
+            print(f"  topk_ious values: {topk_ious}")
+            print(f"  n_candidate_k: {n_candidate_k}")
+          
+        dynamic_ks = torch.clamp(topk_ious.sum(1).int(), min=1).cpu()
+        
+        if DEBUG >= 2:
+            print(f"  dynamic_ks shape: {dynamic_ks.shape}")
+            print(f"  dynamic_ks values: {dynamic_ks}")
+            print(f"  n_candidate_k: {n_candidate_k}")
+        
         for gt_idx in range(num_gt):
+            if DEBUG >= 3:
+                print(f"  Processing gt_idx: {gt_idx}")
             # Ensure k doesn't exceed the number of available candidates
             k = min(dynamic_ks[gt_idx].item(), cost.size(1))
             _, pos_idx = torch.topk(
