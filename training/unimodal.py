@@ -87,10 +87,11 @@ class Trainer:
         self.optimizer.zero_grad()
         _, losses = self.model(input_frame, targets)
         losses[0].backward()
+        l1_loss = losses[4] if isinstance(losses[4], float) else losses[4].item()
         if DEBUG >= 1: 
-            print(f"loss_obj: {losses[1].item():.4f}, loss_cls: {losses[2].item():.4f}, loss_l1: {losses[3].item():.4f}")
+            print(f"weighted_iou_loss: {losses[1].item():.4f}, loss_obj: {losses[2].item():.4f}, loss_cls: {losses[3].item():.4f}, loss_l1: {l1_loss:.4f}")
         if wandb.run is not None:
-            wandb.log({"loss_obj": losses[1].item(), "loss_cls": losses[2].item(), "loss_l1": losses[3].item()}, step=self.step)
+            wandb.log({"weighted_iou_loss": losses[1].item(), "loss_obj": losses[2].item(), "loss_cls": losses[3].item(), "loss_l1": l1_loss}, step=self.step)
         self.optimizer.step()
         self.loss = losses[0].item()
         return self.loss
