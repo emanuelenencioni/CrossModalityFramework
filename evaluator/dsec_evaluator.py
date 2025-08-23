@@ -173,7 +173,7 @@ class DSECEvaluator:
                 img_info = [item["img_metas"] for item in batch]
                 #imgs = input_frame.type(tensor_type)
                 # skip the last iters since batchsize might be not enough for batch inference
-                ap_50, ap_50_95, summary = self.evaluate_single_batch(model, input_frame, targets, img_info)
+                ap_50_95, ap_50, summary = self.evaluate_single_batch(model, input_frame, targets, img_info)
                 if DEBUG>=1:print(summary)
                 ap_50s.append(ap_50)
                 ap_50_95s.append(ap_50_95)
