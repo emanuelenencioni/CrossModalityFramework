@@ -12,7 +12,20 @@ from torch.optim.lr_scheduler import (
 )
 
 
-def scheduler_factory(optimizer, config):
+def normalize_scheduler_name(name):
+    """
+    Normalize scheduler name by removing underscores, dashes, and converting to lowercase.
+    
+    Args:
+        name (str): The scheduler name to normalize.
+        
+    Returns:
+        str: Normalized scheduler name.
+    """
+    return name.lower().replace('_', '').replace('-', '')
+
+
+def scheduler_builder(optimizer, config):
     """
     Factory method for creating PyTorch schedulers from a configuration dictionary.
 
@@ -30,28 +43,34 @@ def scheduler_factory(optimizer, config):
     """
 
     scheduler_name = config.pop('name')
-
-    if scheduler_name == 'LambdaLR':
+    normalized_name = normalize_scheduler_name(scheduler_name)
+    
+    # Create mapping of normalized names to actual scheduler classes
+    scheduler_mapping = {
+        'lambdalr': LambdaLR,
+        'multiplicativelr': MultiplicativeLR,
+        'steplr': StepLR,
+        'multisteplr': MultiStepLR,
+        'exponentiallr': ExponentialLR,
+        'cosineannealinglr': CosineAnnealingLR,
+        'reducelronplateau': ReduceLROnPlateau,
+        'cycliclr': CyclicLR,
+        'cosineannealingwarmrestarts': CosineAnnealingWarmRestarts
+    }
+    
+    if normalized_name not in scheduler_mapping:
+        # Provide helpful error message with suggestions
+        available_names = list(scheduler_mapping.keys())
+        raise ValueError(f"Unsupported scheduler: '{scheduler_name}'. "
+                        f"Available schedulers: {available_names}")
+    
+    scheduler_class = scheduler_mapping[normalized_name]
+    
+    # Handle special cases that require lr_lambda parameter
+    if normalized_name in ['lambdalr', 'multiplicativelr']:
         lr_lambda = config.pop('lr_lambda')
-        scheduler = LambdaLR(optimizer, lr_lambda, **config)
-    elif scheduler_name == 'MultiplicativeLR':
-        lr_lambda = config.pop('lr_lambda')
-        scheduler = MultiplicativeLR(optimizer, lr_lambda, **config)
-    elif scheduler_name == 'StepLR':
-        scheduler = StepLR(optimizer, **config)
-    elif scheduler_name == 'MultiStepLR':
-        scheduler = MultiStepLR(optimizer, **config)
-    elif scheduler_name == 'ExponentialLR':
-        scheduler = ExponentialLR(optimizer, **config)
-    elif scheduler_name == 'CosineAnnealingLR':
-        scheduler = CosineAnnealingLR(optimizer, **config)
-    elif scheduler_name == 'ReduceLROnPlateau':
-        scheduler = ReduceLROnPlateau(optimizer, **config)
-    elif scheduler_name == 'CyclicLR':
-        scheduler = CyclicLR(optimizer, **config)
-    elif scheduler_name == 'CosineAnnealingWarmRestarts':
-        scheduler = CosineAnnealingWarmRestarts(optimizer, **config)
+        scheduler = scheduler_class(optimizer, lr_lambda, **config)
     else:
-        raise ValueError(f"Unsupported scheduler: {scheduler_name}")
+        scheduler = scheduler_class(optimizer, **config)
 
     return scheduler

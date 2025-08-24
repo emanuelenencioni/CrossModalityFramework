@@ -4,6 +4,7 @@ import os
 from training import optimizer,loss
 from training.multimodal import DualModalityTrainer
 from training.unimodal import Trainer
+from training.scheduler import scheduler_builder
 
 from model.backbone import DualModalityBackbone, UnimodalBackbone
 from model.yolox_head import YOLOXHead
@@ -322,6 +323,12 @@ if __name__ == "__main__":
     if pretrained_checkpoint is not None:
         model.load_state_dict(pretrained_checkpoint['model_state_dict'])
         print("Pre-trained model loaded successfully")
+
+    # Scheduler
+    schdlr = None
+    if 'scheduler' in cfg.keys() and 'name' in cfg['scheduler'].keys() and cfg['scheduler']['name'] is not None:
+        schdlr = scheduler_builder(opti, cfg['scheduler'])
+        assert schdlr is not None, "Error - scheduler not correctly defined"
     
     # Trainer
     assert 'trainer' in cfg.keys(), "'trainer' params list missing from config file "
@@ -329,7 +336,7 @@ if __name__ == "__main__":
     if dual_modality:
         trainer = DualModalityTrainer(model, train_dl, opti, criterion, device, cfg, root_folder=dir_path, wandb_log=wandb_log, pretrained_checkpoint=pretrained_checkpoint)
     else:
-        trainer = Trainer(model,train_dl, opti, criterion, device,  cfg, root_folder=dir_path, wandb_log=wandb_log, pretrained_checkpoint=pretrained_checkpoint)
+        trainer = Trainer(model,train_dl, opti, criterion, device,  cfg, root_folder=dir_path, wandb_log=wandb_log, pretrained_checkpoint=pretrained_checkpoint, scheduler=schdlr)
     in_size = cfg['model']['backbone']['input_size']
-    evaluator = CityscapesEvaluator(test_dl, img_size=(in_size, in_size), confthre=0.001, nmsthre=0.65, num_classes=cfg['dataset']['bb_num_classes'], device=device)
+    evaluator = CityscapesEvaluator(test_dl, img_size=(in_size, in_size), confthre=0.1, nmsthre=0.50, num_classes=cfg['dataset']['bb_num_classes'], device=device)
     trainer.train(evaluator=evaluator)
