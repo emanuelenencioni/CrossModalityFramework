@@ -59,10 +59,10 @@ trainer:
 
 # Scheduler parameters (optional)
 scheduler:
-  name: 
+  name: reduce_lr_on_plateau
   factor: 0.1
   patience: 5
-  monitor: val_loss
+  #monitor: val_loss
   mode: min
 
 # Logging parameters
