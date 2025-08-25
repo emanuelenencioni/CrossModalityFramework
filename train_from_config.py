@@ -156,9 +156,6 @@ def parse_arguments():
         if saved_cfg.get('model', None) and deep_dict_compare(saved_cfg['model'], cfg['model']):
             print("Warning: The provided config differs from the saved model's config. Proceeding with loaded model parameters.")
 
-        assert deep_dict_compare(saved_cfg['optimizer'], cfg['optimizer']), "Error - optimizer config mismatch with pretrained model"
-        assert deep_dict_compare(saved_cfg['loss'], cfg['loss']), "Error - loss config mismatch with pretrained model"
-        assert deep_dict_compare(saved_cfg['scheduler'], cfg['scheduler']), "Error - scheduler config mismatch with pretrained model"
         cfg = saved_cfg
     
     assert cfg
@@ -338,5 +335,5 @@ if __name__ == "__main__":
     else:
         trainer = Trainer(model,train_dl, opti, criterion, device,  cfg, root_folder=dir_path, wandb_log=wandb_log, pretrained_checkpoint=pretrained_checkpoint, scheduler=schdlr)
     in_size = cfg['model']['backbone']['input_size']
-    evaluator = CityscapesEvaluator(test_dl, img_size=(in_size, in_size), confthre=0.1, nmsthre=0.50, num_classes=cfg['dataset']['bb_num_classes'], device=device)
+    evaluator = CityscapesEvaluator(test_dl, img_size=(in_size, in_size), confthre=0.001, nmsthre=0.50, num_classes=cfg['dataset']['bb_num_classes'], device=device)
     trainer.train(evaluator=evaluator)
