@@ -2,6 +2,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
+from torch.optim.lr_scheduler import ReduceLROnPlateau
+
 import datetime
 import time
 from tqdm import tqdm
@@ -10,6 +12,7 @@ import wandb
 import os
 import sys
 from helpers import DEBUG
+import inspect
 
 class Trainer:
     def __init__(self, model, dataloader, optimizer, criterion, device, cfg, root_folder,wandb_log=False, scheduler=None, patience=sys.maxsize, pretrained_checkpoint=None):
@@ -121,7 +124,13 @@ class Trainer:
                 avg_loss = self._train_epoch(pbar)
             epoch_time = time.time() - start_time
             if self.scheduler is not None:
-                self.scheduler.step()
+                if isinstance(self.scheduler, ReduceLROnPlateau):
+                    # ReduceLROnPlateau requires a metric value
+                    self.scheduler.step(avg_loss)
+                else:
+                    # Standard schedulers that step based on epochs
+                    self.scheduler.step()
+
             if (self.checkpoint_interval > 0 and (self.step % self.checkpoint_interval == 0)) or (self.checkpoint_interval_epochs > 0 and (epoch + 1) % self.checkpoint_interval_epochs == 0):
                 if self.save_folder is not None:
                     self._save_checkpoint(epoch)
