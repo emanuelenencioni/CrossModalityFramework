@@ -153,10 +153,10 @@ def parse_arguments():
         saved_cfg = pretrained_checkpoint.get('config', {})
         # You can compare saved_cfg['model'] with cfg['model'] for consistency.
         # For example:
-        if saved_cfg.get('model', None) and deep_dict_compare(saved_cfg['model'], cfg['model']):
-            print("Warning: The provided config differs from the saved model's config. Proceeding with loaded model parameters.")
+        if saved_cfg.get('model', None) and not deep_dict_compare(saved_cfg['model'], cfg['model']):
+            print("Warning: The provided config differs from the saved model's config. Proceeding with loaded model parameters.") #TODO: maybe use an assert instead.
+        elif DEBUG>=1: print(f"Loading model from:{pretrained_checkpoint}")
 
-        cfg = saved_cfg
     
     assert cfg
     # Update cfg with parsed arguments
