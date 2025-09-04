@@ -71,7 +71,7 @@ This guide provides instructions to set up and run the framework:
 ## TODO
 
 - [X] check cityscape output as DSEC
-- [ ] Fix coords -> cx,cy,h,w in custom to cx,cy,w,h
+- [X] Fix coords -> cx,cy,h,w in custom to cx,cy,w,h
 - [ ] Check objectness output value 
 - [ ] Fix: errors in evaluator (summarize after)
 - [ ] FIX: errors in multimodal training.
