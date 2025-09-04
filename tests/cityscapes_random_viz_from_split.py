@@ -245,9 +245,8 @@ def visualize_sample_with_bboxes(dataset, sample_data, save_path):
             for i, bbox in enumerate(bboxes_np):
                 if len(bbox) < 5 or bbox[0] < 0:  # Skip invalid bboxes
                     continue
-                    
-                # bbox format: [class_id, x, y, h, w]
-                class_id, x_center, y_center, h, w = bbox[0], bbox[1], bbox[2], bbox[3], bbox[4]
+                # bbox format: [class_id, x, y, w, h]
+                class_id, x_center, y_center, w, h = bbox[0], bbox[1], bbox[2], bbox[3], bbox[4]
                 x = x_center - w * 0.5
                 y = y_center - h * 0.5
                 color = colors[i % len(colors)]
@@ -310,7 +309,7 @@ def save_sample_info(sample_data, info_path):
                     continue
                     
                 valid_count += 1
-                class_id, x, y, h, w = bbox[0], bbox[1], bbox[2], bbox[3], bbox[4]
+                class_id, x, y, w, h = bbox[0], bbox[1], bbox[2], bbox[3], bbox[4]
                 area = w * h
                 
                 # Get class name
