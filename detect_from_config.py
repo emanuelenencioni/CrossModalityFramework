@@ -9,7 +9,7 @@ import torchvision.transforms as T
 import os
 import glob
 from pathlib import Path
-
+import cv2
 import random
 
 # Import your framework components
@@ -19,7 +19,93 @@ from model.yolox_head import YOLOXHead
 import dataset.dataset_builder as dataset_builder
 from dataset.cityscapes import CityscapesDataset
 from helpers import DEBUG
-from torchvision.ops import nms
+from torchvision.ops import nms, batched_nms
+
+
+_COLORS = np.array(
+    [
+        0.000, 0.447, 0.741,
+        0.850, 0.325, 0.098,
+        0.929, 0.694, 0.125,
+        0.494, 0.184, 0.556,
+        0.466, 0.674, 0.188,
+        0.301, 0.745, 0.933,
+        0.635, 0.078, 0.184,
+        0.300, 0.300, 0.300,
+        0.600, 0.600, 0.600,
+        1.000, 0.000, 0.000,
+        1.000, 0.500, 0.000,
+        0.749, 0.749, 0.000,
+        0.000, 1.000, 0.000,
+        0.000, 0.000, 1.000,
+        0.667, 0.000, 1.000,
+        0.333, 0.333, 0.000,
+        0.333, 0.667, 0.000,
+        0.333, 1.000, 0.000,
+        0.667, 0.333, 0.000,
+        0.667, 0.667, 0.000,
+        0.667, 1.000, 0.000,
+        1.000, 0.333, 0.000,
+        1.000, 0.667, 0.000,
+        1.000, 1.000, 0.000,
+        0.000, 0.333, 0.500,
+        0.000, 0.667, 0.500,
+        0.000, 1.000, 0.500,
+        0.333, 0.000, 0.500,
+        0.333, 0.333, 0.500,
+        0.333, 0.667, 0.500,
+        0.333, 1.000, 0.500,
+        0.667, 0.000, 0.500,
+        0.667, 0.333, 0.500,
+        0.667, 0.667, 0.500,
+        0.667, 1.000, 0.500,
+        1.000, 0.000, 0.500,
+        1.000, 0.333, 0.500,
+        1.000, 0.667, 0.500,
+        1.000, 1.000, 0.500,
+        0.000, 0.333, 1.000,
+        0.000, 0.667, 1.000,
+        0.000, 1.000, 1.000,
+        0.333, 0.000, 1.000,
+        0.333, 0.333, 1.000,
+        0.333, 0.667, 1.000,
+        0.333, 1.000, 1.000,
+        0.667, 0.000, 1.000,
+        0.667, 0.333, 1.000,
+        0.667, 0.667, 1.000,
+        0.667, 1.000, 1.000,
+        1.000, 0.000, 1.000,
+        1.000, 0.333, 1.000,
+        1.000, 0.667, 1.000,
+        0.333, 0.000, 0.000,
+        0.500, 0.000, 0.000,
+        0.667, 0.000, 0.000,
+        0.833, 0.000, 0.000,
+        1.000, 0.000, 0.000,
+        0.000, 0.167, 0.000,
+        0.000, 0.333, 0.000,
+        0.000, 0.500, 0.000,
+        0.000, 0.667, 0.000,
+        0.000, 0.833, 0.000,
+        0.000, 1.000, 0.000,
+        0.000, 0.000, 0.167,
+        0.000, 0.000, 0.333,
+        0.000, 0.000, 0.500,
+        0.000, 0.000, 0.667,
+        0.000, 0.000, 0.833,
+        0.000, 0.000, 1.000,
+        0.000, 0.000, 0.000,
+        0.143, 0.143, 0.143,
+        0.286, 0.286, 0.286,
+        0.429, 0.429, 0.429,
+        0.571, 0.571, 0.571,
+        0.714, 0.714, 0.714,
+        0.857, 0.857, 0.857,
+        0.000, 0.447, 0.741,
+        0.314, 0.717, 0.741,
+        0.50, 0.5, 0
+    ]
+).astype(np.float32).reshape(-1, 3)
 
 def get_args_parser():
     parser = argparse.ArgumentParser('Detection script using trained models', add_help=False)
@@ -89,20 +175,15 @@ def get_transform(input_size):
     ])
 
 def detect_image(model, image, transform, device, confidence_threshold=0.5):
-    """Run detection on a single image."""
+    """Run detection on a single image and apply post processing."""
     
     original_size = image.size
     img_tensor = transform(image).unsqueeze(0).to(device)
 
-    outputs = model(img_tensor)
+    outputs, _ = model(img_tensor)
+    outputs = postprocess(outputs, num_classes=8, conf_thre=confidence_threshold) # After this, boxes are in (x1, y1, x2, y2) format
     
-    # YOLOX-style outputs
-    # This would need to be implemented based on your YOLOX head structure
-    boxes, scores = process_yolox_outputs(outputs, original_size, confidence_threshold)
-     # Convert boxes from [0,1] to image coordinates
-    boxes = rescale_boxes(boxes, original_size)
-    
-    return boxes, scores
+    return outputs
 
 def rescale_boxes(boxes, original_size):
     """Convert normalized boxes to image coordinates."""
@@ -110,142 +191,108 @@ def rescale_boxes(boxes, original_size):
     
     # Convert from center format to corner format if needed
     # Assume cx, cy, w, h format and divide by 512
-    x_c, y_c, w, h = ((boxes/512).unbind(-1))
-    x1 = (x_c - 0.5 * h) * img_w
-    y1 = (y_c - 0.5 * w) * img_h
-    x2 = (x_c + 0.5 * h) * img_w
-    y2 = (y_c + 0.5 * w) * img_h
-    boxes = torch.stack([x1, y1, x2, y2], dim=-1)
-    
+
+    #calculate scale factors
+    x_scale = img_w / 512
+    y_scale = img_h / 512
+
+    boxes = boxes * torch.tensor([x_scale, y_scale, x_scale, y_scale], dtype=torch.float32)
+
     return boxes
 
-def process_yolox_outputs(outputs, original_size, confidence_threshold):
-    """Process YOLOX model outputs (implement based on your YOLOX head)."""
-    # This is a placeholder - implement based on your actual YOLOX head output format
-    # You'll need to decode the outputs from your YOLOXHead
-    outputs = outputs[0]
-    boxes = outputs[0,:,:4]  
-    objectness = outputs[:,:, 4] 
-    class_scores = outputs[:,:, 5:].softmax(dim=0)[0]  # [5120, 8] - Apply softmax!
-    scores = (class_scores * objectness.unsqueeze(-1))[0]  # [5120, 8]
-   
-    return boxes, scores
+def postprocess(prediction, num_classes, conf_thre=0.7, nms_thre=0.45, class_agnostic=False):
+    box_corner = prediction.new(prediction.shape)
+    ####### WARNING : Convert from (cx, cy, h, w) to (x1, y1, x2, y2) format -> TODO: (cx, cy, h, w) -> (cx, cy, w, h)
+    box_corner[:, :, 0] = prediction[:, :, 0] - prediction[:, :, 3] / 2
+    box_corner[:, :, 1] = prediction[:, :, 1] - prediction[:, :, 2] / 2
+    box_corner[:, :, 2] = prediction[:, :, 0] + prediction[:, :, 3] / 2
+    box_corner[:, :, 3] = prediction[:, :, 1] + prediction[:, :, 2] / 2
+    prediction[:, :, :4] = box_corner[:, :, :4]
 
-def plot_detections(image, boxes, scores, classes, output_path, confidence_threshold=0.5):
-    """Plot detection results on image."""
-    plt.figure(figsize=(12, 8))
-    plt.imshow(image)
-    ax = plt.gca()
-    
-    # Colors for different classes
-    colors = ['red', 'blue', 'green', 'yellow', 'purple', 'orange', 'pink', 'cyan']
-    
-    detection_count = 0
-    for box, score_vec in zip(boxes, scores):
-        max_score = score_vec.max().item()
-        if max_score < confidence_threshold:
-            continue
-            
-        class_id = score_vec.argmax().item()
-        class_name = classes[class_id] if class_id < len(classes) else f"Class_{class_id}"
-        color = colors[class_id % len(colors)]
-        
-        # Draw bounding box
-        x1, y1, x2, y2 = box.tolist()
-        width = x2 - x1
-        height = y2 - y1
-        
-        rect = patches.Rectangle((x1, y1), width, height, 
-                               linewidth=2, edgecolor=color, 
-                               facecolor='none', alpha=0.8)
-        ax.add_patch(rect)
-        
-        # Add label
-        label = f'{class_name}: {max_score:.2f}'
-        ax.text(x1, y1-5, label, 
-                bbox=dict(boxstyle="round,pad=0.3", facecolor=color, alpha=0.8),
-                fontsize=10, color='white', fontweight='bold')
-        
-        detection_count += 1
-    
-    plt.title(f'Detections: {detection_count} objects found')
-    plt.axis('off')
-    plt.tight_layout()
-    plt.savefig(output_path,    bbox_inches='tight')
-    plt.close()
-    
-    print(f"✓ Saved detection result: {output_path}")
-    return detection_count
+    output = [None for _ in range(len(prediction))]
+    for i, image_pred in enumerate(prediction):
 
-def process_from_dataset(cfg, model, transform, device, args):
-    """Process images from dataset."""
-    print("Loading dataset for inference...")
-    
-    # Modify config for inference
-    cfg_inference = cfg.copy()
-    cfg_inference['dataset']['batch_size'] = 1
-    cfg_inference['dataset']['num_workers'] = 1
-    
-    # Build dataset
-    train_ds, test_ds = dataset_builder.build_from_config(cfg_inference['dataset'])
-    dataset = test_ds if test_ds is not None and args.dataset_split == 'val' else train_ds
-    
-    if dataset is None:
-        print("❌ No dataset available")
-        return
-    
-    # Get classes
-    if hasattr(dataset, 'DSEC_DET_CLASSES'):
-        classes = list(dataset.DSEC_DET_CLASSES.values())
-    elif hasattr(dataset, 'CLASSES'):
-        classes = dataset.CLASSES
-    else:
-        classes = [f"class_{i}" for i in range(8)]  # Default classes
-    
-    # Process random samples
-    num_samples = min(args.num_samples, len(dataset))
-    random_indices = random.sample(range(len(dataset)), num_samples)
-    
-    print(f"Processing {num_samples} random samples from dataset...")
-    
-    for i, idx in enumerate(random_indices):
-        print(f"\nProcessing sample {i+1}/{num_samples} (index {idx})")
-        
-        try:
-            sample = dataset[idx]
-            image = sample['image']
-            filename = sample.get('img_info', {}).get('filename', f'sample_{idx}')
-            
-            # Convert tensor to PIL Image for processing
-            if torch.is_tensor(image):
-                # Denormalize if needed
-                if image.max() <= 1.0 and image.min() >= -3.0:  # Likely normalized
-                    mean = torch.tensor([0.485, 0.456, 0.406]).view(3, 1, 1)
-                    std = torch.tensor([0.229, 0.224, 0.225]).view(3, 1, 1)
-                    image = image * std + mean
-                    image = torch.clamp(image, 0, 1)
-                
-                if image.dim() == 3 and image.shape[0] == 3:  # CHW
-                    image = image.permute(1, 2, 0)
-                
-                image_np = (image.numpy() * 255).astype(np.uint8)
-                pil_image = Image.fromarray(image_np)
-            else:
-                pil_image = Image.fromarray((image * 255).astype(np.uint8))
-            
-            # Run detection
-            boxes, scores = detect_image(model, pil_image, transform, device, args.confidence_threshold)
-            
-            # Plot results
-            base_name = os.path.splitext(os.path.basename(filename))[0]
-            output_path = os.path.join(args.output_dir, f"{base_name}_detection.png")
-            
-            detection_count = plot_detections(pil_image, boxes, scores, classes, output_path, args.confidence_threshold)
-            print(f"Found {detection_count} detections in {filename}")
-            
-        except Exception as e:
-            print(f"Error processing sample {idx}: {e}")
+        # If none are remaining => process next image
+        if not image_pred.size(0):
             continue
+        # Get score and class with highest confidence
+        class_conf, class_pred = torch.max(image_pred[:, 5: 5 + num_classes], 1, keepdim=True)
+
+        conf_mask = (image_pred[:, 4] * class_conf.squeeze() >= conf_thre).squeeze()
+        # Detections ordered as (x1, y1, x2, y2, obj_conf, class_conf, class_pred)
+        detections = torch.cat((image_pred[:, :5], class_conf, class_pred.float()), 1)
+        detections = detections[conf_mask]
+        if not detections.size(0):
+            continue
+
+        if class_agnostic:
+            nms_out_index = nms(
+                detections[:, :4],
+                detections[:, 4] * detections[:, 5],
+                nms_thre,
+            )
+        else:
+            nms_out_index = batched_nms(
+                detections[:, :4],
+                detections[:, 4] * detections[:, 5],
+                detections[:, 6],
+                nms_thre,
+            )
+
+        detections = detections[nms_out_index]
+        if output[i] is None:
+            output[i] = detections
+        else:
+            output[i] = torch.cat((output[i], detections))
+
+    return output
+
+def vis(img, boxes, scores, cls_ids, conf=0.5, class_names=None):
+
+    for i in range(len(boxes)):
+        box = boxes[i]
+        cls_id = int(cls_ids[i])
+        score = scores[i]
+        if score < conf:
+            continue
+        x0 = int(box[0])
+        y0 = int(box[1])
+        x1 = int(box[2])
+        y1 = int(box[3])
+
+        color = (_COLORS[cls_id] * 255).astype(np.uint8).tolist()
+        text = '{}:{:.1f}%'.format(class_names[cls_id], score * 100)
+        txt_color = (0, 0, 0) if np.mean(_COLORS[cls_id]) > 0.5 else (255, 255, 255)
+        font = cv2.FONT_HERSHEY_SIMPLEX
+
+        txt_size = cv2.getTextSize(text, font, 0.4, 1)[0]
+        cv2.rectangle(img, (x0, y0), (x1, y1), color, 2)
+
+        txt_bk_color = (_COLORS[cls_id] * 255 * 0.7).astype(np.uint8).tolist()
+        cv2.rectangle(
+            img,
+            (x0, y0 + 1),
+            (x0 + txt_size[0] + 1, y0 + int(1.5*txt_size[1])),
+            txt_bk_color,
+            -1
+        )
+        cv2.putText(img, text, (x0, y0 + txt_size[1]), font, 0.4, txt_color, thickness=1)
+
+    return img
+
+
+def visual(self,img, output, orig_size, cls_conf=0.35, classes=None):
+        
+        if output is None:
+            return img
+        output = output.cpu()
+
+        bboxes = rescale_boxes(output[:, :4], orig_size)
+        cls = output[:, 6]
+        scores = output[:, 4] * output[:, 5]
+
+        vis_res = vis(img, bboxes, scores, cls, cls_conf, classes)
+        return vis_res
 
 def main(args):
     """Main detection function."""
@@ -272,11 +319,7 @@ def main(args):
         'bicycle', 'motorcycle', 'train'
     ]
     
-    if args.use_dataset:
-        # Process from dataset
-        process_from_dataset(cfg, model, transform, args.device, args)
-    
-    elif args.input_dir:
+    if args.input_dir:
         # Process directory of images
         image_extensions = ['*.jpg', '*.jpeg', '*.png', '*.bmp']
         image_paths = []
@@ -309,14 +352,23 @@ def main(args):
         # Process single image
         print(f"Processing single image: {args.input_image}")
         image = Image.open(args.input_image).convert('RGB')
+        image_cv = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
+        output = detect_image(model, image, transform, args.device, args.confidence_threshold)
+        output = output[0]
 
-        boxes, scores = detect_image(model, image, transform, args.device, args.confidence_threshold)
-        
-        # Save result
+        visual_res = visual(model,image_cv, output, image.size, args.confidence_threshold, classes)
         base_name = os.path.splitext(os.path.basename(args.input_image))[0]
         output_path = os.path.join(args.output_dir, f"{base_name}_detection.png")
+        cv2.imwrite(output_path, visual_res)
         
-        detection_count = plot_detections(image, boxes, scores, classes, output_path, args.confidence_threshold)
+        #creating new image that contains original and detection side by side
+        image_cv = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
+        combined_image = np.concatenate((image_cv, visual_res), axis=1)
+        combined_output_path = os.path.join(args.output_dir, f"{base_name}_combined.png")
+        cv2.imwrite(combined_output_path, combined_image)
+
+        detection_count = len(output[0]) if output[0] is not None else 0
+        #detection_count = plot_detections(image, boxes, scores, classes, output_path, args.confidence_threshold)
         print(f"Found {detection_count} detections")
     
     else:
@@ -331,4 +383,5 @@ if __name__ == '__main__':
     main(args)
 
 
-    
+
+
