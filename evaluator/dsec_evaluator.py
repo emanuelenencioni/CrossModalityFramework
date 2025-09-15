@@ -14,21 +14,28 @@ from loguru import logger
 from tabulate import tabulate
 from tqdm import tqdm
 from pathlib import Path
+import shutil
 import numpy as np
 from helpers import DEBUG
+import cv2
+
 import torch
+from torchvision.ops import nms, batched_nms
+
+from pycocotools.coco import COCO
+from pycocotools.cocoeval import COCOeval
 
 from .coco_classes import COCO_CLASSES
 from .dsec_det_classes import DSEC_DET_CLASSES
 from utils import (
     gather,
     is_main_process,
-    postprocess,
     synchronize,
     time_synchronized,
     xyxy2xywh
 )
 
+ROOT_FOLDER = Path(__file__).resolve().parent.parent
 
 def per_class_AR_table(coco_eval, class_names=DSEC_DET_CLASSES, headers=["class", "AR"], colums=6):
     per_class_AR = {}
@@ -140,8 +147,8 @@ class DSECEvaluator:
         """
         self.dataloader = dataloader
         self.img_size = img_size
-        self.confthre = confthre
-        self.nmsthre = nmsthre
+        self.conf_thre = confthre
+        self.nms_thre = nmsthre
         self.num_classes = num_classes
         self.testdev = testdev
         self.per_class_AP = per_class_AP
@@ -149,6 +156,14 @@ class DSECEvaluator:
         self.device = device
         self.input_format = input_format
         self.input_type = 'events_vg' if 'events_vg' in dataloader.dataset[0] else 'image'
+        
+        if DEBUG >= 3:
+            self.debug_images_folder = ROOT_FOLDER / "debug_images"
+            if self.debug_images_folder.exists():
+                shutil.rmtree(self.debug_images_folder)
+            self.debug_images_folder.mkdir(exist_ok=True, parents=True)
+        else: self.debug_images_folder = None
+        
 
     def evaluate(
         self, model, distributed=False, half=False, trt_file=None,
