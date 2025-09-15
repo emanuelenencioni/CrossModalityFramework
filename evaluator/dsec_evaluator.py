@@ -188,11 +188,8 @@ class DSECEvaluator:
         model = model.eval()
         # if half:
         #     model = model.half()
-        ids = []
-        data_list = []
-        output_data = defaultdict()
         progress_bar = tqdm if is_main_process() else iter
-
+        
         inference_time = 0
         nms_time = 0
         n_samples = max(len(self.dataloader) - 1, 1)
@@ -206,24 +203,84 @@ class DSECEvaluator:
         #     x = torch.ones(1, 3, test_size[0], test_size[1]).cuda()
         #     model(x)
         #     model = model_trt
-        ap_50s = []
-        ap_50_95s = []
+        outputs, gts, imgs_info = [], [], []
+
         for cur_iter, batch in enumerate(
             progress_bar(self.dataloader)
         ):
             with torch.no_grad():
                 input_frame = torch.stack([item[self.input_type] for item in batch]).to(self.device)
                 assert "BB" in batch[0], "Batch must contain 'BB' key for targets"
-                targets = torch.stack([item["BB"] for item in batch]).to(self.device) #TODO: now only for obj detection
+                targets = torch.stack([item["BB"] for item in batch]) #TODO: now only for obj detection
                 img_info = [item["img_metas"] for item in batch]
                 #imgs = input_frame.type(tensor_type)
                 # skip the last iters since batchsize might be not enough for batch inference
-                ap_50_95, ap_50, summary = self.evaluate_single_batch(model, input_frame, targets, img_info)
-                if DEBUG>=1:print(summary)
-                ap_50s.append(ap_50)
-                ap_50_95s.append(ap_50_95)
+                output, _ = model(input_frame)
+                outputs.append(output.cpu())
+                gts.append(targets.cpu())
+                if DEBUG >= 3:
+                    imgs_info.append((img_info, tensor_to_cv2_image(input_frame)))
+                else:
+                    imgs_info.append((img_info, None))
 
-        return np.mean(ap_50_95s), np.mean(ap_50s), None
+        #Evaluate all the test set at once
+
+        results, _ = self.calculate_coco_metrics(outputs, gts, imgs_info)
+        
+        return np.mean(results[0]), np.mean(results[1]), None
+
+    def postprocess(self, prediction, class_agnostic=False, images=None):
+        box_corner = prediction.new(prediction.shape)
+        ####### WARNING : Convert from (cx, cy, h, w) to (x1, y1, x2, y2) format -> TODO: (cx, cy, h, w) -> (cx, cy, w, h)
+        box_corner[:, :, 0] = prediction[:, :, 0] - prediction[:, :, 3] / 2
+        box_corner[:, :, 1] = prediction[:, :, 1] - prediction[:, :, 2] / 2
+        box_corner[:, :, 2] = prediction[:, :, 0] + prediction[:, :, 3] / 2
+        box_corner[:, :, 3] = prediction[:, :, 1] + prediction[:, :, 2] / 2
+        prediction[:, :, :4] = box_corner[:, :, :4]
+
+        output = [None for _ in range(len(prediction))]
+        for i, image_pred in enumerate(prediction):
+
+            # If none are remaining => process next image
+            if not image_pred.size(0):
+                continue
+            # Get score and class with highest confidence
+            class_conf, class_pred = torch.max(image_pred[:, 5: 5 + self.num_classes], 1, keepdim=True)
+
+            conf_mask = (image_pred[:, 4] * class_conf.squeeze() >= self.conf_thre).squeeze()
+            # Detections ordered as (x1, y1, x2, y2, obj_conf, class_conf, class_pred)
+            detections = torch.cat((image_pred[:, :5], class_conf, class_pred.float()), 1)
+            detections = detections[conf_mask]
+            if not detections.size(0):
+                continue
+
+            if class_agnostic:
+                nms_out_index = nms(
+                    detections[:, :4],
+                    detections[:, 4] * detections[:, 5],
+                    self.nms_thre,
+                )
+            else:
+                nms_out_index = batched_nms(
+                    detections[:, :4],
+                    detections[:, 4] * detections[:, 5],
+                    detections[:, 6],
+                    self.nms_thre,
+                )
+
+            detections = detections[nms_out_index]
+            if output[i] is None:
+                output[i] = detections
+            else:
+                output[i] = torch.cat((output[i], detections))
+
+            #debug: image + boxes
+            if DEBUG >= 3 and images is not None:           
+                img = self.dataloader.dataset.vis(images, output[i][:, 0:4].cpu().numpy(), output[i][:, 4].cpu().numpy(),
+                                                   output[i][:, 6].cpu().numpy(), conf=self.conf_thre, class_names=DSEC_DET_CLASSES)
+
+                if self.debug_images_folder: cv2.imwrite(self.debug_images_folder / f"debug_out_{i}.png", img)
+        return output
 
     def convert_to_coco_format(self, outputs, targets, images_info, return_outputs=False):
         data_list = []
