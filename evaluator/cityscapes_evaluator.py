@@ -68,7 +68,7 @@ class CityscapesEvaluator(DSECEvaluator):
             # Generic class names
             return [f"class_{i}" for i in range(self.num_classes)]
 
-    def create_coco_gt_from_batch(self, targets, images_info):
+    def create_coco_gt_from_batch(self, targets_list, images_info):
         """
         Create COCO-style ground truth annotations from batch data for Cityscapes.
         
@@ -82,76 +82,73 @@ class CityscapesEvaluator(DSECEvaluator):
         images = []
         annotations = []
         annotation_id = 1
-        
-        for idx, (target, img_info) in enumerate(zip(targets, images_info)):
-            if target is None:
-                continue
-                
-            # Add image info
-            orig_height, orig_width = img_info.data['orig_shape'] if hasattr(img_info, 'data') else (1024, 2048)
-            img_id = int(img_info.data['idx']) if hasattr(img_info, 'data') else idx
-            
-            # Ensure unique image IDs
-            while any(img['id'] == img_id for img in images):
-                img_id += 1000
-                
-            image_data = {
-                "id": img_id,
-                "width": int(orig_width),
-                "height": int(orig_height),
-                "file_name": img_info.data.get('ori_filename', f'cityscapes_{idx}.png') if hasattr(img_info, 'data') else f'cityscapes_{idx}.png'
-            }
-            images.append(image_data)
-            
-            # Process target bounding boxes
-            target = target.cpu() if hasattr(target, 'cpu') else target
-            
-            # Assuming target format is [class_id, x1, y1, w, h]
-            if len(target.shape) == 2:
-                for ann_idx in range(target.shape[0]):
-                    bbox = target[ann_idx]
-                    if len(bbox) >= 5:  # class_id, x, y, w, h
-                        class_id, x_center, y_center, w, h = bbox[:5]
-                        x1 = x_center - w * 0.5
-                        y1 = y_center - h * 0.5
-                        # Skip invalid bboxes
-                        if class_id < 0 or w <= 0 or h <= 0:
-                            continue
 
-                        # Convert to COCO format (x, y, width, height)
-                        coco_bbox = [float(x1), float(y1), float(w), float(h)]
-                        area = float(w * h)
-                        
-                        # Skip very small bounding boxes
-                        if area <= 1:
-                            continue
-                        
-                        annotation = {
-                            "id": annotation_id,
-                            "image_id": img_id,
-                            "category_id": int(class_id),
-                            "bbox": coco_bbox,
-                            "area": area,
-                            "iscrowd": 0,
-                            "segmentation": []
-                        }
-                        annotations.append(annotation)
-                        annotation_id += 1
-        
-        # Create categories based on Cityscapes detection classes
-        categories = []
-        for i in range(self.num_classes):
-            if i < len(self.class_names):
-                cat_name = self.class_names[i]
-            else:
-                cat_name = f"class_{i}"
+        for targets,img_info in zip(targets_list,images_info):
+            for target in targets:
+                if target is None:
+                    continue
+                    
+                # Add image info
+                orig_height, orig_width = img_info.data['orig_shape'] if hasattr(img_info, 'data') else (1024, 2048)
+                img_id = int(img_info.data['idx'])
                 
-            categories.append({
-                "id": i,
-                "name": cat_name,
-                "supercategory": "object"
-            })
-        
+                # Ensure unique image IDs
+                while any(img['id'] == img_id for img in images):
+                    img_id += 1000
+                    
+                image_data = {
+                    "id": img_id,
+                    "width": int(orig_width),
+                    "height": int(orig_height),
+                    "file_name": img_info.data.get('ori_filename')
+                }
+                images.append(image_data)
+                
+                # Process target bounding boxes
+                target = target.cpu() if hasattr(target, 'cpu') else target
+                
+                # Assuming target format is [class_id, x1, y1, w, h]
+                class_id, x_center, y_center, w, h = target[:5]
+                x1 = x_center - w * 0.5
+                y1 = y_center - h * 0.5
+                # Skip invalid bboxes
+                if class_id < 0 or w <= 0 or h <= 0:
+                    continue
+
+                # Convert to COCO format (x, y, width, height)
+                coco_bbox = [float(x1), float(y1), float(w), float(h)]
+                area = float(w * h)
+                
+                # Skip very small bounding boxes
+                if area <= 1:
+                    continue
+                
+                annotation = {
+                    "id": annotation_id,
+                    "image_id": img_id,
+                    "category_id": int(class_id),
+                    "bbox": coco_bbox,
+                    "area": area,
+                    "iscrowd": 0,
+                    "segmentation": []
+                }
+                annotations.append(annotation)
+                annotation_id += 1
+            
+            # Create categories based on Cityscapes detection classes
+            categories = []
+            for i in range(self.num_classes):
+                if i < len(self.class_names):
+                    cat_name = self.class_names[i]
+                else:
+                    cat_name = f"class_{i}"
+                    
+                categories.append({
+                    "id": i,
+                    "name": cat_name,
+                    "supercategory": "object"
+                })
+            
         coco_gt = {
             "info": {
                 "description": "Cityscapes Dataset",
