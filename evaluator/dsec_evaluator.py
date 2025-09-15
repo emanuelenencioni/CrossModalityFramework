@@ -427,129 +427,88 @@ class DSECEvaluator:
     def calculate_coco_metrics(self, predictions, targets, images_info):
         """
         Calculate COCO AP metrics (AP@50:95 and AP@50) from predictions and targets.
-        
         Args:
             predictions: Model predictions
             targets: Ground truth targets
-            images_info: Image metadata
-            
-        Returns:
-            tuple: (ap50_95, ap50, detailed_info)
+            images_info: Image metadata, input frames
+        Returns: TODO tuple: (ap50_95, ap50, summary_info)
+
         """
         # Convert predictions to COCO format
-        pred_data = self.convert_to_coco_format(predictions, targets, images_info)
-        
-        if len(pred_data) == 0:
-            return 0.0, 0.0, "No predictions to evaluate"
-        
-        # Create COCO ground truth
-        coco_gt_data = self.create_coco_gt_from_batch(targets, images_info)
-        
-        if len(coco_gt_data['annotations']) == 0:
-            return 0.0, 0.0, "No ground truth annotations"
-        
-        try:
-            # Create temporary COCO objects
-            import tempfile
-            import json
-            from pycocotools.coco import COCO
-            
-            if DEBUG >= 2:
-                print(f"Creating COCO GT with {len(coco_gt_data['images'])} images and {len(coco_gt_data['annotations'])} annotations")
-            
-            # Save GT to temporary file
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as gt_file:
-                json.dump(coco_gt_data, gt_file)
-                gt_path = gt_file.name
-            
-            # Save predictions to temporary file  
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as pred_file:
-                json.dump(pred_data, pred_file)
-                pred_path = pred_file.name
-            
-            if DEBUG >= 2:
-                print(f"Saved GT to {gt_path}, predictions to {pred_path}")
-            
-            # Load COCO objects
-            
-            if DEBUG >=3:
-                coco_gt = COCO(gt_path)
-                coco_dt = coco_gt.loadRes(pred_path)
-            else:
-                with contextlib.redirect_stdout(open('/dev/null', 'w')):
-                    coco_gt = COCO(gt_path)
-                    coco_dt = coco_gt.loadRes(pred_path)
-                
-            
-            # Import COCOeval
-            try:
-                from yolox.layers import COCOeval_opt as COCOeval
-            except ImportError:
-                from pycocotools.cocoeval import COCOeval
-                if DEBUG>=2: logger.warning("Using standard COCOeval.")
+        pred_data = []
+        coco_gt_data = []
+        for pred_batch, t_batch, img_info in zip(predictions,targets, images_info):
+            pred_data = self.convert_to_coco_format(pred_batch, img_info)
 
+            coco_gt_data = self.create_coco_gt_from_batch(t_batch, img_info[0])
+            #coco_gt_data.append(output)
+            # coco_gt_data = [item for t_batch in targets for item in self.create_coco_gt_from_batch(t_batch, images_info)]
+            if len(coco_gt_data) == 0:
+                return 0.0, 0.0, "No ground truth annotations"
             
-            if DEBUG >= 3:
-                coco_eval = COCOeval(coco_gt, coco_dt, 'bbox')
-                coco_eval.evaluate()
-                coco_eval.accumulate()
-                coco_eval.summarize()
-            else:
-                redirect_string = io.StringIO()
-                with contextlib.redirect_stdout(open('/dev/null', 'w')):
+            #assert len(coco_gt_data) == len(pred_data), "Mismatch between GT and predictions"
+
+            try:
+                # Create temporary COCO objects
+                import tempfile
+                import json
+                from pycocotools.coco import COCO
+                
+                if DEBUG >= 2:
+                    # plot image + boxes
+                    
+                    print(f"Creating COCO GT with {len(coco_gt_data['images'])} images and {len(coco_gt_data['annotations'])} annotations")
+                if DEBUG >=3:
+                    coco_gt = COCO()
+                    coco_gt.dataset = coco_gt_data
+                    coco_gt.createIndex()
+
+                    # Load predictions from list in memory
+                    coco_dt = coco_gt.loadRes(pred_data)
+                else:
+                    # Suppress output from COCO API
+                    with contextlib.redirect_stdout(open('/dev/null', 'w')):
+                        coco_gt = COCO()
+                        coco_gt.dataset = coco_gt_data
+                        coco_gt.createIndex()
+                        coco_dt = coco_gt.loadRes(pred_data)
+
+                    
+                if DEBUG >= 3:
                     coco_eval = COCOeval(coco_gt, coco_dt, 'bbox')
                     coco_eval.evaluate()
                     coco_eval.accumulate()
-                    coco_eval.summarize()
-                    
-                
-            summary_info = redirect_string.getvalue()
-            ap50_95 = coco_eval.stats[0]
-            ap50 = coco_eval.stats[1]
-            
-            # Clean up temporary files
-            import os
-            os.unlink(gt_path)
-            os.unlink(pred_path)
-            
-            return float(ap50_95), float(ap50), summary_info
-            
-        except Exception as e:
-            import traceback
-            logger.error(f"Error calculating COCO metrics: {e}")
-            if DEBUG >= 1:
-                logger.error(f"Full traceback: {traceback.format_exc()}")
-                logger.error(f"GT data keys: {coco_gt_data.keys() if 'coco_gt_data' in locals() else 'Not created'}")
-                logger.error(f"Predictions count: {len(pred_data) if 'pred_data' in locals() else 'Not created'}")
-            return 0.0, 0.0, f"Error: {str(e)}"
 
-    def evaluate_single_batch(self, model, input_frame, targets, img_info):
-        """
-        Evaluate a single batch and return AP@50:95 and AP@50 metrics.
+                else:
+                    redirect_string = io.StringIO()
+                    with contextlib.redirect_stdout(open('/dev/null', 'w')):
+                        coco_eval = COCOeval(coco_gt, coco_dt, 'bbox')
+                        coco_eval.evaluate()
+                        coco_eval.accumulate()
+                print(coco_eval.eval)
+
+            except Exception as e:
+                import traceback
+                logger.error(f"Error calculating COCO metrics: {e}")
+                if DEBUG >= 1:
+                    logger.error(f"Full traceback: {traceback.format_exc()}")
+                    logger.error(f"GT data keys: {coco_gt_data.keys() if 'coco_gt_data' in locals() else 'Not created'}")
+                    logger.error(f"Predictions count: {len(pred_data) if 'pred_data' in locals() else 'Not created'}")
+                return 0.0, 0.0, f"Error: {str(e)}"
+            
+        coco_eval.summarize()
+        summary_info = redirect_string.getvalue()
+        ap50_95 = coco_eval.stats[0]
+        ap50 = coco_eval.stats[1]
         
-        Args:
-            model: The detection model
-            input_frame: Input tensor for the model
-            targets: Ground truth bounding boxes and labels
-            img_info: Image metadata
-            
-        Returns:
-            tuple: (ap50_95, ap50, summary_info)
-        """
-        model.eval()
-        with torch.no_grad():
-            # Forward pass
-            outputs, _ = model(input_frame)
-            
-            # Post-process outputs
-            outputs = postprocess(
-                outputs, self.num_classes, self.confthre, self.nmsthre
-            )
-            
-            # Calculate COCO metrics
-            ap50_95, ap50, summary = self.calculate_coco_metrics(outputs, targets, img_info)
-            
-            return ap50_95, ap50, summary
+        # Clean up temporary files
+        # import os
+        # os.unlink(gt_path)
+        # os.unlink(pred_path)
+        
+        return coco_eval.stats, summary_info
+                
+           
 
 ###### TODO: CONVERSIONE
 """
