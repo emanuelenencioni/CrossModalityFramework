@@ -332,38 +332,31 @@ class DSECEvaluator:
             return data_list, image_wise_data
         return data_list
 
-    def create_coco_gt_from_batch(self, targets, images_info):
+    def create_coco_gt_from_batch(self, targets, image_info):
         """
-        Create COCO-style ground truth annotations from batch data.
-        
+        Create COCO-style ground truth annotations from batch data
         Args:
             targets: Ground truth bounding boxes and labels
             images_info: Image metadata
-            
-        Returns:
-            dict: COCO-style dataset with images, annotations, and categories
+        Returns: dict: COCO-style dataset with images, annotations, and categories
         """
         images = []
         annotations = []
         annotation_id = 1
         
-        for idx, (target, img_info) in enumerate(zip(targets, images_info)):
+        for target in targets:
             if target is None:
                 continue
                 
             # Add image info
-            orig_height, orig_width = img_info.data['orig_shape']
-            img_id = int(img_info.data['idx'])  # Ensure it's an integer
-            
-            # Ensure unique image IDs
-            if any(img['id'] == img_id for img in images):
-                img_id = len(images) + idx + 1
+            orig_height, orig_width = 512,512 #img_info.data['orig_shape'] TODO only for testing it's ok
+            img_id = int(image_info.data['idx'])  # Ensure it's an integer
                 
             image_data = {
                 "id": img_id,
                 "width": int(orig_width),
                 "height": int(orig_height),
-                "file_name": img_info.data['ori_filename']
+                "file_name": image_info.data['ori_filename']
             }
             images.append(image_data)
             
@@ -381,7 +374,9 @@ class DSECEvaluator:
                             w = x2 - x1
                             h = y2 - y1
                         else:   
-                            class_id, x1, y1, w, h= bbox[:5]
+                            class_id, xc, yc, w, h= bbox[:5]
+                            x1 = xc - w * 0.5
+                            y1 = yc - h * 0.5
 
                         # Convert to COCO format (x, y, width, height)
                         coco_bbox = [
@@ -393,8 +388,7 @@ class DSECEvaluator:
 
                         area = float(w * h)
                         # Skip very small bounding boxes
-                        if area <= 0:
-                            continue
+                        if area <= 0: continue
                         
                         annotation = {
                             "id": annotation_id,
@@ -407,13 +401,13 @@ class DSECEvaluator:
                         }
                         annotations.append(annotation)
                         annotation_id += 1
-        categories = []
-        for i in range(self.num_classes):
-            categories.append({
-                "id": i,
-                "name": f"class_{i}",
-                "supercategory": "object"
-            })
+        # categories = []
+        # for i in range(self.num_classes):
+        #     categories.append({
+        #         "id": i,
+        #         "name": f"class_{i}",
+        #         "supercategory": "object"
+        #     })
         
         coco_gt = {
             "info": {
@@ -426,7 +420,6 @@ class DSECEvaluator:
             "licenses": [],
             "images": images,
             "annotations": annotations,
-            "categories": categories
         }
         
         return coco_gt
