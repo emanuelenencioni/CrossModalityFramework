@@ -78,6 +78,36 @@ def per_class_AP_table(coco_eval, class_names=COCO_CLASSES, headers=["class", "A
     return table
 
 
+def tensor_to_cv2_image(image_tensor):
+    """Converts a PyTorch tensor or numpy array to a BGR numpy array for OpenCV."""
+    if isinstance(image_tensor, torch.Tensor):
+        img_tensor = image_tensor.cpu()
+        # Handle different tensor shapes
+        if img_tensor.dim() == 3:  # (C, H, W)
+            img_np = img_tensor.permute(1, 2, 0).numpy()
+        elif img_tensor.dim() == 4:  # (B, C, H, W)
+            img_np = img_tensor[0].permute(1, 2, 0).numpy()
+        else:
+            img_np = img_tensor.numpy()
+        
+        # Normalize to 0-255 range if needed
+        if img_np.max() <= 1.0 and img_np.min() >= 0:
+            img_np = (img_np * 255).astype(np.uint8)
+        else:
+            img_np = np.clip(img_np, 0, 255).astype(np.uint8)
+    else:
+        img_np = image_tensor.numpy()
+
+    # Ensure 3 channels for cv2
+    if img_np.ndim == 2:  # Grayscale
+        img_np = cv2.cvtColor(img_np, cv2.COLOR_GRAY2BGR)
+    elif img_np.shape[2] == 1:  # Single channel
+        img_np = cv2.cvtColor(img_np, cv2.COLOR_GRAY2BGR)
+
+    return cv2.UMat(img_np)
+
+
+
 class DSECEvaluator:
     """
     DSEC AP Evaluation class. From YOLOX COCOEvaluator.
