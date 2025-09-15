@@ -12,6 +12,7 @@ import numpy as np
 from prettytable import PrettyTable
 import json
 from PIL import Image, ImageDraw
+import cv2
 from tqdm import tqdm
 
 import torch
@@ -24,7 +25,7 @@ from .utils.data_container import DataContainer
 
 #from .builder import DATASETS
 from helpers import DEBUG
-from utils import parse
+from utils import parse, boxes
 
 
 
@@ -135,6 +136,7 @@ class CustomDataset(Dataset):
         self.img_infos = self.load_annotations(self.img_dir, self.img_suffix,
                                                self.ann_dir,
                                                self.seg_map_suffix, self.split)
+        self._COLORS = boxes._COLORS
 
     def __len__(self):
         """Total number of samples of data."""
@@ -517,6 +519,38 @@ class CustomDataset(Dataset):
             if DEBUG >= 1:
                 print(f"Error drawing bounding boxes: {e}")
             return image_tensor
+
+    def vis(self, img, boxes, scores, cls_ids, conf=0.5, class_names=None):
+        for i in range(len(boxes)):
+            box = boxes[i]
+            cls_id = int(cls_ids[i])
+            score = scores[i]
+            if score < conf:
+                continue
+            x0 = int(box[0])
+            y0 = int(box[1])
+            x1 = int(box[2])
+            y1 = int(box[3])
+
+            color = (self._COLORS[cls_id] * 255).astype(np.uint8).tolist()
+            text = '{}:{:.1f}%'.format(class_names[cls_id], score * 100)
+            txt_color = (0, 0, 0) if np.mean(self._COLORS[cls_id]) > 0.5 else (255, 255, 255)
+            font = cv2.FONT_HERSHEY_SIMPLEX
+
+            txt_size = cv2.getTextSize(text, font, 0.4, 1)[0]
+            cv2.rectangle(img, (x0, y0), (x1, y1), color, 2)
+
+            txt_bk_color = (self._COLORS[cls_id] * 255 * 0.7).astype(np.uint8).tolist()
+            cv2.rectangle(
+                img,
+                (x0, y0 + 1),
+                (x0 + txt_size[0] + 1, y0 + int(1.5*txt_size[1])),
+                txt_bk_color,
+                -1
+            )
+            cv2.putText(img, text, (x0, y0 + txt_size[1]), font, 0.4, txt_color, thickness=1)
+
+        return img
 
     def get_classes_and_palette(self, classes=None, palette=None):
         """Get class names of current dataset.
