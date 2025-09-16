@@ -85,8 +85,9 @@ def per_class_AP_table(coco_eval, class_names=COCO_CLASSES, headers=["class", "A
     return table
 
 
-def tensor_to_cv2_image(image_tensor):
+def tensor_to_cv2_image(image_tensor, mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)):
     """Converts a PyTorch tensor or numpy array to a BGR numpy array for OpenCV."""
+    
     if isinstance(image_tensor, torch.Tensor):
         img_tensor = image_tensor.cpu()
         # Handle different tensor shapes
@@ -101,6 +102,7 @@ def tensor_to_cv2_image(image_tensor):
         if img_np.max() <= 1.0 and img_np.min() >= 0:
             img_np = (img_np * 255).astype(np.uint8)
         else:
+            img_np = ((img_np*std) + mean)*255  # Unnormalize
             img_np = np.clip(img_np, 0, 255).astype(np.uint8)
     else:
         img_np = image_tensor.numpy()
@@ -111,8 +113,7 @@ def tensor_to_cv2_image(image_tensor):
     elif img_np.shape[2] == 1:  # Single channel
         img_np = cv2.cvtColor(img_np, cv2.COLOR_GRAY2BGR)
 
-    return cv2.UMat(img_np)
-
+    return img_np
 
 
 class DSECEvaluator:
