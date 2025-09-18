@@ -1,6 +1,7 @@
 import argparse
 import yaml
 import torch
+from torch.utils.data import DataLoader
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
@@ -114,7 +115,7 @@ def get_args_parser():
     parser.add_argument('--input_image', type=str, help='Path to single input image')
     parser.add_argument('--input_dir', type=str, help='Directory containing input images')
     parser.add_argument('--output_dir', type=str, default='./detection_results', help='Output directory for results')
-    parser.add_argument('--confidence_threshold', type=float, default=0.1, help='Confidence threshold for detections')
+    parser.add_argument('--confidence_threshold', type=float, default=0.3, help='Confidence threshold for detections')
     parser.add_argument('--device', type=str, default='cuda', help='Device to use for inference')
     parser.add_argument('--num_samples', type=int, default=10, help='Number of random samples to process (if using dataset)')
     parser.add_argument('--use_dataset', action='store_true', help='Use dataset instead of input images')
@@ -176,10 +177,8 @@ def get_transform(input_size):
 
 def detect_image(model, image, transform, device, confidence_threshold=0.5):
     """Run detection on a single image and apply post processing."""
-    
-    original_size = image.size
-    img_tensor = transform(image).unsqueeze(0).to(device)
 
+    img_tensor = transform(image).unsqueeze(0).to(device) if transform is not None else image
     outputs, _ = model(img_tensor)
     outputs = postprocess(outputs, num_classes=8, conf_thre=confidence_threshold) # After this, boxes are in (x1, y1, x2, y2) format
     
@@ -294,6 +293,40 @@ def visual(self,img, output, orig_size, cls_conf=0.35, classes=None):
         vis_res = vis(img, bboxes, scores, cls, cls_conf, classes)
         return vis_res
 
+def collate_fn(batch):
+    return batch
+
+
+def tensor_to_cv2_image(image_tensor, mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)):
+    """Converts a PyTorch tensor or numpy array to a BGR numpy array for OpenCV."""
+    
+    if isinstance(image_tensor, torch.Tensor):
+        img_tensor = image_tensor.cpu()
+        # Handle different tensor shapes
+        if img_tensor.dim() == 3:  # (C, H, W)
+            img_np = img_tensor.permute(1, 2, 0).numpy()
+        elif img_tensor.dim() == 4:  # (B, C, H, W)
+            img_np = img_tensor[0].permute(1, 2, 0).numpy()
+        else:
+            img_np = img_tensor.numpy()
+        
+        # Normalize to 0-255 range if needed
+        if img_np.max() <= 1.0 and img_np.min() >= 0:
+            img_np = (img_np * 255).astype(np.uint8)
+        else:
+            img_np = ((img_np*std) + mean)*255  # Unnormalize
+            img_np = np.clip(img_np, 0, 255).astype(np.uint8)
+    else:
+        img_np = image_tensor.numpy().asarray().astype(np.uint8)
+    img_np = cv2.cvtColor(img_np, cv2.COLOR_BGR2RGB)
+    # Ensure 3 channels for cv2
+    if img_np.ndim == 2:  # Grayscale
+        img_np = cv2.cvtColor(cv2.fromarray(img_np), cv2.COLOR_GRAY2RGB)
+    elif img_np.shape[2] == 1:  # Single channel
+        img_np = cv2.cvtColor(cv2.fromarray(img_np), cv2.COLOR_GRAY2RGB)
+
+    return cv2.UMat(img_np)
+
 def main(args):
     """Main detection function."""
     print("Detection Script using Trained Framework Models")
@@ -367,10 +400,42 @@ def main(args):
         combined_output_path = os.path.join(args.output_dir, f"{base_name}_combined.png")
         cv2.imwrite(combined_output_path, combined_image)
 
-        detection_count = len(output[0]) if output[0] is not None else 0
+        detection_count = output.shape[0] if output is not None else 0
         #detection_count = plot_detections(image, boxes, scores, classes, output_path, args.confidence_threshold)
         print(f"Found {detection_count} detections")
-    
+    elif args.use_dataset:
+        train_ds, _ = dataset_builder.build_from_config(cfg['dataset'])
+        train_dl = DataLoader(train_ds, batch_size=5, num_workers=1, collate_fn=collate_fn, shuffle=False, pin_memory=True)
+        item = next(iter(train_dl))
+        image = torch.stack([it['image'].to(args.device) for it in item])
+        print(f"Processing single image: {args.input_image}")
+        item = item[0]
+        base_name = item['img_info']['filename']
+        # root_path = os.path.dirname(os.path.abspath(__file__)).replace('detect_from_config.py', '') + "/"
+        # path = root_path + item['img_prefix'] + item['ann_info']['subfolder'] + "/" + item['img_info']['filename']
+        # image_cv = cv2.imread(path, cv2.IMREAD_COLOR)
+        # image_cv = cv2.resize(image_cv, (image.shape[3], image.shape[2]))
+        image_cv = tensor_to_cv2_image(image)
+        orig_image = image_cv.get()
+        cv2.imwrite(os.path.join(args.output_dir, f"{base_name}_original.png"), image_cv)
+        output = detect_image(model, image, None, args.device, args.confidence_threshold)
+        output = output[0]
+
+        visual_res = visual(model,image_cv, output, list(image.size()[2:4]), args.confidence_threshold, classes)
+        
+        output_path = os.path.join(args.output_dir, f"{base_name}_detection.png")
+        cv2.imwrite(output_path, visual_res)
+        
+        #creating new image that contains original and detection side by side
+        combined_image = np.concatenate((orig_image, visual_res.get()), axis=1)
+        combined_output_path = os.path.join(args.output_dir, f"{base_name}_combined.png")
+        cv2.imwrite(combined_output_path, combined_image)
+
+        detection_count = output.shape[0] if output is not None else 0
+        #detection_count = plot_detections(image, boxes, scores, classes, output_path, args.confidence_threshold)
+        print(f"Found {detection_count} detections")
+
+
     else:
         print("Please specify either --input_image, --input_dir, or --use_dataset")
         return
