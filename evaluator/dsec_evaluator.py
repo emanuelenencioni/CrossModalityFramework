@@ -202,8 +202,7 @@ class DSECEvaluator:
         outputs, gts, imgs_info = [], [], []
 
         for cur_iter, batch in enumerate(
-            progress_bar(self.dataloader)
-        ):
+            progress_bar(self.dataloader)):
             with torch.no_grad():
                 input_frame = torch.stack([item[self.input_type] for item in batch]).to(self.device)
                 assert "BB" in batch[0], "Batch must contain 'BB' key for targets"
@@ -219,29 +218,19 @@ class DSECEvaluator:
                 else:
                     imgs_info.append((img_info, None))
                 outputs.append(self.postprocess(output, images_info=imgs_info[-1] if DEBUG >= 3 else None))
-            break
 
         #Evaluate all the test set at once
-
-        results, _ = self.calculate_coco_metrics(outputs, gts, imgs_info)
-        
-        return np.mean(results[0]), np.mean(results[1]), None
+        return self.calculate_coco_metrics(outputs, gts, imgs_info)
 
     def postprocess(self, prediction, class_agnostic=False, images_info=None):
         box_corner = prediction.new(prediction.shape)
         ####### WARNING : Convert from (cx, cy, w, h) to (x1, y1, x2, y2) format TODO hw -> wh
         print("WARNING: Converting from (cx, cy, w, h) to (x1, y1, w, h) format, BE AWARE: OLD CODE has cx,cy,h,w")
         
-        box_corner[:, :, 0] = prediction[:, :, 0] - prediction[:, :, 3] / 2
-        box_corner[:, :, 1] = prediction[:, :, 1] - prediction[:, :, 2] / 2
-        
-        # TODO remove this swap (OLD nets has h,w instead of w,h)
-        # x = box_corner[:, :, 2].clone()
-        # box_corner[:, :, 2] = box_corner[:, :, 3].clone()
-        # box_corner[:, :, 3] = x
-
-        box_corner[:, :, 2] = prediction[:, :, 0] + prediction[:, :, 3] / 2
-        box_corner[:, :, 3] = prediction[:, :, 1] + prediction[:, :, 2] / 2
+        box_corner[:, :, 0] = prediction[:, :, 0] - prediction[:, :, 2] / 2
+        box_corner[:, :, 1] = prediction[:, :, 1] - prediction[:, :, 3] / 2
+        box_corner[:, :, 2] = prediction[:, :, 0] + prediction[:, :, 2] / 2
+        box_corner[:, :, 3] = prediction[:, :, 1] + prediction[:, :, 3] / 2
         prediction[:, :, :4] = box_corner[:, :, :4]
 
         output = [None for _ in range(len(prediction))]
@@ -358,8 +347,6 @@ class DSECEvaluator:
         annotation_id = 1
         
         for target in targets:
-    
-                
             # Add image info
             orig_height, orig_width = 512,512 #img_info.data['orig_shape'] TODO only for testing it's ok
             img_id = int(image_info.data['idx'])  # Ensure it's an integer
@@ -452,7 +439,7 @@ class DSECEvaluator:
             pred_data = self.convert_to_coco_format(pred_batch, img_info)
             if len(pred_data) == 0:
                 pred_data = [{}]
-            coco_gt_data = self.create_coco_gt_from_batch(t_batch, img_info)
+            coco_gt_data = self.create_coco_gt_from_batch(t_batch, img_info[0])
             #coco_gt_data.append(output)
             # coco_gt_data = [item for t_batch in targets for item in self.create_coco_gt_from_batch(t_batch, images_info)]
             if len(coco_gt_data) == 0:
@@ -497,7 +484,6 @@ class DSECEvaluator:
                         coco_eval = COCOeval(coco_gt, coco_dt, 'bbox')
                         coco_eval.evaluate()
                         coco_eval.accumulate()
-                print(coco_eval.eval)
 
             except Exception as e:
                 import traceback
@@ -509,16 +495,7 @@ class DSECEvaluator:
                 return 0.0, 0.0, f"Error: {str(e)}"
             
         coco_eval.summarize()
-        summary_info = redirect_string.getvalue()
-        ap50_95 = coco_eval.stats[0]
-        ap50 = coco_eval.stats[1]
-        
-        # Clean up temporary files
-        # import os
-        # os.unlink(gt_path)
-        # os.unlink(pred_path)
-        
-        return coco_eval.stats, summary_info
+        return coco_eval.stats
                 
            
 
