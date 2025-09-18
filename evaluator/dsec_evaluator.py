@@ -105,15 +105,10 @@ def tensor_to_cv2_image(image_tensor, mean=(0.485, 0.456, 0.406), std=(0.229, 0.
             img_np = ((img_np*std) + mean)*255  # Unnormalize
             img_np = np.clip(img_np, 0, 255).astype(np.uint8)
     else:
-        img_np = image_tensor.numpy()
+        img_np = image_tensor.numpy().asarray().astype(np.uint8)
 
-    # Ensure 3 channels for cv2
-    if img_np.ndim == 2:  # Grayscale
-        img_np = cv2.cvtColor(img_np, cv2.COLOR_GRAY2BGR)
-    elif img_np.shape[2] == 1:  # Single channel
-        img_np = cv2.cvtColor(img_np, cv2.COLOR_GRAY2BGR)
-
-    return img_np
+    img_np = cv2.cvtColor(img_np, cv2.COLOR_BGR2RGB)
+    return cv2.UMat(img_np)
 
 
 class DSECEvaluator:
@@ -217,12 +212,14 @@ class DSECEvaluator:
                 #imgs = input_frame.type(tensor_type)
                 # skip the last iters since batchsize might be not enough for batch inference
                 output, _ = model(input_frame)
-                outputs.append(output.cpu())
+                
                 gts.append(targets.cpu())
-                if DEBUG >= 3:
-                    imgs_info.append((img_info, tensor_to_cv2_image(input_frame)))
+                if DEBUG >= 3 and cur_iter == 0: #only for the first batch
+                    imgs_info.append((img_info, [tensor_to_cv2_image(item[self.input_type]) for item in batch]))
                 else:
                     imgs_info.append((img_info, None))
+                outputs.append(self.postprocess(output, images_info=imgs_info[-1] if DEBUG >= 3 else None))
+            break
 
         #Evaluate all the test set at once
 
@@ -230,11 +227,19 @@ class DSECEvaluator:
         
         return np.mean(results[0]), np.mean(results[1]), None
 
-    def postprocess(self, prediction, class_agnostic=False, images=None):
+    def postprocess(self, prediction, class_agnostic=False, images_info=None):
         box_corner = prediction.new(prediction.shape)
-        ####### WARNING : Convert from (cx, cy, h, w) to (x1, y1, x2, y2) format -> TODO: (cx, cy, h, w) -> (cx, cy, w, h)
+        ####### WARNING : Convert from (cx, cy, w, h) to (x1, y1, x2, y2) format TODO hw -> wh
+        print("WARNING: Converting from (cx, cy, w, h) to (x1, y1, w, h) format, BE AWARE: OLD CODE has cx,cy,h,w")
+        
         box_corner[:, :, 0] = prediction[:, :, 0] - prediction[:, :, 3] / 2
         box_corner[:, :, 1] = prediction[:, :, 1] - prediction[:, :, 2] / 2
+        
+        # TODO remove this swap (OLD nets has h,w instead of w,h)
+        # x = box_corner[:, :, 2].clone()
+        # box_corner[:, :, 2] = box_corner[:, :, 3].clone()
+        # box_corner[:, :, 3] = x
+
         box_corner[:, :, 2] = prediction[:, :, 0] + prediction[:, :, 3] / 2
         box_corner[:, :, 3] = prediction[:, :, 1] + prediction[:, :, 2] / 2
         prediction[:, :, :4] = box_corner[:, :, :4]
@@ -275,62 +280,69 @@ class DSECEvaluator:
             else:
                 output[i] = torch.cat((output[i], detections))
 
-            #debug: image + boxes
-            if DEBUG >= 3 and images is not None:           
-                img = self.dataloader.dataset.vis(images, output[i][:, 0:4].cpu().numpy(), output[i][:, 4].cpu().numpy(),
-                                                   output[i][:, 6].cpu().numpy(), conf=self.conf_thre, class_names=DSEC_DET_CLASSES)
-
-                if self.debug_images_folder: cv2.imwrite(self.debug_images_folder / f"debug_out_{i}.png", img)
+            if DEBUG >= 3 and self.debug_images_folder is not None and images_info is not None:
+                img, img_info = images_info[1][i], images_info[0][i]
+                vis_img = self.visual(img, output[i], img_info.data['orig_shape'], cls_conf=self.conf_thre, classes=self.dataloader.dataset.DSEC_DET_CLASSES)
+                cv2.imwrite(str(self.debug_images_folder / f"{img_info.data['idx']}.png"), vis_img)
         return output
 
-    def convert_to_coco_format(self, outputs, targets, images_info, return_outputs=False):
+    def visual(self,img, output, orig_size, cls_conf=0.35, classes=None):
+        
+        if output is None:
+            return img
+        output = output.cpu()
+
+        bboxes = output #rescale_boxes(output[:, :4], orig_size)
+        cls = output[:, 6]
+        scores = output[:, 4] * output[:, 5]
+
+        vis_res = self.dataloader.dataset.vis(img, bboxes, scores, cls, cls_conf, classes)
+        return vis_res
+
+    def convert_to_coco_format(self, output_batch, images_info):
         data_list = []
+        
         image_wise_data = defaultdict(dict)
         for (output, img_info) in zip(
-            outputs, images_info
+            output_batch, images_info[0]
         ):
             if output is None:
+                pred_data = {
+                    "image_id": int(img_info.data['idx']),  # Need image ID for COCO format
+                    "category_id": -1,
+                    "bbox": [],
+                    "score": 0.0,
+                    "segmentation": [],
+                }  # COCO json format
+                data_list.append(pred_data)
                 continue
+
             output = output.cpu()
-
+            
+            
+            # Convert (x1, y1, x2, y2) to (x1, y1, w, h)
             bboxes = output[:, 0:4]
-
-            # preprocessing: resize, 0 -> height, 1 -> width
-            # scale = min(
-            #     float(self.img_size[0]) / float(img_info.data['orig_shape'][0]), float(self.img_size[1]) / float(img_info.data['orig_shape'][1])
-            # )
-            #bboxes /= scale
+            bboxes = bboxes.clone()
+            bboxes[:, 2] = bboxes[:, 2] - bboxes[:, 0]  # w = x2 - x1
+            bboxes[:, 3] = bboxes[:, 3] - bboxes[:, 1]  # h = y2 - y1
             cls = output[:, 6]
             scores = output[:, 4] * output[:, 5]
-
-            # image_wise_data.update({
-            #     int(img_id): {
-            #         "bboxes": [box.numpy().tolist() for box in bboxes],
-            #         "scores": [score.numpy().item() for score in scores],
-            #         "categories": [int(cls[ind]) for ind in range(bboxes.shape[0]) # TODO: check if this is correct
-            #         ],
-            #     }
-            # })
-            if self.input_format == "xyxy":
-                bboxes = xyxy2xywh(bboxes)
-            elif self.input_format == "cxcywh":
-                bboxes = bboxes.clone()
-                bboxes[:, 0] = bboxes[:, 0] - bboxes[:, 2] * 0.5
-                bboxes[:, 1] = bboxes[:, 1] - bboxes[:, 3] * 0.5
+            
 
             for ind in range(bboxes.shape[0]):
+                area = float((bboxes[ind][2]-bboxes[ind][0])*(bboxes[ind][3]-bboxes[ind][1]))
+                if area < 0: continue
                 label = int(cls[ind]) # TODO: check if this is correct
                 pred_data = {
                     "image_id": int(img_info.data['idx']),  # Need image ID for COCO format
                     "category_id": label,
                     "bbox": bboxes[ind].numpy().tolist(),
+                    "area": area,
                     "score": scores[ind].numpy().item(),
                     "segmentation": [],
                 }  # COCO json format
                 data_list.append(pred_data)
 
-        if return_outputs:
-            return data_list, image_wise_data
         return data_list
 
     def create_coco_gt_from_batch(self, targets, image_info):
@@ -346,8 +358,7 @@ class DSECEvaluator:
         annotation_id = 1
         
         for target in targets:
-            if target is None:
-                continue
+    
                 
             # Add image info
             orig_height, orig_width = 512,512 #img_info.data['orig_shape'] TODO only for testing it's ok
@@ -360,13 +371,12 @@ class DSECEvaluator:
                 "file_name": image_info.data['ori_filename']
             }
             images.append(image_data)
-            
             # Process target bounding boxes
             target = target.cpu() if hasattr(target, 'cpu') else target
             
             # Assuming target format is [class_id, x1, y1, x2, y2] or similar
             # Adjust this based on your actual target format
-            if len(target.shape) == 2:
+            if target is not None and len(target.shape) == 2:
                 for ann_idx in range(target.shape[0]):
                     bbox = target[ann_idx]
                     if len(bbox) >= 5:  # class_id, x1, y1, x2, y2, 
@@ -402,13 +412,13 @@ class DSECEvaluator:
                         }
                         annotations.append(annotation)
                         annotation_id += 1
-        # categories = []
-        # for i in range(self.num_classes):
-        #     categories.append({
-        #         "id": i,
-        #         "name": f"class_{i}",
-        #         "supercategory": "object"
-        #     })
+        categories = []
+        for i in range(self.num_classes):
+            categories.append({
+                "id": i,
+                "name": f"class_{i}",
+                "supercategory": "object"
+            })
         
         coco_gt = {
             "info": {
@@ -440,8 +450,9 @@ class DSECEvaluator:
         coco_gt_data = []
         for pred_batch, t_batch, img_info in zip(predictions,targets, images_info):
             pred_data = self.convert_to_coco_format(pred_batch, img_info)
-
-            coco_gt_data = self.create_coco_gt_from_batch(t_batch, img_info[0])
+            if len(pred_data) == 0:
+                pred_data = [{}]
+            coco_gt_data = self.create_coco_gt_from_batch(t_batch, img_info)
             #coco_gt_data.append(output)
             # coco_gt_data = [item for t_batch in targets for item in self.create_coco_gt_from_batch(t_batch, images_info)]
             if len(coco_gt_data) == 0:
