@@ -524,6 +524,8 @@ class CustomDataset(Dataset):
         for i in range(len(boxes)):
             box = boxes[i]
             cls_id = int(cls_ids[i])
+            cls_name = [key for key, value in self.DETECTION_CLASSES.items() if value == cls_id][0] if self.DETECTION_CLASSES is not None else str(cls_id)
+            cls_id = class_names[cls_name]
             score = scores[i]
             if score < conf:
                 continue
@@ -533,7 +535,7 @@ class CustomDataset(Dataset):
             y1 = int(box[3])
 
             color = (self._COLORS[cls_id] * 255).astype(np.uint8).tolist()
-            text = '{}:{:.1f}%'.format(class_names[cls_id], score * 100)
+            text = '{}:{:.1f}%'.format(cls_name, score * 100)
             txt_color = (0, 0, 0) if np.mean(self._COLORS[cls_id]) > 0.5 else (255, 255, 255)
             font = cv2.FONT_HERSHEY_SIMPLEX
 
