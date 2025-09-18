@@ -112,13 +112,14 @@ class Trainer:
                 wandb.log({"batch_loss": batch_loss})
             self.step += 1
         avg_loss = self.total_loss / len(self.dataloader)
-        if DEBUG == 1: print(f"Epoch loss: {avg_loss:.4f}", step=self.step)
+        if DEBUG == 1: print(f"Epoch loss: {avg_loss:.4f}", self.epoch)
         if self.wandb_log:
-            wandb.log({"epoch_loss": avg_loss},step=self.step)
+            wandb.log({"epoch_loss": avg_loss},step=self.epoch)
         return avg_loss
 
     def train(self, evaluator=None, eval_loss=False):
         for epoch in range(self.total_epochs):
+            self.model.train()
             start_time = time.time()
             with tqdm(total=len(self.dataloader), desc=f"Epoch {self.epoch}/{self.total_epochs}") as pbar:
                 avg_loss = self._train_epoch(pbar)
@@ -139,14 +140,34 @@ class Trainer:
             if DEBUG == 1:
                 print(f"Epoch {epoch+1} completed in {epoch_time:.2f} seconds")
             if self.wandb_log:
-                wandb.log({"lr": self.optimizer.param_groups[0]['lr']}, step=self.step)
+                wandb.log({"lr": self.optimizer.param_groups[0]['lr']}, step=self.epoch)
 
             if evaluator is not None:
-                ap50_95, ap50, _ = evaluator.evaluate(self.model)
-                if DEBUG >= 1: print(f"AP50-95: {ap50_95:.4f}, AP50: {ap50:.4f}")
+                # stats is a numpy array of 12 elements
+                stats = evaluator.evaluate(self.model)
+
+                if DEBUG >= 1: 
+                    # Primary COCO metrics
+                    ap50_95 = stats[0]
+                    ap50 = stats[1]
+                    print(f"AP50-95: {ap50_95:.4f}, AP50: {ap50:.4f}")
 
                 if self.wandb_log:
-                    wandb.log({"ap50_95": ap50_95, "ap50": ap50}, step=self.step)
+                    wandb.log({
+                        "AP/AP(50_95)": stats[0],
+                        "AP/AP50": stats[1],
+                        "AP/AP75": stats[2],
+                        "AP/APs": stats[3],
+                        "AP/APm": stats[4],
+                        "AP/APl": stats[5],
+                        "AR/AR1": stats[6],
+                        "AR/AR10": stats[7],
+                        "AR/AR100": stats[8],
+                        "AR/ARs": stats[9],
+                        "AR/ARm": stats[10],
+                        "AR/ARl": stats[11],
+                    }, step=self.epoch)
+
             elif hasattr(self.dataloader.dataset, 'evaluate'):
                 # Use dataset's evaluate method
                 ap50_95, ap50, _ = self.dataloader.dataset.evaluate(self.model)
