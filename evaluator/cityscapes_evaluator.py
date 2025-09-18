@@ -83,46 +83,51 @@ class CityscapesEvaluator(DSECEvaluator):
         annotations = []
         annotation_id = 1
 
-        for targets,img_info in zip(targets_list,images_info):
+        for targets,img_info, img in zip(targets_list,images_info[0], images_info[1]):
+            # Add image info
+            orig_height, orig_width = img_info.data['orig_shape'] if hasattr(img_info, 'data') else (1024, 2048)
+            img_id = int(img_info.data['idx'])
+            
+            # Ensure unique image IDs
+            # while any(img['id'] == img_id for img in images):
+            #     img_id += 1000
+                
+            image_data = {
+                "id": img_id,
+                "width": int(orig_width),
+                "height": int(orig_height),
+                "file_name": img_info.data.get('ori_filename')
+            }
+            images.append(image_data)
+            boxes = []
+            ids = []
             for target in targets:
                 if target is None:
                     continue
-                    
-                # Add image info
-                orig_height, orig_width = img_info.data['orig_shape'] if hasattr(img_info, 'data') else (1024, 2048)
-                img_id = int(img_info.data['idx'])
-                
-                # Ensure unique image IDs
-                while any(img['id'] == img_id for img in images):
-                    img_id += 1000
-                    
-                image_data = {
-                    "id": img_id,
-                    "width": int(orig_width),
-                    "height": int(orig_height),
-                    "file_name": img_info.data.get('ori_filename')
-                }
-                images.append(image_data)
                 
                 # Process target bounding boxes
                 target = target.cpu() if hasattr(target, 'cpu') else target
                 
                 # Assuming target format is [class_id, x1, y1, w, h]
                 class_id, x_center, y_center, w, h = target[:5]
-                x1 = x_center - w * 0.5
-                y1 = y_center - h * 0.5
-                # Skip invalid bboxes
                 if class_id < 0 or w <= 0 or h <= 0:
                     continue
-
+                # Convert from center format to corner format
+                x1 = x_center - w * 0.5
+                y1 = y_center - h * 0.5
+                x2 = x_center + w * 0.5
+                y2 = y_center + h * 0.5
+                # Skip invalid bboxes
+                
                 # Convert to COCO format (x, y, width, height)
-                coco_bbox = [float(x1), float(y1), float(w), float(h)]
+                coco_bbox = [float(x1), float(y1), float(x2), float(y2)]
                 area = float(w * h)
                 
                 # Skip very small bounding boxes
                 if area <= 1:
                     continue
-                
+                boxes.append(coco_bbox)
+                ids.append(int(class_id))
                 annotation = {
                     "id": annotation_id,
                     "image_id": img_id,
@@ -148,6 +153,10 @@ class CityscapesEvaluator(DSECEvaluator):
                     "name": cat_name,
                     "supercategory": "object"
                 })
+            if DEBUG >= 3:
+                import cv2
+                self.dataloader.dataset.vis(img, boxes, [1] * len(boxes), cls_ids=ids, conf=0.5, class_names=self.dataloader.dataset.DSEC_DET_CLASSES)
+                cv2.imwrite(f"debug_gt_{img_id}.jpg", img)
             
         coco_gt = {
             "info": {
@@ -164,3 +173,5 @@ class CityscapesEvaluator(DSECEvaluator):
         }
         
         return coco_gt
+
+        
