@@ -296,7 +296,7 @@ if __name__ == "__main__":
     if 'num_workers' in cfg['dataset'].keys(): 
         num_workers = int(cfg['dataset']['num_workers'])
         
-    train_dl = DataLoader(train_ds, batch_size=cfg['dataset']['batch_size'], num_workers=num_workers, shuffle=False, collate_fn=collate_ssl, pin_memory=True)
+    train_dl = DataLoader(train_ds, batch_size=cfg['dataset']['batch_size'], num_workers=num_workers, shuffle=True, collate_fn=collate_ssl, pin_memory=True)
     test_dl = DataLoader(test_ds, batch_size=cfg['dataset']['batch_size'], num_workers=num_workers, shuffle=False, collate_fn=collate_ssl, pin_memory=True) if test_ds is not None else None
     
     wandb_log = False
@@ -335,5 +335,5 @@ if __name__ == "__main__":
     else:
         trainer = Trainer(model,train_dl, opti, criterion, device,  cfg, root_folder=dir_path, wandb_log=wandb_log, pretrained_checkpoint=pretrained_checkpoint, scheduler=schdlr)
     in_size = cfg['model']['backbone']['input_size']
-    evaluator = CityscapesEvaluator(test_dl, img_size=(in_size, in_size), confthre=0.001, nmsthre=0.50, num_classes=cfg['dataset']['bb_num_classes'], device=device)
+    evaluator = CityscapesEvaluator(test_dl, img_size=(in_size, in_size), confthre=0.6, nmsthre=0.45, num_classes=cfg['dataset']['bb_num_classes'], device=device)
     trainer.train(evaluator=evaluator)
