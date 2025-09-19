@@ -109,12 +109,12 @@ class Trainer:
                 pbar.set_description(f"Training model {self.model.get_name()}, loss:{batch_loss:.4f}")
                 pbar.update(1)
             if self.wandb_log:
-                wandb.log({"batch_loss": batch_loss})
+                wandb.log({"batch_loss": batch_loss}, step=self.step)
             self.step += 1
         avg_loss = self.total_loss / len(self.dataloader)
-        if DEBUG == 1: print(f"Epoch loss: {avg_loss:.4f}", self.epoch)
+        if DEBUG == 1: print(f"Epoch loss: {avg_loss:.4f}")
         if self.wandb_log:
-            wandb.log({"epoch_loss": avg_loss},step=self.epoch)
+            wandb.log({"epoch_loss": avg_loss},step=self.step)
         return avg_loss
 
     def train(self, evaluator=None, eval_loss=False):
@@ -140,7 +140,7 @@ class Trainer:
             if DEBUG == 1:
                 print(f"Epoch {epoch+1} completed in {epoch_time:.2f} seconds")
             if self.wandb_log:
-                wandb.log({"lr": self.optimizer.param_groups[0]['lr']}, step=self.epoch)
+                wandb.log({"lr": self.optimizer.param_groups[0]['lr']}, step=self.step)
 
             if evaluator is not None:
                 # stats is a numpy array of 12 elements
@@ -166,15 +166,14 @@ class Trainer:
                         "AR/ARs": stats[9],
                         "AR/ARm": stats[10],
                         "AR/ARl": stats[11],
-                    }, step=self.epoch)
+                        "epoch": self.epoch
+                    }, step=self.step)
 
             elif hasattr(self.dataloader.dataset, 'evaluate'):
                 # Use dataset's evaluate method
                 ap50_95, ap50, _ = self.dataloader.dataset.evaluate(self.model)
                 if DEBUG >= 1: print(f"AP50-95: {ap50_95:.4f}, AP50: {ap50:.4f}")
-                
-                if self.wandb_log:
-                    wandb.log({"ap50_95": ap50_95, "ap50": ap50}, step=self.step)
+
             if avg_loss < self.best_loss: #TODO: should be on the loss
                 if DEBUG >= 1: print(f"New best loss: {avg_loss:.4f} at epoch {self.epoch}")
                 self.best_ap50_95 = ap50_95 if evaluator is not None else None
