@@ -94,7 +94,7 @@ class Trainer:
         if DEBUG >= 1: 
             print(f"weighted_iou_loss: {losses[1].item():.4f}, loss_obj: {losses[2].item():.4f}, loss_cls: {losses[3].item():.4f}, loss_l1: {l1_loss:.4f}")
         if wandb.run is not None:
-            wandb.log({"weighted_iou_loss": losses[1].item(), "loss_obj": losses[2].item(), "loss_cls": losses[3].item(), "loss_l1": l1_loss}, step=self.step)
+            wandb.log({"weighted_iou_loss": losses[1].item(), "loss_obj": losses[2].item(), "loss_cls": losses[3].item(), "loss_l1": l1_loss, "step": self.step})
         self.optimizer.step()
         self.loss = losses[0].item()
         return self.loss
@@ -109,12 +109,12 @@ class Trainer:
                 pbar.set_description(f"Training model {self.model.get_name()}, loss:{batch_loss:.4f}")
                 pbar.update(1)
             if self.wandb_log:
-                wandb.log({"batch_loss": batch_loss}, step=self.step)
+                wandb.log({"batch_loss": batch_loss, "step":self.step})
             self.step += 1
         avg_loss = self.total_loss / len(self.dataloader)
         if DEBUG == 1: print(f"Epoch loss: {avg_loss:.4f}")
         if self.wandb_log:
-            wandb.log({"epoch_loss": avg_loss},step=self.step)
+            wandb.log({"epoch_loss": avg_loss, "epoch": self.epoch})
         return avg_loss
 
     def train(self, evaluator=None, eval_loss=False):
@@ -136,18 +136,18 @@ class Trainer:
                 if self.save_folder is not None:
                     self._save_checkpoint(epoch)
                 else:
-                    print("\033[93m"+"WARNING: the model will not be saved - saving folder need to be specified"+"\033[0m")
+                    print("\033[93m"+"WARNING: the model will not be saved - saving folder need to be specifiedR"+"\033[0m")
             if DEBUG == 1:
                 print(f"Epoch {epoch+1} completed in {epoch_time:.2f} seconds")
             if self.wandb_log:
-                wandb.log({"lr": self.optimizer.param_groups[0]['lr']}, step=self.step)
+                wandb.log({"lr": self.optimizer.param_groups[0]['lr'], "epoch": self.epoch})
 
             if evaluator is not None:
                 # stats is a numpy array of 12 elements
                 stats = evaluator.evaluate(self.model)
 
                 if DEBUG >= 1: 
-                    # Primary COCO metrics
+                    # Primary COCO metrics1
                     ap50_95 = stats[0]
                     ap50 = stats[1]
                     print(f"AP50-95: {ap50_95:.4f}, AP50: {ap50:.4f}")
@@ -167,7 +167,7 @@ class Trainer:
                         "AR/ARm": stats[10],
                         "AR/ARl": stats[11],
                         "epoch": self.epoch
-                    }, step=self.step)
+                    })
 
             elif hasattr(self.dataloader.dataset, 'evaluate'):
                 # Use dataset's evaluate method
