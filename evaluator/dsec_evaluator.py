@@ -439,11 +439,12 @@ class DSECEvaluator:
             pred_data = self.convert_to_coco_format(pred_batch, img_info)
             if len(pred_data) == 0:
                 pred_data = [{}]
+                if DEBUG >= 1: logger.warning(f"No predictions for image_id {img_info[0][0].data['idx']}, this can generate errors in COCO evaluation")
             coco_gt_data = self.create_coco_gt_from_batch(t_batch, img_info[0])
             #coco_gt_data.append(output)
             # coco_gt_data = [item for t_batch in targets for item in self.create_coco_gt_from_batch(t_batch, images_info)]
             if len(coco_gt_data) == 0:
-                return 0.0, 0.0, "No ground truth annotations"
+                return [0.0]*12, "No ground truth annotations"
             
             #assert len(coco_gt_data) == len(pred_data), "Mismatch between GT and predictions"
 
@@ -492,13 +493,11 @@ class DSECEvaluator:
                     logger.error(f"Full traceback: {traceback.format_exc()}")
                     logger.error(f"GT data keys: {coco_gt_data.keys() if 'coco_gt_data' in locals() else 'Not created'}")
                     logger.error(f"Predictions count: {len(pred_data) if 'pred_data' in locals() else 'Not created'}")
-                return 0.0, 0.0, f"Error: {str(e)}"
+                return [0.0] * 12
             
         coco_eval.summarize()
         return coco_eval.stats
                 
-           
-
 ###### TODO: CONVERSIONE
 """
 Il problema sta che lui va a caricare la gt da file, quando invece io la do per la singola batch. Quindi primo passo convertire questa cosa.
