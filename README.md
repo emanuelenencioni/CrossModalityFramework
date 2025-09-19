@@ -59,23 +59,21 @@ This guide provides instructions to set up and run the framework:
     The config `.yaml` file must include all the parameters defined in the argparse for them to take effect. Otherwise, the argument parsing WILL NOT WORK.
 4. **Preparing the Dataset**
     4. **Preparing the Dataset**
+The DSEC-Night and Cityscapes datasets are currently supported. To prepare them for training:
 
-        The DSEC-Night and Cityscapes datasets are currently supported. To prepare them for training:
+    1. Ensure the root directory of each dataset (or a symlink to it) is placed within the `data/` folder.
+    2. Run the appropriate script to generate the train and validation split files.
 
-         1. Ensure the root directory of each dataset (or a symlink to it) is placed within the `data/` folder.
-         2. Run the appropriate script to generate the train and validation split files.
-
-         - **For Cityscapes:**
+        - **For Cityscapes:**
             ```bash
             python dataset/create_cs_txt.py
             ```
 
-         - **For DSEC-Night:**
+        - **For DSEC-Night:**
             ```bash
             python dataset/create_dataset_txt.py
             ```
-
-        For DSEC-Night, the script `create_dataset_vg.py` is also available. This script will create caches for voxel grids inside your dataset folder. This was added due to the high computational cost of creating voxel grids at runtime.
+    For DSEC-Night, the script `create_dataset_vg.py` is also available. This script will create caches for voxel grids inside your dataset folder. This was added due to the high computational cost of creating voxel grids at runtime.
 
 5. **Training the Model:**
     - Run the training script with your configuration file:
