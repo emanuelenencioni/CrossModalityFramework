@@ -216,15 +216,15 @@ class DSECEvaluator:
                 
                 gts.append(targets.cpu())
                 if DEBUG >= 3 and cur_iter == 0: #only for the first batch
-                    imgs_info.append((img_info, [tensor_to_cv2_image(item[self.input_type]) for item in batch]))
+                    imgs_info.append((img_info, input_frame))
                 else:
                     imgs_info.append((img_info, None))
                 outputs.append(self.postprocess(output, images_info=imgs_info[-1] if DEBUG >= 3 else None))
                 if cur_iter == random_idx:
                     if wandb.run is not None and output is not None:
                         if DEBUG >= 1:
-                            logger.info(f"Example image idx {img_info[0].data['idx']} processed, gt boxes {targets[0].shape[0]}, pred boxes {0 if outputs[-1] is None else None}")
-                        img = self.visual(tensor_to_cv2_image(input_frame[0]),output[0], img_info[0].data['orig_shape'], cls_conf=self.conf_thre, classes=self.dataloader.dataset.DSEC_DET_CLASSES)
+                            logger.info(f"Example image idx {img_info[0].data['idx']} processed, gt boxes {targets[0].shape[0]}, pred boxes {outputs[-1][0].shape[0] if outputs[-1][0] is not None else 0}")
+                        img = self.visual(tensor_to_cv2_image(input_frame[0]),outputs[-1][0], img_info[0].data['orig_shape'], cls_conf=self.conf_thre, classes=self.dataloader.dataset.DSEC_DET_CLASSES)
                         # wandb expects images in RGB format. cv2 uses BGR.
                         wandb.log({"eval/sample_img_with_bb": wandb.Image(Image.fromarray(cv2.cvtColor(img.get(), cv2.COLOR_BGR2RGB)), caption=f"idx_{img_info[0].data['idx']}")})
                     self.step += 1
