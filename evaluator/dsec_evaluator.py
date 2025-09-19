@@ -18,6 +18,8 @@ import shutil
 import numpy as np
 from helpers import DEBUG
 import cv2
+import wandb
+from PIL import Image
 
 import torch
 from torchvision.ops import nms, batched_nms
@@ -152,7 +154,7 @@ class DSECEvaluator:
         self.device = device
         self.input_format = input_format
         self.input_type = 'events_vg' if 'events_vg' in dataloader.dataset[0] else 'image'
-        
+        self.step = 0
         if DEBUG >= 3:
             self.debug_images_folder = ROOT_FOLDER / "debug_images"
             if self.debug_images_folder.exists():
@@ -189,7 +191,7 @@ class DSECEvaluator:
         inference_time = 0
         nms_time = 0
         n_samples = max(len(self.dataloader) - 1, 1)
-
+        random_idx = torch.randint(1, len(self.dataloader) + 1, (1,)).item()
         # if trt_file is not None:
         #     from torch2trt import TRTModule
 
@@ -218,7 +220,14 @@ class DSECEvaluator:
                 else:
                     imgs_info.append((img_info, None))
                 outputs.append(self.postprocess(output, images_info=imgs_info[-1] if DEBUG >= 3 else None))
-
+                if cur_iter == random_idx:
+                    if wandb.run is not None:
+                        if DEBUG >= 1:
+                            logger.info(f"Example image idx {img_info[0].data['idx']} processed, gt boxes {targets[0].shape[0]}, pred boxes {0 if outputs[-1] is None else outputs[-1][0].shape[0]}")
+                        img = self.visual(tensor_to_cv2_image(input_frame[0]),output[0], img_info[0].data['orig_shape'], cls_conf=self.conf_thre, classes=self.dataloader.dataset.DSEC_DET_CLASSES)
+                        # wandb expects images in RGB format. cv2 uses BGR.
+                        wandb.log({"eval/sample_img_with_bb": wandb.Image(Image.fromarray(cv2.cvtColor(img.get(), cv2.COLOR_BGR2RGB)), caption=f"idx_{img_info[0].data['idx']}")})
+                    self.step += 1
         #Evaluate all the test set at once
         return self.calculate_coco_metrics(outputs, gts, imgs_info)
 
@@ -435,7 +444,7 @@ class DSECEvaluator:
         # Convert predictions to COCO format
         pred_data = []
         coco_gt_data = []
-        for pred_batch, t_batch, img_info in zip(predictions,targets, images_info):
+        for idx, (pred_batch, t_batch, img_info) in enumerate(zip(predictions,targets, images_info)):
             pred_data = self.convert_to_coco_format(pred_batch, img_info)
             if len(pred_data) == 0:
                 pred_data = [{}]
@@ -488,14 +497,34 @@ class DSECEvaluator:
 
             except Exception as e:
                 import traceback
+                
                 logger.error(f"Error calculating COCO metrics: {e}")
                 if DEBUG >= 1:
-                    logger.error(f"Full traceback: {traceback.format_exc()}")
-                    logger.error(f"GT data keys: {coco_gt_data.keys() if 'coco_gt_data' in locals() else 'Not created'}")
-                    logger.error(f"Predictions count: {len(pred_data) if 'pred_data' in locals() else 'Not created'}")
-                return [0.0] * 12
+                    logger.warning(f"Full traceback: {traceback.format_exc()}")
+                    logger.warning(f"GT data keys: {coco_gt_data.keys() if 'coco_gt_data' in locals() else 'Not created'}")
+                    logger.warning(f"Predictions count: {len(pred_data) if 'pred_data' in locals() else 'Not created'}")
             
-        coco_eval.summarize()
+            coco_eval.summarize()
+            # Log metrics to wandb if available
+            try:
+                if wandb.run is not None:
+                    wandb.log({
+                        "eval/AP_IoU=0.50:0.95": coco_eval.stats[0],
+                        "eval/AP_IoU=0.50": coco_eval.stats[1],
+                        "eval/AP_IoU=0.75": coco_eval.stats[2],
+                        "eval/AP_small": coco_eval.stats[3],
+                        "eval/AP_medium": coco_eval.stats[4],
+                        "eval/AP_large": coco_eval.stats[5],
+                        "eval/AR_maxDets=1": coco_eval.stats[6],
+                        "eval/AR_maxDets=10": coco_eval.stats[7],
+                        "eval/AR_maxDets=100": coco_eval.stats[8],
+                        "eval/AR_small": coco_eval.stats[9],
+                        "eval/AR_medium": coco_eval.stats[10],
+                        "eval/AR_large": coco_eval.stats[11],
+                        "test_batch": self.step
+                    })
+            except ImportError:
+                pass
         return coco_eval.stats
                 
 ###### TODO: CONVERSIONE
