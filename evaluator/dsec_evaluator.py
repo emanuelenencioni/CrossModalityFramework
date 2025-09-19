@@ -278,7 +278,7 @@ class DSECEvaluator:
             else:
                 output[i] = torch.cat((output[i], detections))
 
-            if DEBUG >= 3 and self.debug_images_folder is not None and images_info is not None:
+            if DEBUG >= 3 and self.debug_images_folder is not None and images_info[1] is not None:
                 img, img_info = images_info[1][i], images_info[0][i]
                 vis_img = self.visual(img, output[i], img_info.data['orig_shape'], cls_conf=self.conf_thre, classes=self.dataloader.dataset.DSEC_DET_CLASSES)
                 cv2.imwrite(str(self.debug_images_folder / f"{img_info.data['idx']}.png"), vis_img)
@@ -316,13 +316,7 @@ class DSECEvaluator:
                 continue
 
             output = output.cpu()
-            
-            
-            # Convert (x1, y1, x2, y2) to (x1, y1, w, h)
             bboxes = output[:, 0:4]
-            bboxes = bboxes.clone()
-            bboxes[:, 2] = bboxes[:, 2] - bboxes[:, 0]  # w = x2 - x1
-            bboxes[:, 3] = bboxes[:, 3] - bboxes[:, 1]  # h = y2 - y1
             cls = output[:, 6]
             scores = output[:, 4] * output[:, 5]
             
