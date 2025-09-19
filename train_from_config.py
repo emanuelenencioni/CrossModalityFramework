@@ -143,14 +143,22 @@ def parse_arguments():
     pretrained_checkpoint = None
     # If a checkpoint path is provided, load the checkpoint
 
-    if cfg.get("checkpoint_path", None) not in [None, "", " "]:
+    if cfg.get("checkpoint_path", None) is not None:
         if args.checkpoint_path is not None:
             cfg["checkpoint_path"] = args.checkpoint_path
         #root_dir = os.path.dirname(os.path.realpath(__file__))
+        
         checkpoint_path = cfg["checkpoint_path"]
         print(f"Loading pretrained model from {checkpoint_path}")
         try:
             pretrained_checkpoint = torch.load(checkpoint_path, map_location=torch.device('cpu'))
+            # Load the saved config (if available) to verify architecture consistency
+            saved_cfg = pretrained_checkpoint.get('config', {})
+            # You can compare saved_cfg['model'] with cfg['model'] for consistency.
+            # For example:
+            if saved_cfg.get('model', None) and not deep_dict_compare(saved_cfg['model'], cfg['model']):
+                print("Warning: The provided config differs from the saved model's config. Proceeding with loaded model parameters.") #TODO: maybe use an assert instead.
+            elif DEBUG>=1: print(f"Loading model from:{pretrained_checkpoint}")
         except FileNotFoundError:
             print(f"Warning: Checkpoint file not found at {checkpoint_path}. Starting training from scratch.")
             pretrained_checkpoint = None
