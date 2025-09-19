@@ -74,7 +74,6 @@ class Trainer:
         self.best_accuracy = 0
         self.best_epoch = 0
         self.counter = 0
-        self.loss = 0
         self.total_loss = 0
         self.best_loss = float('inf')
         self.accuracies = []
@@ -94,28 +93,28 @@ class Trainer:
         if DEBUG >= 1: 
             print(f"weighted_iou_loss: {losses[1].item():.4f}, loss_obj: {losses[2].item():.4f}, loss_cls: {losses[3].item():.4f}, loss_l1: {l1_loss:.4f}")
         if wandb.run is not None:
-            wandb.log({"weighted_iou_loss": losses[1].item(), "loss_obj": losses[2].item(), "loss_cls": losses[3].item(), "loss_l1": l1_loss, "step": self.step})
+            wandb.log({"loss/weighted_iou": losses[1].item(), "loss/obj": losses[2].item(), "loss/cls": losses[3].item(), "loss/l1": l1_loss, "loss/batch(sum):": losses[0].item(), "step": self.step})
         self.optimizer.step()
-        self.loss = losses[0].item()
-        return self.loss
+        return losses
 
     def _train_epoch(self, pbar=None):
         self.model.train()
         self.total_loss = 0
+        total_losses = []
         for batch in self.dataloader:
-            batch_loss = self._train_step(batch)
-            self.total_loss += batch_loss
+            losses = self._train_step(batch)
+            self.total_loss += losses[0].item()
+            total_losses.append([loss.item() if not isinstance(loss, float) else loss for loss in losses])
             if pbar is not None:
-                pbar.set_description(f"Training model {self.model.get_name()}, loss:{batch_loss:.4f}")
+                pbar.set_description(f"Training model {self.model.get_name()}, loss:{losses[0].item():.4f}")
                 pbar.update(1)
-            if self.wandb_log:
-                wandb.log({"batch_loss": batch_loss, "step":self.step})
             self.step += 1
-        avg_loss = self.total_loss / len(self.dataloader)
-        if DEBUG == 1: print(f"Epoch loss: {avg_loss:.4f}")
+        total_losses = np.array(total_losses)
+        avg_losses = np.mean(total_losses, axis=0)  #
+        if DEBUG == 1: print(f"Epoch loss: {avg_losses[0]:.4f}")
         if self.wandb_log:
-            wandb.log({"epoch_loss": avg_loss, "epoch": self.epoch})
-        return avg_loss
+            wandb.log({"loss/epoch": avg_losses[0],"loss/epoch_iou": avg_losses[1],"loss/epoch_obj": avg_losses[2],"loss/epoch_cls": avg_losses[3],"loss/epoch_l1": avg_losses[4],"epoch": self.epoch})
+        return avg_losses[0]
 
     def train(self, evaluator=None, eval_loss=False):
         for epoch in range(self.total_epochs):
