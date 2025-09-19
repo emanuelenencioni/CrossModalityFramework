@@ -89,13 +89,9 @@ The DSEC-Night and Cityscapes datasets are currently supported. To prepare them 
       ```
 
 ## TODO
+- [ ] Add training events on cityscapes with the IC from CMDA
+- [ ] Fix multimodal training -> refactoring -> sub class of unimodal.
 
-- [X] check cityscape output as DSEC
-- [X] Fix coords -> cx,cy,h,w in custom to cx,cy,w,h
-- [ ] Check objectness output value 
-- [ ] Fix: errors in evaluator (summarize after)
-- [ ] FIX: errors in multimodal training.
-- [ ] FIX: errors in DSEC-det -> bbox should be aligned to images. 
 - [ ] check for validity of VGs
  
 - [ ] Add segmentation task (low prio)
