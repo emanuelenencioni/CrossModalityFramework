@@ -32,6 +32,7 @@ The script will install PyTorch 2.7.0 with CUDA 12.6. Adjust versions as needed 
 ## Usage
 
 This guide provides instructions to set up and run the framework:
+
 2. **Preparing the Data:**
     - Organize your datasets according to the required modalities (e.g., images, events). 
     - Update configuration files with dataset paths and parameters.
@@ -79,7 +80,7 @@ This guide provides instructions to set up and run the framework:
 5. **Training the Model:**
     - Run the training script with your configuration file:
       ```bash
-      python train_from_config.py --config config/your_config.yaml
+      python train_from_config.py configs/your_config.yaml
       ```
     - To monitor the process, the framework is fully integrated with wandb.
 
