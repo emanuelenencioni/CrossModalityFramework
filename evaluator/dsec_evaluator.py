@@ -305,14 +305,6 @@ class DSECEvaluator:
             output_batch, images_info[0]
         ):
             if output is None:
-                # pred_data = {
-                #     "image_id": int(img_info.data['idx']),  # Need image ID for COCO format
-                #     "category_id": -1,
-                #     "bbox": [],
-                #     "score": 0.0,
-                #     "segmentation": [],
-                # }  # COCO json format
-                # data_list.append(pred_data)
                 continue
 
             output = output.cpu()
