@@ -164,14 +164,6 @@ def parse_arguments():
             pretrained_checkpoint = None
             cfg["checkpoint_path"] = None
 
-        # Load the saved config (if available) to verify architecture consistency
-        saved_cfg = pretrained_checkpoint.get('config', {})
-        # You can compare saved_cfg['model'] with cfg['model'] for consistency.
-        # For example:
-        if saved_cfg.get('model', None) and not deep_dict_compare(saved_cfg['model'], cfg['model']):
-            print("Warning: The provided config differs from the saved model's config. Proceeding with loaded model parameters.") #TODO: maybe use an assert instead.
-        elif DEBUG>=1: print(f"Loading model from:{pretrained_checkpoint}")
-
     
     assert cfg
     # Update cfg with parsed arguments
@@ -350,5 +342,5 @@ if __name__ == "__main__":
     else:
         trainer = Trainer(model,train_dl, opti, criterion, device,  cfg, root_folder=dir_path, wandb_log=wandb_log, pretrained_checkpoint=pretrained_checkpoint, scheduler=schdlr)
     in_size = cfg['model']['backbone']['input_size']
-    evaluator = CityscapesEvaluator(test_dl, img_size=(in_size, in_size), confthre=0.6, nmsthre=0.45, num_classes=cfg['dataset']['bb_num_classes'], device=device)
+    evaluator = CityscapesEvaluator(test_dl, img_size=(in_size, in_size), confthre=0.3, nmsthre=0.45, num_classes=cfg['dataset']['bb_num_classes'], device=device)
     trainer.train(evaluator=evaluator)
