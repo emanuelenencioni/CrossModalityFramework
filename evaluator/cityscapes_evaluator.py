@@ -83,7 +83,7 @@ class CityscapesEvaluator(DSECEvaluator):
         annotations = []
         annotation_id = 1
 
-        for targets,img_info, img in zip(targets_list,images_info[0], images_info[1]):
+        for targets,img_info in zip(targets_list, images_info):
             # Add image info
             orig_height, orig_width = img_info.data['orig_shape'] if hasattr(img_info, 'data') else (1024, 2048)
             img_id = int(img_info.data['idx'])
@@ -153,11 +153,6 @@ class CityscapesEvaluator(DSECEvaluator):
                     "name": cat_name,
                     "supercategory": "object"
                 })
-            if DEBUG >= 3:
-                import cv2
-                self.dataloader.dataset.vis(img, boxes, [1] * len(boxes), cls_ids=ids, conf=0.5, class_names=self.dataloader.dataset.DSEC_DET_CLASSES)
-                cv2.imwrite(f"debug_gt_{img_id}.jpg", img)
-            
         coco_gt = {
             "info": {
                 "description": "Cityscapes Dataset",
