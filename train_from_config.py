@@ -307,7 +307,7 @@ if __name__ == "__main__":
     test_dl = DataLoader(test_ds, batch_size=cfg['dataset']['batch_size'], num_workers=num_workers, shuffle=False, collate_fn=collate_ssl, pin_memory=True) if test_ds is not None else None
     
     wandb_log = False
-    aug = "aug" if cfg['dataset'].get('use_augmentation', False) else  "noaug"
+    aug = "aug" if cfg['dataset'].get('use_augmentations', False) else  "noaug"
     schedl_name = cfg['scheduler']['name'] if 'name' in cfg['scheduler'].keys() else ""
     run_name = cfg['model']['backbone']['name'] if ('name' in cfg['model']['backbone'].keys() and cfg['model']['backbone']['name'] != '') else model.get_name()
     run_name = f"{run_name}_{cfg['optimizer']['name']}_{schedl_name}_{aug}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
