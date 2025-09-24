@@ -23,6 +23,12 @@ from torchvision.ops import masks_to_boxes
 import torchvision.transforms as standard_transforms
 from .utils.data_container import DataContainer
 
+# Import albumentations
+try:
+    import albumentations as A
+except ImportError:
+    A = None
+
 #from .builder import DATASETS
 from helpers import DEBUG
 from utils import parse, boxes
@@ -97,7 +103,8 @@ class CustomDataset(Dataset):
                  classes=None,
                  palette=None,
                  load_bboxes=False,
-                 bbox_min_area=100, **kwargs):
+                 bbox_min_area=100,
+                 use_augmentations=False, **kwargs):
         #self.pipeline = Compose(pipeline)
         self.img_dir = img_dir
         self.img_suffix = img_suffix
@@ -123,6 +130,22 @@ class CustomDataset(Dataset):
         self.bbox_min_area = bbox_min_area
         self.max_labels = kwargs.get('max_labels', 100)  # Maximum number of bounding boxes per image
 
+        # --- Data Augmentation ---
+        self.use_augmentations = use_augmentations
+        self.augmentations = None
+        if self.use_augmentations and not self.test_mode:
+            if A is None:
+                raise ImportError("Please install albumentations: pip install albumentations")
+            # Define a standard augmentation pipeline for object detection
+            self.augmentations = A.Compose([
+                A.HorizontalFlip(p=0.5),
+                A.ShiftScaleRotate(shift_limit=0.0625, scale_limit=0.1, rotate_limit=15, p=0.5, border_mode=cv2.BORDER_CONSTANT),
+                A.RandomBrightnessContrast(p=0.5),
+                # This crop is safe for bounding boxes, it tries to keep them in the frame
+                A.RandomSizedBBoxSafeCrop(width=2048, height=1024, erosion_rate=0.2, p=0.5),
+            ], bbox_params=A.BboxParams(format='pascal_voc', label_fields=['bbox_labels'], min_visibility=0.3))
+            print("✓ Albumentations pipeline for training enabled.")
+
         # join paths if data_root is specified
         if self.data_root is not None:
             if not osp.isabs(self.img_dir):
@@ -137,6 +160,8 @@ class CustomDataset(Dataset):
                                                self.ann_dir,
                                                self.seg_map_suffix, self.split)
         self._COLORS = boxes._COLORS
+
+        self.debug_augmented = True
 
     def __len__(self):
         """Total number of samples of data."""
@@ -191,8 +216,20 @@ class CustomDataset(Dataset):
         results['img_prefix'] = self.img_dir
         results['seg_prefix'] = self.ann_dir
         
-        # Add bounding box information if available
-        if self.load_bboxes:
+        # Check if augmented data is provided
+        if self.use_augmentations and not self.test_mode and 'image' in results and 'BB' in results:
+            image_pil = results['image']
+            bboxes = results['BB']
+
+            padded_resized_image, _, padding_info = self.pad_and_resize_pil_image(image_pil, target_size=(512, 512))
+            transformed_bboxes = self.transform_bboxes_with_padding(bboxes, padding_info)
+            
+            results['image'] = self.image_transform(padded_resized_image)
+            results['BB'] = transformed_bboxes
+            results['padding_info'] = padding_info
+            
+        # Add bounding box information if available (original logic for test mode or no augmentations)
+        elif self.load_bboxes:
             idx = results.get('idx', 0)
             
             # Load image with padding and scaling to 512x512
@@ -298,6 +335,53 @@ class CustomDataset(Dataset):
         img_info = self.img_infos[idx]
         ann_info = self.get_ann_info(idx)
         results = dict(img_info=img_info, ann_info=ann_info, idx=idx)
+
+        # --- Apply Augmentations if enabled ---
+        if self.use_augmentations and self.augmentations is not None:
+            # 1. Load original image and bboxes
+            img_path = osp.join(self.img_dir, img_info['ann']['subfolder'], img_info['filename'])
+            image = cv2.imread(img_path)
+            image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+            
+            bboxes_cxcywh, _ = self.extract_bboxes_from_json_polygons(idx)
+            
+            # 2. Convert bboxes to albumentations format (pascal_voc)
+            bboxes_pascal_voc = []
+            bbox_labels = []
+            valid_mask = bboxes_cxcywh[:, 0] >= 0
+            for bbox in bboxes_cxcywh[valid_mask]:
+                class_id, xc, yc, w, h = bbox
+                x1, y1, x2, y2 = xc - w / 2, yc - h / 2, xc + w / 2, yc + h / 2
+                bboxes_pascal_voc.append([x1, y1, x2, y2])
+                bbox_labels.append(class_id)
+
+            # 3. Apply augmentations
+            try:
+                transformed = self.augmentations(image=image, bboxes=bboxes_pascal_voc, bbox_labels=bbox_labels)
+                image = transformed['image'] # Use augmented image
+                bboxes_pascal_voc = transformed['bboxes']
+                bbox_labels = transformed['bbox_labels']
+                if DEBUG>=3:
+                    if self.debug_augmented:
+                        cvimg = self.vis(image, bboxes_pascal_voc, [1]*len(bboxes_pascal_voc), bbox_labels, conf=0.0, class_names=self.DETECTION_CLASSES)
+                        cv2.imwrite(f"debug_augmented_{idx}.jpg", cvimg)
+                        if DEBUG in [3, 4]: self.debug_augmented = False # Only once if DEBUG isn't that high
+            except Exception as e:
+                if DEBUG >= 1: print(f"Warning: Albumentations failed for index {idx}, using original image. Error: {e}")
+
+            # 4. Convert augmented bboxes back to cxcywh format for the rest of the pipeline
+            final_bboxes = torch.full((self.max_labels, 5), -1, dtype=torch.float32)
+            for i, (bbox, label) in enumerate(zip(bboxes_pascal_voc, bbox_labels)):
+                if i >= self.max_labels: break
+                x1, y1, x2, y2 = bbox
+                w, h = x2 - x1, y2 - y1
+                xc, yc = x1 + w * 0.5, y1 + h * 0.5
+                final_bboxes[i] = torch.tensor([label, xc, yc, w, h])
+            
+            # 5. Pass augmented data to the pre_pipeline
+            results['image'] = Image.fromarray(image)
+            results['BB'] = final_bboxes
+
         self.pre_pipeline(results)
         return results#self.pipeline(results)
 
@@ -717,6 +801,32 @@ class CustomDataset(Dataset):
     #                 os.remove(file_name)
     #     return eval_results
 
+    def pad_and_resize_pil_image(self, image, target_size=(512, 512)):
+        """Pads a PIL image to be square and resizes it."""
+        original_size = image.size # (width, height)
+        max_dim = max(original_size)
+        
+        pad_width = max_dim - original_size[0]
+        pad_height = max_dim - original_size[1]
+        
+        pad_left = pad_width // 2
+        pad_top = pad_height // 2
+        
+        square_image = Image.new('RGB', (max_dim, max_dim), color=(0, 0, 0))
+        square_image.paste(image, (pad_left, pad_top))
+        
+        scale_factor = target_size[0] / max_dim
+        resized_image = square_image.resize(target_size, Image.LANCZOS)
+        
+        padding_info = {
+            'original_size': original_size,
+            'square_size': max_dim,
+            'pad_left': pad_left,
+            'pad_top': pad_top,
+            'scale_factor': scale_factor
+        }
+        return resized_image, scale_factor, padding_info
+
     def load_and_resize_image(self, idx, target_size=(512, 512)):
         """
         Load image, add black padding to make it square, then resize to target size.
@@ -741,68 +851,7 @@ class CustomDataset(Dataset):
         try:
             # Load image
             image = Image.open(img_path).convert('RGB')
-            original_size = image.size  # (width, height)
-            
-            # Get original size from JSON if available (more accurate)
-            json_width, json_height = original_size
-            if self.ann_dir is not None:
-                seg_map_path = osp.join(self.ann_dir,img_info['ann']['subfolder'], img_info['ann']['seg_map'])
-                json_file_path = seg_map_path.replace(self.seg_map_suffix, '_gtFine_polygons.json')
-                
-                if osp.exists(json_file_path):
-                    try:
-                        with open(json_file_path, 'r') as f:
-                            annotation_data = json.load(f)
-                        
-                        json_width = annotation_data.get('imgWidth', original_size[0])
-                        json_height = annotation_data.get('imgHeight', original_size[1])
-                        
-                    except Exception as e:
-                        if DEBUG >= 2:
-                            print(f"Could not read size from JSON {json_file_path}: {e}")
-                        # Keep original_size from PIL
-            
-            # Create square image with black padding
-            max_dim = max(json_width, json_height)
-            
-            # Calculate padding needed
-            pad_width = max_dim - json_width
-            pad_height = max_dim - json_height
-            
-            # Split padding evenly on both sides
-            pad_left = pad_width // 2
-            pad_right = pad_width - pad_left
-            pad_top = pad_height // 2
-            pad_bottom = pad_height - pad_top
-            
-            # Create new square image with black background
-            square_image = Image.new('RGB', (max_dim, max_dim), color=(0, 0, 0))
-            
-            # Paste original image in the center
-            square_image.paste(image, (pad_left, pad_top))
-            
-            # Calculate uniform scale factor for resizing square to target
-            scale_factor = target_size[0] / max_dim  # Assuming target is square
-            
-            # Resize square image to target size
-            resized_image = square_image.resize(target_size, Image.LANCZOS)
-            
-            # Store padding information for bbox transformation
-            padding_info = {
-                'original_size': (json_width, json_height),
-                'square_size': max_dim,
-                'pad_left': pad_left,
-                'pad_top': pad_top,
-                'pad_right': pad_right,
-                'pad_bottom': pad_bottom,
-                'scale_factor': scale_factor
-            }
-            
-            if DEBUG >= 2:
-                print(f"Padded image from {(json_width, json_height)} to {(max_dim, max_dim)}, "
-                      f"then resized to {target_size}, scale: {scale_factor:.3f}")
-            
-            return resized_image, scale_factor, padding_info
+            return self.pad_and_resize_pil_image(image, target_size)
             
         except Exception as e:
             if DEBUG >= 1:
