@@ -188,30 +188,7 @@ def parse_arguments():
                 setattr(cfg, k, v_cfg)
     return cfg, pretrained_checkpoint
 
-def check_backbone_params(cfg):
-    """
-    Check if the backbone parameters are correctly specified in the configuration file.
-    :param cfg: The configuration dictionary.
-    :return: True if both event and rgb backbones are specified, False otherwise.  Also returns the specified backbone
-    """
-    assert 'backbone' in cfg.keys(), "Error - specify the backbone"
-    cfg_b = cfg['backbone']
 
-    assert 'backbone' in cfg.keys(), "Error - specify the backbone"
-    cfg_b = cfg['backbone']
-    assert 'embed_dim' in cfg_b.keys(), "Error - specify the embed_dim"
-    assert 'input_size' in cfg_b.keys(), "Error - specify the input_size"
-    ev_bb = cfg_b['event_backbone'] if 'event_backbone' in cfg['backbone'].keys() else None
-    rgb_bb = cfg_b['rgb_backbone'] if 'rgb_backbone' in cfg['backbone'].keys() else None
-    
-    
-    assert ev_bb != None or rgb_bb != None, "Error - specify at least one backbone: event or rgb"
-    if ev_bb is None:
-        return False, rgb_bb
-    elif rgb_bb is None:
-        return False, ev_bb
-
-    return True, None
 
 def print_cfg_params(cfg, indent=0):
     """
@@ -232,36 +209,17 @@ if __name__ == "__main__":
         print("Configuration parameters:")
         print_cfg_params(cfg)
 
-    # Setup #
-    assert 'model' in cfg.keys(), "Error - specify the model architecture"
-    dual_modality, backbone = check_backbone_params(cfg['model'])
-    pretrained_weights = cfg['model']['backbone']['pretrained_weights'] if 'pretrained_weights' in cfg['model']['backbone'].keys() else None
-    pretrained = cfg['model']['backbone'].get('pretrained', True) if 'pretrained' in cfg['model']['backbone'].keys() else True
-    if 'head' in cfg['model'].keys():
-        assert 'bb_num_classes' in cfg['dataset'], "Error - number of classes need to be specified in unimodal training"
-        model = build_model_from_cfg(cfg['model'])
-    else:
-        if dual_modality:
-            model = DualModalityBackbone(rgb_backbone=cfg['model']['backbone']['rgb_backbone'], pretrained=pretrained,
-                        event_backbone=cfg['model']['backbone']['event_backbone'],
-                        embed_dim=cfg['model']['backbone']['embed_dim'],
-                        img_size=cfg['model']['backbone']['input_size']
-            )
-        else:
-            model = UnimodalBackbone(backbone,pretrained_weights=pretrained_weights, embed_dim=cfg['model']['backbone']['embed_dim'],
-                        img_size=cfg['model']['backbone']['input_size'])
-    
-    # Loss   
-    assert 'loss' in cfg.keys(), "loss params list missing in yaml file"
-    criterion, learnable = loss.build_from_config(cfg['loss'])
+    ### Model ###
+    assert 'bb_num_classes' in cfg['dataset'], "Error - number of classes need to be specified in unimodal training"
+    model = build_model_from_cfg(cfg)
 
-    if learnable:
-        params = list(model.parameters()) + list(criterion.parameters())
-        print(criterion.parameters())
-    else:
-        params = model.parameters()
-    assert 'loss' in cfg.keys(), "'optimizer' params list missing in yaml file"
-    opti = optimizer.build_from_config(params, cfg['optimizer'])
+    ### Loss ###
+
+    criterion, learnable = loss.build_from_config(cfg)
+
+    ### Optimizer ###
+    
+    opti = optimizer.build_from_config(model, criterion if learnable else None, cfg)
     
     if 'seed' in cfg.keys() and cfg['seed'] is not None:
         torch.manual_seed(cfg['seed'])
@@ -280,20 +238,6 @@ if __name__ == "__main__":
         events_bins = 1
         events_clip_range = None
     dir_path = os.path.dirname(os.path.realpath(__file__))
-
-    
-    outputs = {'events_vg', 'image'}
-    if dual_modality:
-        if 'outputs' in cfg['dataset'].keys():
-            outputs = cfg['dataset']['outputs']
-        else:
-            print(" 'outputs' params list missing from config file, using default for ssl")
-            
-        
-    else:
-        assert 'outputs' in cfg['dataset'].keys(), "Error, missing mandatory outputs for the dataset in unimodal training"
-        outputs = cfg['dataset']['outputs']
-
     
     train_ds, test_ds = dataset_builder.build_from_config(cfg['dataset'])
     # Dataloader (CMDA)
@@ -337,11 +281,11 @@ if __name__ == "__main__":
     
     # Trainer
     assert 'trainer' in cfg.keys(), "'trainer' params list missing from config file "
-    
-    if dual_modality:
+
+    if cfg['dual_modality']:
         trainer = DualModalityTrainer(model, train_dl, opti, criterion, device, cfg, root_folder=dir_path, wandb_log=wandb_log, pretrained_checkpoint=pretrained_checkpoint)
     else:
         trainer = Trainer(model,train_dl, opti, criterion, device,  cfg, root_folder=dir_path, wandb_log=wandb_log, pretrained_checkpoint=pretrained_checkpoint, scheduler=schdlr)
     in_size = cfg['model']['backbone']['input_size']
-    evaluator = CityscapesEvaluator(test_dl, img_size=(in_size, in_size), confthre=0.3, nmsthre=0.45, num_classes=cfg['dataset']['bb_num_classes'], device=device)
+    evaluator = CityscapesEvaluator(test_dl, img_size=(in_size, in_size), confthre=0.3, nmsthre=0.6, num_classes=cfg['dataset']['bb_num_classes'], device=device)
     trainer.train(evaluator=evaluator)

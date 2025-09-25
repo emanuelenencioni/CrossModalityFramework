@@ -1,3 +1,4 @@
+from logging import DEBUG
 import torch.nn as nn
 import torch.nn.functional as F
 import torch
@@ -128,15 +129,23 @@ def build_from_config(cfg):
     Returns:
         The loss criterion, and a boolean value indicating whether the loss criterion have learnable parameters
     """
-    assert 'name' in cfg.keys(), "specify 'name' loss param"
-    criterion = cfg['name'].lower()
+    if cfg["dual_modality"]:
+        assert 'loss' in cfg.keys(), "loss params list missing in yaml file"
+    else:
+        if 'loss' not in cfg.keys():
+            print("\033[93mWarning - loss params list missing in yaml file, remember: this param is mandatory in DualModality\033[0m")
+            return None, False
+    loss_cfg = cfg['loss']
+
+    assert 'name' in loss_cfg.keys(), "specify 'name' loss param"
+    criterion = loss_cfg['name'].lower()
 
     if criterion in ["clip", "clip_loss"]:
         return CLIP_loss(), True
     elif criterion in ["barlow_twins", "barlowtwins", "barlow_twins_loss", "barlow_twin", "barlowtwin"]:
-        assert "lambda" in cfg.keys(), "Missing lambda parameter in the configuration file"
-        assert isinstance(cfg["lambda"], float), "lambda_coeff must be a float"
-        lambda_coeff = float(cfg["lambda"])
+        assert "lambda" in loss_cfg.keys(), "Missing lambda parameter in the configuration file"
+        assert isinstance(loss_cfg["lambda"], float), "lambda_coeff must be a float"
+        lambda_coeff = float(loss_cfg["lambda"])
         assert lambda_coeff > 0 and lambda_coeff < 1, "lambda must be in the range (0, 1)"
 
         return BarlowTwinsLoss(lambda_coeff=lambda_coeff), False
