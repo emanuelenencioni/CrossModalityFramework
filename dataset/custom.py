@@ -30,7 +30,7 @@ except ImportError:
     A = None
 
 #from .builder import DATASETS
-from helpers import DEBUG
+from utils.helpers import DEBUG
 from utils import parse, boxes
 
 
@@ -363,8 +363,10 @@ class CustomDataset(Dataset):
                 bbox_labels = transformed['bbox_labels']
                 if DEBUG>=3:
                     if self.debug_augmented:
-                        cvimg = self.vis(image, bboxes_pascal_voc, [1]*len(bboxes_pascal_voc), bbox_labels, conf=0.0, class_names=self.DETECTION_CLASSES)
-                        cv2.imwrite(f"debug_augmented_{idx}.jpg", cvimg)
+                        rgb = image.copy()
+                        cv2.cvtColor(rgb, cv2.COLOR_BGR2RGB, rgb)
+                        cvimg = self.vis(rgb, bboxes_pascal_voc, [1]*len(bboxes_pascal_voc), bbox_labels, conf=0.0, class_names=self.DETECTION_CLASSES)
+                        cv2.imwrite(f"debug_augmented_{idx}_{img_info['filename']}.jpg", cvimg)
                         if DEBUG in [3, 4]: self.debug_augmented = False # Only once if DEBUG isn't that high
             except Exception as e:
                 if DEBUG >= 1: print(f"Warning: Albumentations failed for index {idx}, using original image. Error: {e}")

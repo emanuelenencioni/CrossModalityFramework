@@ -2,7 +2,7 @@ import torchvision.models as models
 import torch
 import torch.nn as nn
 import timm
-from helpers import DEBUG
+from utils.helpers import DEBUG
 import os
 
 class UnimodalBackbone(nn.Module):

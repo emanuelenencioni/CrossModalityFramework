@@ -24,13 +24,14 @@ matplotlib.use('Agg')
 
 # Add parent directory to path for imports
 sys.path.append(os.path.dirname(os.path.abspath(__file__)).split('tests')[0])
-from helpers import DEBUG
+from utils.helpers import DEBUG
 
 # Import the CityscapesDataset class
 from dataset.cityscapes import CityscapesDataset
 
 # Configuration - Modify these paths according to your setup
-DATA_ROOT = "./data"  # Change this to your dataset root
+root_path  = os.path.dirname(os.path.abspath(__file__)).split('tests')[0]
+DATA_ROOT = os.path.join(root_path, "data")  # Change this to your dataset root
 IMG_DIR = "cityscapes/leftImg8bit/train/aachen"  # Relative to DATA_ROOT
 ANN_DIR = "cityscapes/gtFine/train/aachen"       # Relative to DATA_ROOT
 OUTPUT_DIR = "./cityscapes_dataset_test"

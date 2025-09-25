@@ -16,7 +16,7 @@ from tqdm import tqdm
 from pathlib import Path
 import shutil
 import numpy as np
-from helpers import DEBUG
+from utils.helpers import DEBUG
 import cv2
 import wandb
 from PIL import Image
@@ -490,7 +490,7 @@ class DSECEvaluator:
                     logger.warning(f"GT data keys: {coco_gt_data.keys() if 'coco_gt_data' in locals() else 'Not created'}")
                     logger.warning(f"Predictions count: {len(pred_data) if 'pred_data' in locals() else 'Not created'}")
             
-            coco_eval.summarize()
+            coco_eval.summarize() if coco_eval is not None else None
             # Log metrics to wandb if available
             try:
                 if wandb.run is not None:

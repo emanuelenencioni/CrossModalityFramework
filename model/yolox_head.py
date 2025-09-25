@@ -9,7 +9,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch import meshgrid
-from helpers import DEBUG
+from utils.helpers import DEBUG
 
 #from yolox.utils import bboxes_iou, meshgrid  #visualize_assign, cxcywh2xyxy
 

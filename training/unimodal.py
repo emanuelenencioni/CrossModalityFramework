@@ -11,7 +11,7 @@ import numpy as np
 import wandb
 import os
 import sys
-from helpers import DEBUG
+from utils.helpers import DEBUG
 import inspect
 
 class Trainer:

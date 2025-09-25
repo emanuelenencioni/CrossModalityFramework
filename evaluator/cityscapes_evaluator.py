@@ -13,7 +13,7 @@ from tabulate import tabulate
 from tqdm import tqdm
 from pathlib import Path
 import numpy as np
-from helpers import DEBUG
+from utils.helpers import DEBUG
 import torch
 
 from .dsec_evaluator import DSECEvaluator  # Inherit from DSECEvaluator

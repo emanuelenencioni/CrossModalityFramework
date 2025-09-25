@@ -6,7 +6,7 @@ from torch.utils.data import DataLoader, Dataset
 from torchvision import models
 from tqdm import tqdm
 
-from helpers import DEBUG, Timing
+from utils.helpers import DEBUG, Timing
 import time
 from datetime import datetime
 import sys

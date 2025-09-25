@@ -89,6 +89,9 @@ The DSEC-Night and Cityscapes datasets are currently supported. To prepare them 
       ```
 
 ## TODO
+- [ ] REFACTORING:
+    - [ ] modules on main (no assert there pls)
+    - [ ] clean and understandable
 - [ ] Add training events on cityscapes with the IC from CMDA
 - [ ] Fix multimodal training -> refactoring -> sub class of unimodal.
 
@@ -98,7 +101,6 @@ The DSEC-Night and Cityscapes datasets are currently supported. To prepare them 
 - [ ] Add same build from config as mmcv.
 
 - [ ] (per la proposta di metodo) considerare di fare la loss di contrastive solo sulla bbox e tutto il resto considerarlo come negative
-- [ ] Refactor unimodal -> SingleModality. 
 
 
 ## Model Output Format

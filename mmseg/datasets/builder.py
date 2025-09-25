@@ -14,7 +14,7 @@ from torch import distributed as dist
 
 from utils import collate
 from utils import Registry, build_from_cfg
-from helpers import TORCH_VERSION
+from utils.helpers import TORCH_VERSION
 
 if platform.system() != 'Windows':
     # https://github.com/pytorch/pytorch/issues/973

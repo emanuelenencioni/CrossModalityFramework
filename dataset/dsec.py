@@ -25,7 +25,7 @@ import sys
 #     from dataset.builder import DATASETS
 from tqdm import tqdm
 
-from helpers import DEBUG
+from utils.helpers import DEBUG
 import time
 
 

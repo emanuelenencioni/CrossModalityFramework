@@ -12,7 +12,7 @@ import torch
 
 #from .builder import DATASETS
 from .custom import CustomDataset
-from helpers import DEBUG
+from utils.helpers import DEBUG
 
 import os
 import tqdm

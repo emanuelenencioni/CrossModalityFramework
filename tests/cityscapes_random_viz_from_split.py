@@ -23,7 +23,7 @@ matplotlib.use('Agg')
 
 # Add parent directory to path for imports
 sys.path.append(os.path.dirname(os.path.abspath(__file__)).split('tests')[0])
-from helpers import DEBUG
+from utils.helpers import DEBUG
 
 # Import the CityscapesDataset class
 from dataset.cityscapes import CityscapesDataset

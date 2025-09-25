@@ -19,7 +19,7 @@ from model.backbone import DualModalityBackbone, UnimodalBackbone
 from model.yolox_head import YOLOXHead
 import dataset.dataset_builder as dataset_builder
 from dataset.cityscapes import CityscapesDataset
-from helpers import DEBUG
+from utils.helpers import DEBUG
 from torchvision.ops import nms, batched_nms
 
 
@@ -115,7 +115,7 @@ def get_args_parser():
     parser.add_argument('--input_image', type=str, help='Path to single input image')
     parser.add_argument('--input_dir', type=str, help='Directory containing input images')
     parser.add_argument('--output_dir', type=str, default='./detection_results', help='Output directory for results')
-    parser.add_argument('--confidence_threshold', type=float, default=0.3, help='Confidence threshold for detections')
+    parser.add_argument('--confidence_threshold', type=float, default=0.6, help='Confidence threshold for detections')
     parser.add_argument('--device', type=str, default='cuda', help='Device to use for inference')
     parser.add_argument('--num_samples', type=int, default=10, help='Number of random samples to process (if using dataset)')
     parser.add_argument('--use_dataset', action='store_true', help='Use dataset instead of input images')
@@ -199,7 +199,7 @@ def rescale_boxes(boxes, original_size):
 
     return boxes
 
-def postprocess(prediction, num_classes, conf_thre=0.7, nms_thre=0.45, class_agnostic=False):
+def postprocess(prediction, num_classes, conf_thre=0.7, nms_thre=0.6, class_agnostic=False):
     box_corner = prediction.new(prediction.shape)
     ####### WARNING : Convert from (cx, cy, h, w) to (x1, y1, x2, y2) format -> TODO: (cx, cy, h, w) -> (cx, cy, w, h)
     box_corner[:, :, 0] = prediction[:, :, 0] - prediction[:, :, 3] / 2
