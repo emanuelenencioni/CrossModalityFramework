@@ -1,9 +1,4 @@
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-import torch.optim as optim
-from torch.optim.lr_scheduler import ReduceLROnPlateau
-
+import inspect
 import datetime
 import time
 from tqdm import tqdm
@@ -11,8 +6,16 @@ import numpy as np
 import wandb
 import os
 import sys
-from utils.helpers import DEBUG
-import inspect
+
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import torch.optim as optim
+from torch.optim.lr_scheduler import ReduceLROnPlateau
+
+
+from utils.helpers import DEBUG, deep_dict_equal
+
 
 class Trainer:
     def __init__(self, model, dataloader, optimizer, criterion, device, cfg, root_folder,wandb_log=False, scheduler=None, patience=sys.maxsize, pretrained_checkpoint=None):
@@ -32,15 +35,19 @@ class Trainer:
         if pretrained_checkpoint is not None:
             if 'model_state_dict' in pretrained_checkpoint:
                 self.model.load_state_dict(pretrained_checkpoint['model_state_dict'])
-                if DEBUG >= 1: print("Pre-trained model loaded successfully")
+                if DEBUG >= 1: print("Pre-trained model loaded successfully (CrossModalityFramework)")
+            
             if 'optimizer_state_dict' in pretrained_checkpoint:
                 self.optimizer.load_state_dict(pretrained_checkpoint['optimizer_state_dict'])
-                if DEBUG >= 1: print("Pre-trained optimizer state loaded successfully")
+                if DEBUG >= 1: print("Optimizer state loaded successfully")
+
             if 'scheduler_state_dict' in pretrained_checkpoint and cfg['trainer'].get('resume_scheduler', False):
                 scheduler_state = pretrained_checkpoint['scheduler_state_dict']
-                if scheduler_state is not None and self.scheduler is not None:
+                if scheduler_state is not None and self.scheduler is not None and \
+                deep_dict_equal(cfg['scheduler'], pretrained_checkpoint['config'].get('scheduler', None)):
                     self.scheduler.load_state_dict(scheduler_state)
-                    if DEBUG >= 1: print("Pre-trained scheduler state loaded successfully")
+                    if DEBUG >= 1: print("Scheduler state loaded successfully")
+
             if 'epoch' in pretrained_checkpoint:
                 self.epoch = pretrained_checkpoint['epoch'] + 1
                 self.total_epochs = int(self.trainer_cfg['epochs']) + self.epoch - 1
@@ -92,7 +99,7 @@ class Trainer:
         l1_loss = losses[4] if isinstance(losses[4], float) else losses[4].item()
         if DEBUG >= 1: 
             print(f"weighted_iou_loss: {losses[1].item():.4f}, loss_obj: {losses[2].item():.4f}, loss_cls: {losses[3].item():.4f}, loss_l1: {l1_loss:.4f}")
-        if wandb.run is not None:
+        if self.wandb_log is not None: # TODO make it work with not knowing losses length
             wandb.log({"loss/weighted_iou": losses[1].item(), "loss/obj": losses[2].item(), "loss/cls": losses[3].item(), "loss/l1": l1_loss, "loss/batch(sum):": losses[0].item(), "step": self.step})
         self.optimizer.step()
         return losses

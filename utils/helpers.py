@@ -7,6 +7,26 @@ import contextlib
 
 import torch
 
+def deep_dict_equal(dict1, dict2):
+    """
+    Recursively compare two dictionaries for deep equality.
+    Returns True if all keys, values, and nested structures are identical.
+    """
+    if type(dict1) != type(dict2):
+        return False
+    
+    if not isinstance(dict1, dict):
+        return dict1 == dict2
+    
+    if set(dict1.keys()) != set(dict2.keys()):
+        return False
+    
+    for key in dict1.keys():
+        if not deep_dict_equal(dict1[key], dict2[key]):
+            return False
+    
+    return True
+
 def merge_dicts(ds):
     kvs = set([(k,v) for d in ds for k,v in d.items()])
     assert len(kvs) == len(set(kv[0] for kv in kvs)), f"cannot merge, {kvs} contains different values for the same key"
