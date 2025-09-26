@@ -338,6 +338,9 @@ def test_real_dataset_perfect_predictions():
     ap_50_scores = []
     total_gt_objects = 0
     
+    perfect_preds_list = []
+    batch_gt_list = []
+    batch_img_info_list = []
     for batch_idx, batch in enumerate(dataloader):
         print(f"Processing batch {batch_idx + 1}/{len(dataloader)}...")
         
@@ -356,8 +359,8 @@ def test_real_dataset_perfect_predictions():
             
             # Create proper image metadata
             img_meta = create_img_meta_from_sample(sample, batch_idx * len(batch) + sample_idx)
-            batch_img_info.append(img_meta)
-        
+            batch_img_info_list.append(img_meta)
+
         # Skip batches with no ground truth objects
         batch_gt_count = sum(len(gt) for gt in batch_gt)
         if batch_gt_count == 0:
@@ -366,27 +369,30 @@ def test_real_dataset_perfect_predictions():
         
         # Generate perfect predictions
         perfect_preds = create_perfect_predictions(batch_gt)
+
+        # Append to lists
+        perfect_preds_list.append(perfect_preds)
+        batch_gt_list.append(batch_gt)
+        batch_img_info.append(batch_img_info)
         
         # Calculate metrics
-        try:
-            ap_50_95, ap_50, summary = evaluator.calculate_coco_metrics(
-                perfect_preds, batch_gt, batch_img_info
-            )
-            
-            ap_50_95_scores.append(ap_50_95)
-            ap_50_scores.append(ap_50)
-            
-            print(f"  Batch {batch_idx + 1} Results:")
-            print(f"    AP@50:95: {ap_50_95:.4f}")
-            print(f"    AP@50:    {ap_50:.4f}")
-            print(f"    GT objects: {batch_gt_count}")
-            print()
-            
-        except Exception as e:
-            print(f"  ❌ Error processing batch {batch_idx + 1}: {e}")
-            import traceback
-            traceback.print_exc()
-            continue
+    try:
+        ap_50_95, ap_50, summary = evaluator.calculate_coco_metrics(perfect_preds_list, batch_gt_list, batch_img_info_list)
+        
+        ap_50_95_scores.append(ap_50_95)
+        ap_50_scores.append(ap_50)
+        
+        print(f"  Batch {batch_idx + 1} Results:")
+        print(f"    AP@50:95: {ap_50_95:.4f}")
+        print(f"    AP@50:    {ap_50:.4f}")
+        print(f"    GT objects: {batch_gt_count}")
+        print()
+    
+        
+    except Exception as e:
+        print(f"  ❌ Error processing batch {batch_idx + 1}: {e}")
+        import traceback
+        traceback.print_exc()
     
     if not ap_50_95_scores:
         print("❌ No valid batches processed!")
