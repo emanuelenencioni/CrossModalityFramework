@@ -4,6 +4,7 @@ from typing import Dict, Tuple, Union, List, ClassVar, Optional, Iterable, Any, 
 import os
 import contextlib
 
+
 import torch
 
 def merge_dicts(ds):
@@ -23,6 +24,16 @@ class GlobalCounters:
     def reset(): 
         GlobalCounters.global_ops, GlobalCounters.global_mem, GlobalCounters.time_sum_s, GlobalCounters.kernel_count = 0,0,0.0,0
 
+def set_seed(cfg):
+    import torch
+    import random
+    import numpy as np
+    if 'seed' in cfg.keys() and cfg['seed'] is not None:
+        torch.manual_seed(cfg['seed'])
+        random.seed(cfg['seed'])
+        np.random.seed(cfg['seed'])
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(cfg['seed'])
 
 class ContextVar:
     _cache: ClassVar = {}
@@ -70,3 +81,4 @@ class Profiling(contextlib.ContextDecorator):
                 print(f"n:{num_calls:8d}  tm:{tottime*self.time_scale:7.2f}ms  tot:{cumtime*self.time_scale:7.2f}ms",
                     colored(_format_fcn(fcn).ljust(50), "yellow"),
                     colored(f"<- {(scallers[0][1][2]/tottime)*100:3.0f}% {_format_fcn(scallers[0][0])}", "BLACK") if scallers else '')
+                
