@@ -33,11 +33,11 @@ The script will install PyTorch 2.7.0 with CUDA 12.6. Adjust versions as needed 
 
 This guide provides instructions to set up and run the framework:
 
-2. **Preparing the Data:**
+1. **Preparing the Data:**
     - Organize your datasets according to the required modalities (e.g., images, events). 
     - Update configuration files with dataset paths and parameters.
 
-3. **Configuration:**
+2. **Configuration:**
     Edit the configuration file (typically located in `config/`) to specify:
     - Modality-specific parameters.
     - Model details (e.g. backbone and head settings).
@@ -46,19 +46,31 @@ This guide provides instructions to set up and run the framework:
     Example snippet:
     ```yaml
     model:
-        backbone: ResNet50
-        head: DetectionHead
-    training:
-        batch_size: 32
-        epochs: 50
+    name: 'resnet50_yolox'
+    head: 
+        name: 'yolox_head' # redundant here, but useful for clarity
+        num_classes: 8
+        losses_weights: [5.0, 1.0, 1.0, 1.0]  # [iou, obj, cls, l1]
+    backbone:
+        name: '' # if name is empty -> stack of the two backbone will be used
+        rgb_backbone: resnet50 # from timm
+        pretrained: True # if not specified, it will be set to True
+        pretrained_weights: #'../resnet50_backbone_from_detr.pth' # path to pretrained weights if needed
+        embed_dim: 256
+        input_size: 512
+        output_indices: [3, 4] # indices of the output layers to be used
     ```
 
     Use existing templates as a reference.
-
     ### ⚠️⚠️⚠️ Warning
-    The config `.yaml` file must include all the parameters defined in the argparse for them to take effect. Otherwise, the argument parsing WILL NOT WORK.
+    The config `.yaml` file must include all the parameters defined in the argparse for them to take effect. Otherwise, the argument parsing WILL NOT WORK.  You can see the `yaml` file as the default arguments for your specific training.
+
+3. **The losses**
+    For loss calculation, there are two approaches:
+    - **Unimodal Tasks:** Losses are computed within each head of the respective models, such as the "YoloXHead." A base class will be implemented soon to ensure a consistent interface across all heads. 
+    - **Multimodal Tasks:** The loss needs to be specified in the `.yaml` configuration file. A factory method will handle the building process. If a loss is not yet implemented, add it to the builder.
+
 4. **Preparing the Dataset**
-    4. **Preparing the Dataset**
 The DSEC-Night and Cityscapes datasets are currently supported. To prepare them for training:
 
     1. Ensure the root directory of each dataset (or a symlink to it) is placed within the `data/` folder.
@@ -73,19 +85,23 @@ The DSEC-Night and Cityscapes datasets are currently supported. To prepare them 
             ```bash
             python dataset/create_dataset_txt.py
             ```
-    For DSEC-Night, the script `create_dataset_vg.py` is also available. This script will create caches for voxel grids inside your dataset folder. This was added due to the high computational cost of creating voxel grids at runtime.
+    For DSEC-Night, the script `create_dataset_vg.py` is also available. This script will create caches for voxel grids inside your dataset folder. This was added due to the high computational cost of creating voxel grids at runtime. \
+    (⚠️⚠️⚠️ Currently under mantainance ⚠️⚠️⚠️)
 
 5. **Training the Model:**
     - Run the training script with your configuration file:
       ```bash
       python train_from_config.py configs/your_config.yaml
       ```
+      You can add any arguments you want (at least, the ones specified in utils/argparser.py). Arguments are parsed as follows:
+    - Use `_` to separate words in argument names (e.g., `--batch_size`).
+    - Use `-` to specify a key within a sub-dictionary (e.g., `--logger-name`, where `name` is a key inside the `logger` sub-dictionary in the config).
     - To monitor the process, the framework is fully integrated with wandb.
 
 6. **Evaluating the Model:**
     - Run the evaluation script:
-      ```bash
-      python detect_from_config.py --config config/your_config.yaml --checkpoint path/to/your/checkpoint.pth
+      ```shell
+      python detect_from_config.py --config config/your_config.yaml --checkpoint path/to/your/checkpoint.pth --input_image path_to_image
       ```
 
 ## TODO
