@@ -99,7 +99,7 @@ class Trainer:
         l1_loss = losses[4] if isinstance(losses[4], float) else losses[4].item()
         if DEBUG >= 1: 
             print(f"weighted_iou_loss: {losses[1].item():.4f}, loss_obj: {losses[2].item():.4f}, loss_cls: {losses[3].item():.4f}, loss_l1: {l1_loss:.4f}")
-        if self.wandb_log is not None: # TODO make it work with not knowing losses length
+        if self.wandb_log: # TODO make it work with not knowing losses length
             wandb.log({"loss/weighted_iou": losses[1].item(), "loss/obj": losses[2].item(), "loss/cls": losses[3].item(), "loss/l1": l1_loss, "loss/batch(sum):": losses[0].item(), "step": self.step})
         self.optimizer.step()
         return losses
