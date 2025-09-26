@@ -141,7 +141,8 @@ def build_from_config(cfg):
     criterion = loss_cfg['name'].lower()
 
     if criterion in ["clip", "clip_loss"]:
-        return CLIP_loss(), True
+        cfg['learnable_loss'] = True
+        return CLIP_loss()
     elif criterion in ["barlow_twins", "barlowtwins", "barlow_twins_loss", "barlow_twin", "barlowtwin"]:
         assert "lambda" in loss_cfg.keys(), "Missing lambda parameter in the configuration file"
         assert isinstance(loss_cfg["lambda"], float), "lambda_coeff must be a float"

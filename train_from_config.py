@@ -32,15 +32,15 @@ from utils import argparser as argp
 if __name__ == "__main__":
     # Config loading && argument parser #
     cfg, pretrained_checkpoint = argp.parse_arguments()
-
+    CFG = cfg.copy() # keep read-only copy of cfg
     set_seed(cfg)
 
     model = build_model_from_cfg(cfg)
 
-    criterion, learnable = loss.build_from_config(cfg)
+    criterion = loss.build_from_config(cfg)
 
-    opti = optimizer.build_from_config(model, criterion if learnable else None, cfg)
-    
+    opti = optimizer.build_from_config(model, criterion, cfg)
+
     train_ds, test_ds = dataset_builder.build_from_config(cfg['dataset'])
     # Dataloader (CMDA)
     assert 'dataset' in cfg.keys(), " 'dataset' params list missing from config file"
@@ -83,9 +83,9 @@ if __name__ == "__main__":
     assert 'trainer' in cfg.keys(), "'trainer' params list missing from config file "
     dir_path = os.path.dirname(os.path.realpath(__file__))
     if cfg['dual_modality']:
-        trainer = DualModalityTrainer(model, train_dl, opti, criterion, device, cfg, root_folder=dir_path, wandb_log=wandb_log, pretrained_checkpoint=pretrained_checkpoint)
+        trainer = DualModalityTrainer(model, train_dl, opti, criterion, device, CFG, root_folder=dir_path, wandb_log=wandb_log, pretrained_checkpoint=pretrained_checkpoint)
     else:
-        trainer = Trainer(model,train_dl, opti, criterion, device,  cfg, root_folder=dir_path, wandb_log=wandb_log, pretrained_checkpoint=pretrained_checkpoint, scheduler=schdlr)
+        trainer = Trainer(model,train_dl, opti, criterion, device,  CFG, root_folder=dir_path, wandb_log=wandb_log, pretrained_checkpoint=pretrained_checkpoint, scheduler=schdlr)
     in_size = cfg['model']['backbone']['input_size']
     evaluator = CityscapesEvaluator(test_dl, img_size=(in_size, in_size), confthre=0.3, nmsthre=0.6, num_classes=cfg['dataset']['bb_num_classes'], device=device)
     trainer.train(evaluator=evaluator)

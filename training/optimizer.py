@@ -15,7 +15,7 @@ def build_from_config(model, criterion, cfg):
     """
     assert 'optimizer' in cfg.keys(), "'optimizer' params list missing in yaml file"
     opti_cfg = cfg['optimizer']
-    if criterion is not None:
+    if cfg.get("learnable_loss") is not None:
         params = list(model.parameters()) + list(criterion.parameters())
         print(criterion.parameters())
     else:
