@@ -67,10 +67,6 @@ if __name__ == "__main__":
     device = cfg['device'] if 'device' in cfg.keys() else "cuda"
     model.to(device)    
 
-    if pretrained_checkpoint is not None:
-        model.load_state_dict(pretrained_checkpoint['model_state_dict'])
-        print("Pre-trained model loaded successfully")
-
     # Scheduler
     if 'scheduler' in cfg.keys() and 'name' in cfg['scheduler'].keys() and cfg['scheduler']['name'] is not None:
         schdlr = scheduler_builder(opti, cfg['scheduler'])
