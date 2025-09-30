@@ -28,8 +28,8 @@ class Trainer:
         self.trainer_cfg = cfg['trainer']
         assert 'epochs' in self.trainer_cfg.keys(), " specify 'epochs' trainer param"
         self.total_epochs = int(self.trainer_cfg['epochs'])
-        self.input_type = 'events_vg' if 'events_vg' in dataloader.dataset[0] else 'image'
-        if 'events_vg' in dataloader.dataset[0] and 'image' in dataloader.dataset[0]:
+        self.input_type = 'events' if 'events' in dataloader.dataset[0] else 'image'
+        if 'events' in dataloader.dataset[0] and 'image' in dataloader.dataset[0]:
             print("\033[93m"+"WARNING: the dataloader contains both events_vg and image, using events_vg as input type"+"\033[0m")
         if DEBUG >= 1: print(f"Input type: {self.input_type}")
         if pretrained_checkpoint is not None:

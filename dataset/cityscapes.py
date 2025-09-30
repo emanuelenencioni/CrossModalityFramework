@@ -63,6 +63,7 @@ class CityscapesDataset(CustomDataset):
         bbox_ann_suffix = kwargs.get('bbox_ann_suffix', '.json')
         load_bboxes = kwargs.get('load_bboxes', False)
         kwargs["DETECTION_CLASSES"] = self.DSEC_DET_CLASSES if kwargs.get('custom_classes', False) else None
+        self.DETECTION_CLASSES = kwargs["DETECTION_CLASSES"]
         super(CityscapesDataset, self).__init__(
             img_suffix=img_suffix, 
             seg_map_suffix=seg_map_suffix, 

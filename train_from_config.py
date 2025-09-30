@@ -58,7 +58,7 @@ if __name__ == "__main__":
 
     opti = optimizer.build_from_config(model, criterion, cfg)
 
-    train_ds, test_ds = dataset_builder.build_from_config(cfg['dataset'])
+    train_ds, test_ds = dataset_builder.build_from_config(cfg)
     # Dataloader (CMDA)
     train_dl, test_dl = dl_builder.build_from_config(train_ds, test_ds, cfg)
 
@@ -68,6 +68,7 @@ if __name__ == "__main__":
     model.to(device)    
 
     # Scheduler
+    schdlr = None
     if 'scheduler' in cfg.keys() and 'name' in cfg['scheduler'].keys() and cfg['scheduler']['name'] is not None:
         schdlr = scheduler_builder(opti, cfg['scheduler'])
         assert schdlr is not None, "Error - scheduler not correctly defined"

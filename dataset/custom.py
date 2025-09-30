@@ -91,7 +91,8 @@ class CustomDataset(Dataset):
 
     def __init__(self,
                  pipeline,
-                 img_dir,
+                 img_dir=None,
+                 events_dir=None,
                  img_suffix='.jpg',
                  ann_dir=None,
                  seg_map_suffix='.png',
@@ -107,12 +108,15 @@ class CustomDataset(Dataset):
                  use_augmentations=False, **kwargs):
         #self.pipeline = Compose(pipeline)
         self.img_dir = img_dir
+        self.events_dir = events_dir
         self.img_suffix = img_suffix
         self.ann_dir = ann_dir
         self.seg_map_suffix = seg_map_suffix
         self.mean_std = ([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
         self.image_transform = standard_transforms.Compose([standard_transforms.ToTensor(), standard_transforms.Normalize(*self.mean_std)])
         self.split = split
+        self.outputs = kwargs.get("outputs", ["rgb"])
+        self.event_keys = ["events", "events_vg", "events_frames"] # possible event keys
         self.data_root = data_root
         self.test_mode = test_mode
         self.ignore_index = ignore_index
@@ -145,27 +149,48 @@ class CustomDataset(Dataset):
                 A.RandomSizedBBoxSafeCrop(width=2048, height=1024, erosion_rate=0.2, p=0.5),
             ], bbox_params=A.BboxParams(format='pascal_voc', label_fields=['bbox_labels'], min_visibility=0.3))
             print("✓ Albumentations pipeline for training enabled.")
-
+            self.event_augmentations = self.augmentations = A.Compose([
+                A.HorizontalFlip(p=0.5),
+                A.ShiftScaleRotate(shift_limit=0.0625, scale_limit=0.1, rotate_limit=15, p=0.5, border_mode=cv2.BORDER_CONSTANT),
+                # This crop is safe for bounding boxes, it tries to keep them in the frame
+                A.RandomSizedBBoxSafeCrop(width=2048, height=1024, erosion_rate=0.2, p=0.5),
+            ], bbox_params=A.BboxParams(format='pascal_voc', label_fields=['bbox_labels'], min_visibility=0.3))
+        
         # join paths if data_root is specified
-        if self.data_root is not None:
+        if self.data_root is not None and self.img_dir is not None:
             if not osp.isabs(self.img_dir):
                 self.img_dir = osp.join(self.data_root, self.img_dir)
             if not (self.ann_dir is None or osp.isabs(self.ann_dir)):
                 self.ann_dir = osp.join(self.data_root, self.ann_dir)
             if not (self.split is None or osp.isabs(self.split)):
                 self.split = osp.join(self.data_root, self.split)
+        elif self.data_root is not None:
+            if not osp.isabs(self.events_dir):
+                self.events_dir = osp.join(self.data_root, self.events_dir)
+            if not (self.ann_dir is None or osp.isabs(self.ann_dir)):
+                self.ann_dir = osp.join(self.data_root, self.ann_dir)
+            if not (self.split is None or osp.isabs(self.split)):
+                self.split = osp.join(self.data_root, self.split)
 
         # load annotations
-        self.img_infos = self.load_annotations(self.img_dir, self.img_suffix,
+        if self.img_dir is not None:
+            self.img_infos = self.load_annotations(self.img_dir, self.img_suffix,
+                                               self.ann_dir,
+                                               self.seg_map_suffix, self.split)
+
+        if self.events_dir is not None:
+            self.events_infos = self.load_annotations(self.events_dir, self.img_suffix,
                                                self.ann_dir,
                                                self.seg_map_suffix, self.split)
         self._COLORS = boxes._COLORS
 
         self.debug_augmented = True
 
+        self.orig_height, self.orig_width = None, None
+
     def __len__(self):
         """Total number of samples of data."""
-        return len(self.img_infos)
+        return len(self.img_infos) if self.img_dir is not None else len(self.events_infos)
 
     def load_annotations(self, img_dir, img_suffix, ann_dir, seg_map_suffix, split):
         """Load annotation from directory.
@@ -208,7 +233,7 @@ class CustomDataset(Dataset):
         Args: idx (int): Index of data.
         Returns: dict: Annotation info of specified index.
         """
-        return self.img_infos[idx]['ann']
+        return self.img_infos[idx]['ann'] if self.img_dir is not None else self.events_infos[idx]['ann']
 
     def pre_pipeline(self, results):
         """Prepare results dict for pipeline."""
@@ -217,65 +242,68 @@ class CustomDataset(Dataset):
         results['seg_prefix'] = self.ann_dir
         
         # Check if augmented data is provided
-        if self.use_augmentations and not self.test_mode and 'image' in results and 'BB' in results:
-            image_pil = results['image']
-            bboxes = results['BB']
-
-            padded_resized_image, _, padding_info = self.pad_and_resize_pil_image(image_pil, target_size=(512, 512))
-            transformed_bboxes = self.transform_bboxes_with_padding(bboxes, padding_info)
+        # TODO: switch ifs (use aug internal to the others)
+        if self.use_augmentations and not self.test_mode: # and 'image' in results and 'BB' in results:
+            if 'image' in self.outputs:
+                image_pil = results['image']
+                padded_resized_image, _, padding_info = self.pad_and_resize_pil_image(image_pil, target_size=(512, 512))
+                results['image'] = self.image_transform(padded_resized_image)
             
-            results['image'] = self.image_transform(padded_resized_image)
-            results['BB'] = transformed_bboxes
+            if any(event_key in self.outputs for event_key in self.event_keys) and self.events_dir is not None:
+                event_pil = results['events']
+                padded_resized_events, _, padding_info = self.pad_and_resize_pil_image(event_pil, target_size=(512, 512))
+                results['events'] = self.image_transform(padded_resized_events)
+
+            if 'BB' in self.outputs:
+                bboxes = results['BB']
+                transformed_bboxes = self.transform_bboxes_with_padding(bboxes, padding_info)
+                results['BB'] = transformed_bboxes
+            
             results['padding_info'] = padding_info
             
         # Add bounding box information if available (original logic for test mode or no augmentations)
-        elif self.load_bboxes:
+        else: 
             idx = results.get('idx', 0)
-            
+            transformed_bboxes, _ = self.get_padded_and_scaled_bbox_info(idx, target_size=(512, 512))
+            if 'BB' in self.outputs: results['BB'] = transformed_bboxes
             # Load image with padding and scaling to 512x512
-            padded_resized_image, scale_factor, padding_info = self.load_and_resize_image(idx, target_size=(512, 512))
+            if 'image' in self.outputs:
+                padded_resized_image, scale_factor, padding_info = self.load_and_resize_image(idx, target_size=(512, 512))
             
-            if padded_resized_image is not None:
-                # Convert PIL image to numpy array and normalize to [0, 1]
-                results['image'] = self.image_transform(padded_resized_image)
-
-                results['padding_info'] = padding_info
-                
-                # Get transformed bounding boxes
-                transformed_bboxes, _ = self.get_padded_and_scaled_bbox_info(idx, target_size=(512, 512))
-                results['BB'] = transformed_bboxes
-                #results['BB_fields'] = ['bboxes'] if transformed_bboxes else []
-                
-                if DEBUG >= 2:
-                    orig_size = padding_info.get('original_size', (0, 0))
-                    print(f"Loaded image: {orig_size} -> padded to square -> resized to (512, 512) "
-                          f"with {len(transformed_bboxes)} transformed bboxes")
-            else:
-                # Fallback: create empty image
-                results['image'] = torch.zeros((3, 512, 512), dtype=torch.float32)
-                results['padding_info'] = {}
-                results['BB'] = torch.zeros((self.max_labels, 5), dtype=torch.float32)
-        else:
-            # If not loading bboxes, still load and process the image
-            idx = results.get('idx', 0)
-            padded_resized_image, scale_factor, padding_info = self.load_and_resize_image(idx, target_size=(512, 512))
+                if padded_resized_image is not None:
+                    # Convert PIL image to numpy array and normalize to [0, 1]
+                    results['padding_info'] = padding_info
+                    if 'image' in self.outputs: 
+                        results['image'] = self.image_transform(padded_resized_image)
+                    
+                    # Get transformed bounding boxe
+                    
+                    if DEBUG >= 2:
+                        orig_size = padding_info.get('original_size', (0, 0))
+                        print(f"Loaded image: {orig_size} -> padded to square -> resized to (512, 512) "
+                            f"with {len(transformed_bboxes)} transformed bboxes")
+                else:
+                    # Fallback: create empty image
+                    results['image'] = torch.zeros((3, 512, 512), dtype=torch.float32)
+                    results['padding_info'] = {}
+                    results['BB'] = torch.zeros((self.max_labels, 5), dtype=torch.float32)
             
-            if padded_resized_image is not None:
-                results['image'] = self.image_transform(padded_resized_image)
-            else:
-                results['image'] = torch.zeros((3, 512, 512), dtype=torch.float32)
-
-            results['image_size'] = (512, 512)
-            results['padding_info'] = padding_info
-            results['BB'] =  torch.zeros((self.max_labels, 5), dtype=torch.float32)
+            if any(event_key in self.outputs for event_key in self.event_keys) and self.events_dir is not None:
+                padded_resized_events, _, _ = self.load_and_resize_events(idx, target_size=(512, 512))
+                if padded_resized_events is not None:
+                    results['events'] = self.image_transform(padded_resized_events)
+                else:
+                    # Fallback: create empty events image
+                    results['events'] = torch.zeros((3, 512, 512), dtype=torch.float32)
+                    results['padding_info'] = {}
+                    results['BB'] = torch.zeros((self.max_labels, 5), dtype=torch.float32)
         
-
         if self.custom_classes:
             results['label_map'] = self.DETECTION_CLASSES
 
         # Add img_metas similar to DSEC dataset
         idx = results.get('idx', 0)
-        img_info = self.img_infos[idx]
+        img_info = self.img_infos[idx] if self.img_dir is not None else self.events_infos[idx]
         
         # Create img_metas dictionary
         img_metas = dict()
@@ -287,25 +315,26 @@ class CustomDataset(Dataset):
         # Get original image dimensions
         padding_info = results.get('padding_info', {})
         if padding_info and 'original_size' in padding_info:
-            orig_width, orig_height = padding_info['original_size']
-        else:
+            self.orig_width, self.orig_height = padding_info['original_size']
+        elif self.orig_height is None and self.orig_width is None:
             # Fallback to default or try to get from image file
-            orig_width, orig_height = 2048, 1024  # Default for Cityscapes
+            self.orig_width, self.orig_height = 2048, 1024  # Default for Cityscapes
             
             # Try to get actual size from image
-            img_path = osp.join(self.img_dir, img_info['filename'])
-            if osp.exists(img_path):
+            path = self.img_dir if self.img_dir is not None else self.events_dir
+            path = osp.join(path, img_info['filename'])
+            if osp.exists(path):
                 try:
                     from PIL import Image
-                    with Image.open(img_path) as pil_img:
-                        orig_width, orig_height = pil_img.size
+                    with Image.open(path) as pil_img:
+                        self.orig_width, self.orig_height = pil_img.size
                 except Exception:
                     pass
         
         img_metas['img_shape'] = (512, 512)  # Current processed size
         img_metas['pad_shape'] = (512, 512)
         img_metas['ori_shape'] = (512, 512)  # Size after initial processing
-        img_metas['orig_shape'] = (orig_height, orig_width)  # Original image size
+        img_metas['orig_shape'] = (self.orig_width, self.orig_height)  # Original image size
         img_metas['ori_filename'] = img_info['filename']
         img_metas['idx'] = idx
         
@@ -331,17 +360,18 @@ class CustomDataset(Dataset):
         Args: idx (int): Index of data.
         Returns: dict: Training data and annotation after pipeline with new keys introduced by pipeline.
         """
-
-        img_info = self.img_infos[idx]
+        img_info, event_info = None, None
+        if 'image' in self.outputs:
+            img_info = self.img_infos[idx]
+        if any(event_key in self.outputs for event_key in self.event_keys) and self.events_dir is not None:
+            event_info = self.events_infos[idx]
         ann_info = self.get_ann_info(idx)
-        results = dict(img_info=img_info, ann_info=ann_info, idx=idx)
+        results = dict(img_info=img_info, event_info=event_info, ann_info=ann_info, idx=idx)
 
         # --- Apply Augmentations if enabled ---
         if self.use_augmentations and self.augmentations is not None:
             # 1. Load original image and bboxes
-            img_path = osp.join(self.img_dir, img_info['ann']['subfolder'], img_info['filename'])
-            image = cv2.imread(img_path)
-            image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+           
             
             bboxes_cxcywh, _ = self.extract_bboxes_from_json_polygons(idx)
             
@@ -357,16 +387,39 @@ class CustomDataset(Dataset):
 
             # 3. Apply augmentations
             try:
-                transformed = self.augmentations(image=image, bboxes=bboxes_pascal_voc, bbox_labels=bbox_labels)
-                image = transformed['image'] # Use augmented image
-                bboxes_pascal_voc = transformed['bboxes']
-                bbox_labels = transformed['bbox_labels']
+                if "image" in self.outputs:
+                    img_path = osp.join(self.img_dir, img_info['ann']['subfolder'], img_info['filename'])
+                    image = cv2.imread(img_path)
+                    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+                    transformed = self.augmentations(image=image, bboxes=bboxes_pascal_voc, bbox_labels=bbox_labels)
+                    image = transformed['image'] # Use augmented image
+                    bboxes_pascal_voc = transformed['bboxes']
+                    bbox_labels = transformed['bbox_labels']
+                    results['image'] = Image.fromarray(image)
+                if any(event_key in self.outputs for event_key in self.event_keys) and self.events_dir is not None:
+                    events_path = osp.join(self.events_dir, img_info['ann']['subfolder'], img_info['filename'])
+                    events_image = cv2.imread(events_path)
+                    events_image = cv2.cvtColor(events_image, cv2.COLOR_BGR2RGB)
+                    transformed_events = self.event_augmentations(image=events_image, bboxes=bboxes_pascal_voc, bbox_labels=bbox_labels)
+                    events_image = transformed_events['image'] # Use augmented events image
+                    results['events'] = Image.fromarray(events_image)
+                    #Use always rgb in case of both events and rgb are present
+                    bboxes_pascal_voc = transformed_events['bboxes'] if not 'image' in self.outputs else bboxes_pascal_voc
+                    bbox_labels = transformed_events['bbox_labels'] if not 'image' in self.outputs else bbox_labels
+                    results['events'] = Image.fromarray(events_image) 
+                
                 if DEBUG>=3:
                     if self.debug_augmented:
-                        rgb = image.copy()
-                        cv2.cvtColor(rgb, cv2.COLOR_BGR2RGB, rgb)
-                        cvimg = self.vis(rgb, bboxes_pascal_voc, [1]*len(bboxes_pascal_voc), bbox_labels, conf=0.0, class_names=self.DETECTION_CLASSES)
-                        cv2.imwrite(f"debug_augmented_{idx}_{img_info['filename']}.jpg", cvimg)
+                        if image is not None:
+                            rgb = image.copy()
+                            cv2.cvtColor(rgb, cv2.COLOR_BGR2RGB, rgb)
+                            cvimg = self.vis(rgb, bboxes_pascal_voc, [1]*len(bboxes_pascal_voc), bbox_labels, conf=0.0, class_names=self.DETECTION_CLASSES)
+                            cv2.imwrite(f"debug_augmented_{idx}_{img_info['filename']}.jpg", cvimg)
+                        if events_image is not None:
+                            rgb = events_image.copy()
+                            cv2.cvtColor(rgb, cv2.COLOR_BGR2RGB, rgb)
+                            cvimg = self.vis(rgb, bboxes_pascal_voc, [1]*len(bboxes_pascal_voc), bbox_labels, conf=0.0, class_names=self.DETECTION_CLASSES)
+                            cv2.imwrite(f"debug_augmented_events_{idx}_{img_info['filename']}.jpg", cvimg)
                         if DEBUG in [3, 4]: self.debug_augmented = False # Only once if DEBUG isn't that high
             except Exception as e:
                 if DEBUG >= 1: print(f"Warning: Albumentations failed for index {idx}, using original image. Error: {e}")
@@ -381,8 +434,8 @@ class CustomDataset(Dataset):
                 final_bboxes[i] = torch.tensor([label, xc, yc, w, h])
             
             # 5. Pass augmented data to the pre_pipeline
-            results['image'] = Image.fromarray(image)
-            results['BB'] = final_bboxes
+
+            if "BB" in self.outputs: results['BB'] = final_bboxes
 
         self.pre_pipeline(results)
         return results#self.pipeline(results)
@@ -425,8 +478,8 @@ class CustomDataset(Dataset):
         if self.ann_dir is None: return [], [], []
             
         # Get JSON file path
-        img_info = self.img_infos[idx]
-        seg_map_path = osp.join(self.ann_dir, img_info['ann']['subfolder'], img_info['ann']['seg_map'])
+        info = self.img_infos[idx] if self.img_dir is not None else self.events_infos[idx]
+        seg_map_path = osp.join(self.ann_dir, info['ann']['subfolder'], info['ann']['seg_map'])
         json_file_path = seg_map_path.replace(self.seg_map_suffix, '_gtFine_polygons.json')
         
         if not osp.exists(json_file_path):
@@ -702,107 +755,6 @@ class CustomDataset(Dataset):
 
         return palette
 
-    # def evaluate(self, results, bb=True, metric='mIoU', logger=None, efficient_test=False, **kwargs):
-    #     """Evaluate the dataset.
-    #     Args:
-    #         results (list): Testing results of the dataset.
-    #         bb (bool): If True, evaluate bounding box detection using COCO metrics.
-    #                   If False, evaluate segmentation using traditional metrics.
-    #         metric (str | list[str]): Metrics to be evaluated. 'mIoU',
-    #             'mDice' and 'mFscore' are supported for segmentation.
-    #         logger (logging.Logger | None | str): Logger used for printing
-    #             related information during evaluation. Default: None.
-    #     Returns: dict[str, float]: Default metrics.
-    #     """
-    #     if bb:
-    #         return self.evaluate_bbox_detection(results, logger=logger, **kwargs)
-    #     else:
-    #         # Traditional segmentation evaluation
-    #         if isinstance(metric, str):
-    #             metric = [metric]
-    #         allowed_metrics = ['mIoU', 'mDice', 'mFscore']
-    #         if not set(metric).issubset(set(allowed_metrics)):
-    #             raise KeyError('metric {} is not supported'.format(metric))
-    #         eval_results = {}
-    #         gt_seg_maps = self.get_gt_seg_maps(efficient_test)
-    #         if self.CLASSES is None:
-    #             num_classes = len(
-    #                 reduce(np.union1d, [np.unique(_) for _ in gt_seg_maps]))
-    #         else:
-    #             num_classes = len(self.CLASSES)
-            
-    #         # Placeholder for eval_metrics function (would need to be imported)
-    #         # ret_metrics = eval_metrics(
-    #         #     results,
-    #         #     gt_seg_maps,
-    #         #     num_classes,
-    #         #     self.ignore_index,
-    #         #     metric,
-    #         #     label_map=self.label_map,
-    #         #     reduce_zero_label=self.reduce_zero_label)
-            
-    #         # For now, return empty results to avoid undefined function error
-    #         ret_metrics = {m: np.zeros(num_classes) for m in metric}
-    #         ret_metrics['aAcc'] = 0.0
-
-    #     if self.CLASSES is None:
-    #         class_names = tuple(range(num_classes))
-    #     else:
-    #         class_names = self.CLASSES
-
-    #     # summary table
-    #     ret_metrics_summary = OrderedDict({
-    #         ret_metric: np.round(np.nanmean(ret_metric_value) * 100, 2)
-    #         for ret_metric, ret_metric_value in ret_metrics.items()
-    #     })
-
-    #     # each class table
-    #     ret_metrics.pop('aAcc', None)
-    #     ret_metrics_class = OrderedDict({
-    #         ret_metric: np.round(ret_metric_value * 100, 2)
-    #         for ret_metric, ret_metric_value in ret_metrics.items()
-    #     })
-    #     ret_metrics_class.update({'Class': class_names})
-    #     ret_metrics_class.move_to_end('Class', last=False)
-
-    #     # for logger
-    #     class_table_data = PrettyTable()
-    #     for key, val in ret_metrics_class.items():
-    #         class_table_data.add_column(key, val)
-
-    #     summary_table_data = PrettyTable()
-    #     for key, val in ret_metrics_summary.items():
-    #         if key == 'aAcc':
-    #             summary_table_data.add_column(key, [val])
-    #         else:
-    #             summary_table_data.add_column('m' + key, [val])
-    #     if DEBUG >= 1:
-    #         print('per class results:')
-    #         print('\n' + class_table_data.get_string())
-    #         print('Summary:')
-    #         print('\n' + summary_table_data.get_string())
-
-    #     # each metric dict
-    #     for key, value in ret_metrics_summary.items():
-    #         if key == 'aAcc':
-    #             eval_results[key] = value / 100.0
-    #         else:
-    #             eval_results['m' + key] = value / 100.0
-
-    #     ret_metrics_class.pop('Class', None)
-    #     for key, value in ret_metrics_class.items():
-    #         eval_results.update({
-    #             key + '.' + str(name): value[idx] / 100.0
-    #             for idx, name in enumerate(class_names)
-    #         })
-
-    #     # Handle file cleanup if results are file paths
-    #     if isinstance(results, list) and all(isinstance(r, str) for r in results):
-    #         for file_name in results:
-    #             if os.path.exists(file_name):
-    #                 os.remove(file_name)
-    #     return eval_results
-
     def pad_and_resize_pil_image(self, image, target_size=(512, 512)):
         """Pads a PIL image to be square and resizes it."""
         original_size = image.size # (width, height)
@@ -830,8 +782,14 @@ class CustomDataset(Dataset):
         return resized_image, scale_factor, padding_info
 
     def load_and_resize_image(self, idx, target_size=(512, 512)):
+        return self.load_and_resize(self.img_infos, self.img_dir, idx, target_size)
+
+    def load_and_resize_events(self, idx, target_size=(512, 512)):
+        return self.load_and_resize(self.events_infos, self.events_dir, idx, target_size)
+
+    def load_and_resize(self, infos, dir, idx, target_size=(512, 512)):
         """
-        Load image, add black padding to make it square, then resize to target size.
+        Load events, add black padding to make it square, then resize to target size.
         Args:
             idx (int): Index of the sample
             target_size (tuple): Target size (width, height). Default: (512, 512)
@@ -841,23 +799,25 @@ class CustomDataset(Dataset):
                    - scale_factor is the uniform scale applied after padding
                    - padding_info is dict with padding details
         """
-        # Get image path
-        img_info = self.img_infos[idx]
-        img_path = osp.join(self.img_dir, img_info['ann']['subfolder'], img_info['filename'])
+        # Get events path
+        info = infos[idx]
+        path = osp.join(dir, info['ann']['subfolder'], info['filename'])
+        input_ = "event" if "event" in path.lower() else "image"
         
-        if not osp.exists(img_path):
+         # Check if file exists
+        if not osp.exists(path):
             if DEBUG >= 1:
-                print(f"Image file not found: {img_path}")
+                print(f"Events {input_} not found: {path}")
             return None, 1.0, {}
         
         try:
             # Load image
-            image = Image.open(img_path).convert('RGB')
+            image = Image.open(path).convert('RGB')
             return self.pad_and_resize_pil_image(image, target_size)
             
         except Exception as e:
             if DEBUG >= 1:
-                print(f"Error loading/processing image {img_path}: {e}")
+                print(f"Error loading/processing image {path}: {e}")
             return None, 1.0, {}
 
     def transform_bboxes_with_padding(self, bboxes, padding_info):
@@ -918,7 +878,7 @@ class CustomDataset(Dataset):
         bboxes, _ = self.extract_bboxes_from_json_polygons(idx)
         
         # Get padding and scaling information
-        _, _, padding_info = self.load_and_resize_image(idx, target_size)
+        _, _, padding_info = self.load_and_resize_image(idx, target_size) if self.img_dir is not None else self.load_and_resize_events(idx, target_size)
         
         # Transform bounding boxes
         transformed_bboxes = self.transform_bboxes_with_padding(bboxes, padding_info)
