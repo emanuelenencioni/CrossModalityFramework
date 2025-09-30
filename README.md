@@ -1,7 +1,7 @@
 # Cross modality framework
 
 ## Description
-This project provides a flexible framework for cross-modality learning, enabling the integration and training of models across different data modalities (e.g., images and events). It supports unimodal and multimodal architectures, domain adaptation, and tasks such as detection and segmentation(WIP). The framework is designed for extensibility, allowing easy configuration, modular backbone and head selection. It is suitable for research and development in multi-domain and multi-task machine learning scenarios.
+This project wants to provide a flexible framework for cross-modality learning, enabling the integration and training of models across different data modalities (e.g., images and events). It supports unimodal and multimodal architectures, domain adaptation, and tasks such as detection and segmentation(WIP). The framework is designed for extensibility, allowing easy configuration, modular backbone and head selection. It is suitable for research and development in multi-domain and multi-task machine learning scenarios.
 
 
 
@@ -62,11 +62,10 @@ This guide provides instructions to set up and run the framework:
     ```
 
     Use existing templates as a reference.
-    ### ⚠️⚠️⚠️ Warning
+    ### ⚠️⚠️⚠️ Warning ⚠️⚠️⚠️
     The config `.yaml` file must include all the parameters defined in the argparse for them to take effect. Otherwise, the argument parsing WILL NOT WORK.  You can see the `yaml` file as the default arguments for your specific training.
 
-3. **The losses**
-    For loss calculation, there are two approaches:
+3. **The losses**, two types:
     - **Unimodal Tasks:** Losses are computed within each head of the respective models, such as the "YoloXHead." A base class will be implemented soon to ensure a consistent interface across all heads. 
     - **Multimodal Tasks:** The loss needs to be specified in the `.yaml` configuration file. A factory method will handle the building process. If a loss is not yet implemented, add it to the builder.
 
