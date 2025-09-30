@@ -154,8 +154,7 @@ class Trainer:
 
                 if DEBUG >= 1: 
                     # Primary COCO metrics1
-                    ap50_95 = stats[0]
-                    ap50 = stats[1]
+                    ap50_95, ap50 = stats[0], stats[1]
                     print(f"AP50-95: {ap50_95:.4f}, AP50: {ap50:.4f}")
 
                 if self.wandb_log:
@@ -182,8 +181,8 @@ class Trainer:
 
             if avg_loss < self.best_loss: #TODO: should be on the loss
                 if DEBUG >= 1: print(f"New best loss: {avg_loss:.4f} at epoch {self.epoch}")
-                self.best_ap50_95 = ap50_95 if evaluator is not None else None
-                self.best_ap50 = ap50 if evaluator is not None else None
+                # self.best_ap50_95 = ap50_95 if evaluator is not None else None
+                # self.best_ap50 = ap50 if evaluator is not None else None
                 self.best_epoch = self.epoch
                 self.best_params = self.model.state_dict()
                 self.best_optimizer = self.optimizer.state_dict()
