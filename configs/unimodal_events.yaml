@@ -1,18 +1,18 @@
 # General training parameters
-experiment_name: simpleCLIPTrain
+experiment_name: unimodal_events_resnet50_yolox
 seed: 42
 device: cuda  # or cpu
 
 # Data parameters
 dataset:
-  name: DSEC_Night
-  data_dir: /data
-  batch_size: 4
+  name: cityscapes
+  data_dir: data
+  batch_size: 12
   num_workers: 4
-  outputs: ["events_vg", "BB", "labels", "img_metas"] # these mandatory for unimodal training
-  bb_num_classes: 8 # according to DSEC
-  train_split: "night_dataset.txt"
-  val_split: "night_test_dataset.txt"
+  outputs: ["events", "BB", "labels", "img_metas"] # these mandatory for unimodal training
+  bb_num_classes: 8 
+  train_split: "cs_train_events.txt"
+  val_split: "cs_val_events.txt"
 
 # Model parameters TODO
 
@@ -23,6 +23,7 @@ model:
   head: 
     name: 'yolox_head' # redoundant here, but useful for clarity
     num_classes: 8
+    losses_weights: [5.0, 1.0, 1.0, 1.0]  # [iou, obj, cls, l1]
   backbone:
     name: '' # if name is empty -> stack of the two backbone will be used
     event_backbone: resnet50 # from timm
@@ -30,7 +31,7 @@ model:
     pretrained_weights: #'detr_resnet50_weights.pth' # path to pretrained weights if needed
     embed_dim: 128
     input_size: 512
-    output_indices: [1, 2, 3, 4] # indices of the output layers to be used
+    output_indices: [2, 4] # indices of the output layers to be used
     #dropout: 0.25
 
 
@@ -62,6 +63,6 @@ scheduler:
 
 # Logging parameters
 logger:
-  name: wandbasd
+  name: wandb
   project: Cross_Modality_Framework  # Replace with your wandb project name
   entity: TwoGuysOneCode
