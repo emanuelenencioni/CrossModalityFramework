@@ -96,6 +96,9 @@ The DSEC-Night and Cityscapes datasets are currently supported. To prepare them 
     - Use `_` to separate words in argument names (e.g., `--batch_size`).
     - Use `-` to specify a key within a sub-dictionary (e.g., `--logger-name`, where `name` is a key inside the `logger` sub-dictionary in the config).
     - To monitor the process, the framework is fully integrated with wandb.
+    - Use the `DEBUG` environment variable to monitor the internal processes. Higher values (>=1) will increase the verbosity of the output, Most used are:          
+        - `DEBUG=1`: Provides basic information such as real-time loss for each batch and setup details.
+        - `DEBUG=3`: e.g. saves and allows inspection of ground truth bounding box images (just one, >4 for all of them).
 
 6. **Evaluating the Model:**
     - Run the evaluation script:
@@ -110,6 +113,7 @@ The DSEC-Night and Cityscapes datasets are currently supported. To prepare them 
 - [X] Add training events on cityscapes with the IC from CMDA
 - [ ] Fix multimodal training -> refactoring -> sub class of unimodal.
 - [ ] Make the logger uniform for all the framework (probably the one in dsec_evaluator)
+- [ ] in custom, get the output frame dims in input (for now it only works with 512x512)
 
 - [ ] check for validity of VGs
  

@@ -106,7 +106,7 @@ class CustomDataset(Dataset):
                  palette=None,
                  load_bboxes=False,
                  bbox_min_area=100,
-                 use_augmentations=False, **kwargs):
+                 use_augmentations=False, augmentations=None, **kwargs):
         #self.pipeline = Compose(pipeline)
         self.img_dir = img_dir
         self.events_dir = events_dir
@@ -139,18 +139,8 @@ class CustomDataset(Dataset):
 
         # --- Data Augmentation ---
         self.use_augmentations = use_augmentations
-        self.augmentations = None
+        self.augmentations = augmentations
         if self.use_augmentations and not self.test_mode:
-            if A is None:
-                raise ImportError("Please install albumentations: pip install albumentations")
-            # Define a standard augmentation pipeline for object detection
-            self.augmentations = A.Compose([
-                A.HorizontalFlip(p=0.5),
-                A.ShiftScaleRotate(shift_limit=0.0625, scale_limit=0.1, rotate_limit=15, p=0.5, border_mode=cv2.BORDER_CONSTANT),
-                A.RandomBrightnessContrast(p=0.5),
-                # This crop is safe for bounding boxes, it tries to keep them in the frame
-                A.RandomSizedBBoxSafeCrop(width=2048, height=1024, erosion_rate=0.2, p=0.5),
-            ], bbox_params=A.BboxParams(format='pascal_voc', label_fields=['bbox_labels'], min_visibility=0.3))
             print("✓ Albumentations pipeline for training enabled.")
             self.event_augmentations = self.augmentations = A.Compose([
                 A.HorizontalFlip(p=0.5),
