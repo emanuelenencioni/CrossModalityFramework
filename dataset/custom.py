@@ -22,7 +22,6 @@ from torchvision.transforms import Compose
 from torchvision.ops import masks_to_boxes
 import torchvision.transforms as standard_transforms
 from .utils.data_container import DataContainer
-from .utils import visualization as visual
 
 # Import albumentations
 try:
@@ -33,6 +32,7 @@ except ImportError:
 #from .builder import DATASETS
 from utils.helpers import DEBUG
 from utils import parse, boxes
+from utils import visualization as visual
 
 
 

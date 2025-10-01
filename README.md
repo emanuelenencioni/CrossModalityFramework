@@ -105,10 +105,11 @@ The DSEC-Night and Cityscapes datasets are currently supported. To prepare them 
 
 ## TODO
 - [ ] REFACTORING:
-    - [ ] modules on main (no assert there pls)
-    - [ ] clean and understandable
-- [ ] Add training events on cityscapes with the IC from CMDA
+    - [X] modules on main (no assert there pls)
+    - [X] clean and understandable
+- [X] Add training events on cityscapes with the IC from CMDA
 - [ ] Fix multimodal training -> refactoring -> sub class of unimodal.
+- [ ] Make the logger uniform for all the framework (probably the one in dsec_evaluator)
 
 - [ ] check for validity of VGs
  
