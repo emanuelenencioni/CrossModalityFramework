@@ -22,6 +22,7 @@ from torchvision.transforms import Compose
 from torchvision.ops import masks_to_boxes
 import torchvision.transforms as standard_transforms
 from .utils.data_container import DataContainer
+from .utils import visualization as visual
 
 # Import albumentations
 try:
@@ -114,6 +115,7 @@ class CustomDataset(Dataset):
         self.seg_map_suffix = seg_map_suffix
         self.mean_std = ([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
         self.image_transform = standard_transforms.Compose([standard_transforms.ToTensor(), standard_transforms.Normalize(*self.mean_std)])
+        self.event_transform = standard_transforms.Compose([standard_transforms.ToTensor(), standard_transforms.Normalize(*self.mean_std)])
         self.split = split
         self.outputs = kwargs.get("outputs", ["rgb"])
         self.event_keys = ["events", "events_vg", "events_frames"] # possible event keys
@@ -253,7 +255,7 @@ class CustomDataset(Dataset):
             if any(event_key in self.outputs for event_key in self.event_keys) and self.events_dir is not None:
                 event_pil = results['events']
                 padded_resized_events, _, padding_info = self.pad_and_resize_pil_image(event_pil, target_size=(512, 512))
-                results['events'] = self.image_transform(padded_resized_events)
+                results['events'] = self.event_transform(padded_resized_events)
 
             if 'BB' in self.outputs:
                 bboxes = results['BB']
@@ -348,16 +350,12 @@ class CustomDataset(Dataset):
                 aug = ""
                 if self.use_augmentations: aug = "augmented"
                 else: aug = "original"
-
                 if 'image' in self.outputs:
-                    rgb = results['image'].cpu().numpy().transpose(1,2,0)*255
-                    rgb = cv2.cvtColor(rgb, cv2.COLOR_BGR2RGB)
+                    rgb = results['image']
                     cvimg = self.gt_to_vis(rgb, results)
                     cv2.imwrite(f"debug_{aug}_{idx}_{info['filename']}.jpg", cvimg)
-                if 'events' in self.outputs:
-                    rgb = results['events'].cpu().numpy().transpose(1,2,0)*255
-
-                    rgb = cv2.cvtColor(rgb, cv2.COLOR_BGR2RGB)
+                if 'events' in self.outputs:     
+                    rgb = results['events']              
                     cvimg = self.gt_to_vis(rgb, results)
                     cv2.imwrite(f"debug_{aug}_events_{idx}_{info['filename']}.jpg", cvimg)
                 if DEBUG.value in [3, 4]: self.debug_gt = False # Only once if DEBUG isn't that high
@@ -547,7 +545,7 @@ class CustomDataset(Dataset):
                         
                         # Validate bbox coordinates
                         x1, y1, x2, y2 = bbox
-                        if x2 > x1 and y2 > y1:  # Valid bbox
+                        if x2 > x1 and y2 > y1:  # Valid bboxtensor_to_cv2_image
                             # Convert to [class_id, xc, yc, w, h] format
                             h = y2 - y1
                             w = x2 - x1
@@ -701,10 +699,11 @@ class CustomDataset(Dataset):
 
         return img
     
-    def  gt_to_vis(self, rgb, results):
+    def  gt_to_vis(self,frame, results):
         """
         Visualize ground truth bounding boxes on the original image. the vis method need x1, y1, x2, y2 format
-        Args: idx (int): Index of the sample
+        Args: frame (torch.Tensor): Original image tensor
+              results (dict): Results dictionary containing 'BB' key with bounding boxes
         Returns: cv2  Image with drawn bounding boxes
         """
         labels = []
@@ -717,9 +716,14 @@ class CustomDataset(Dataset):
             x2, y2 = x1 + w, y1 + h
             bboxes_xyxy.append([x1, y1, x2, y2])
             labels.append(int(class_id))
-        cvimg = self.vis(rgb, bboxes_xyxy, [1]*len(bboxes_xyxy), labels, conf=0.1, class_names=self.DETECTION_CLASSES)
+        
+        frame_ = visual.tensor_to_cv2_image(frame)
+        
+        cv_frame = self.vis(frame_, bboxes_xyxy, [1]*len(bboxes_xyxy), labels, conf=0.1, class_names=self.DETECTION_CLASSES)
 
-        return cvimg
+        return frame_.get()
+
+
 
     def get_classes_and_palette(self, classes=None, palette=None):
         """Get class names of current dataset.
