@@ -127,7 +127,7 @@ class DSECEvaluator:
         self.per_class_AR = per_class_AR
         self.device = device
         self.input_format = input_format
-        self.input_type = 'events_vg' if 'events_vg' in dataloader.dataset[0] else 'image'
+        self.input_type = 'events' if 'events' in dataloader.dataset[0] else 'image'
         self.step = 0
         if DEBUG >= 3:
             self.debug_images_folder = ROOT_FOLDER / "debug_images"
@@ -401,6 +401,8 @@ class DSECEvaluator:
         Returns: 
 
         """
+        coco_eval = None
+
         # Convert predictions to COCO format
         pred_data = []
         coco_gt_data = []
@@ -467,7 +469,7 @@ class DSECEvaluator:
             coco_eval.summarize() if coco_eval is not None else None
             # Log metrics to wandb if available
             try:
-                if wandb.run is not None:
+                if wandb.run is not None and coco_eval is not None:
                     wandb.log({
                         "eval/AP_IoU=0.50:0.95": coco_eval.stats[0],
                         "eval/AP_IoU=0.50": coco_eval.stats[1],
@@ -485,7 +487,7 @@ class DSECEvaluator:
                     })
             except ImportError:
                 pass
-        return coco_eval.stats
+        return coco_eval.stats if coco_eval is not None else [0.0]*12
                 
 ###### TODO: CONVERSIONE
 """
