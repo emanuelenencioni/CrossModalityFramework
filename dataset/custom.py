@@ -128,7 +128,8 @@ class CustomDataset(Dataset):
         if self.custom_classes: 
             self.DETECTION_CLASSES = kwargs.get('DETECTION_CLASSES', None)
             assert self.DETECTION_CLASSES is not None, "DETECTION_CLASSES must be provided when custom_classes is True"
-
+        else:
+            assert kwargs.get('bb_num_classes', None) is None, "bb_num_classes should not be set if custom_classes is False"
         # Bounding box support
         self.load_bboxes = load_bboxes
         self.bbox_min_area = bbox_min_area
@@ -184,7 +185,7 @@ class CustomDataset(Dataset):
                                                self.seg_map_suffix, self.split)
         self._COLORS = boxes._COLORS
 
-        self.debug_augmented = True
+        self.debug_gt = True
 
         self.orig_height, self.orig_width = None, None
 
@@ -303,7 +304,7 @@ class CustomDataset(Dataset):
 
         # Add img_metas similar to DSEC dataset
         idx = results.get('idx', 0)
-        img_info = self.img_infos[idx] if self.img_dir is not None else self.events_infos[idx]
+        info = self.img_infos[idx] if self.img_dir is not None else self.events_infos[idx]
         
         # Create img_metas dictionary
         img_metas = dict()
@@ -322,7 +323,7 @@ class CustomDataset(Dataset):
             
             # Try to get actual size from image
             path = self.img_dir if self.img_dir is not None else self.events_dir
-            path = osp.join(path, img_info['filename'])
+            path = osp.join(path, info['filename'])
             if osp.exists(path):
                 try:
                     from PIL import Image
@@ -335,12 +336,31 @@ class CustomDataset(Dataset):
         img_metas['pad_shape'] = (512, 512)
         img_metas['ori_shape'] = (512, 512)  # Size after initial processing
         img_metas['orig_shape'] = (self.orig_width, self.orig_height)  # Original image size
-        img_metas['ori_filename'] = img_info['filename']
+        img_metas['ori_filename'] = info['filename']
         img_metas['idx'] = idx
         
         img_metas['flip'] = False
         if img_metas['flip']:
             img_metas['flip_direction'] = 'horizontal'
+
+        if DEBUG>=3:
+            if self.debug_gt:
+                aug = ""
+                if self.use_augmentations: aug = "augmented"
+                else: aug = "original"
+
+                if 'image' in self.outputs:
+                    rgb = results['image'].cpu().numpy().transpose(1,2,0)*255
+                    rgb = cv2.cvtColor(rgb, cv2.COLOR_BGR2RGB)
+                    cvimg = self.gt_to_vis(rgb, results)
+                    cv2.imwrite(f"debug_{aug}_{idx}_{info['filename']}.jpg", cvimg)
+                if 'events' in self.outputs:
+                    rgb = results['events'].cpu().numpy().transpose(1,2,0)*255
+
+                    rgb = cv2.cvtColor(rgb, cv2.COLOR_BGR2RGB)
+                    cvimg = self.gt_to_vis(rgb, results)
+                    cv2.imwrite(f"debug_{aug}_events_{idx}_{info['filename']}.jpg", cvimg)
+                if DEBUG.value in [3, 4]: self.debug_gt = False # Only once if DEBUG isn't that high
         
         # Wrap in DataContainer similar to DSEC
         results['img_metas'] = DataContainer(img_metas, cpu_only=True)
@@ -367,15 +387,13 @@ class CustomDataset(Dataset):
             event_info = self.events_infos[idx]
         ann_info = self.get_ann_info(idx)
         results = dict(img_info=img_info, event_info=event_info, ann_info=ann_info, idx=idx)
-
+        if 'BB' in self.outputs:
+            bboxes_cxcywh, _ = self.extract_bboxes_from_json_polygons(idx)
+                # 2. Convert bboxes to albumentations format (pascal_voc)
+            
         # --- Apply Augmentations if enabled ---
         if self.use_augmentations and self.augmentations is not None:
-            # 1. Load original image and bboxes
-           
-            
-            bboxes_cxcywh, _ = self.extract_bboxes_from_json_polygons(idx)
-            
-            # 2. Convert bboxes to albumentations format (pascal_voc)
+            # 1. Extract bboxes and labels for albumentations
             bboxes_pascal_voc = []
             bbox_labels = []
             valid_mask = bboxes_cxcywh[:, 0] >= 0
@@ -397,7 +415,7 @@ class CustomDataset(Dataset):
                     bbox_labels = transformed['bbox_labels']
                     results['image'] = Image.fromarray(image)
                 if any(event_key in self.outputs for event_key in self.event_keys) and self.events_dir is not None:
-                    events_path = osp.join(self.events_dir, img_info['ann']['subfolder'], img_info['filename'])
+                    events_path = osp.join(self.events_dir, event_info['ann']['subfolder'], event_info['filename'])
                     events_image = cv2.imread(events_path)
                     events_image = cv2.cvtColor(events_image, cv2.COLOR_BGR2RGB)
                     transformed_events = self.event_augmentations(image=events_image, bboxes=bboxes_pascal_voc, bbox_labels=bbox_labels)
@@ -407,20 +425,6 @@ class CustomDataset(Dataset):
                     bboxes_pascal_voc = transformed_events['bboxes'] if not 'image' in self.outputs else bboxes_pascal_voc
                     bbox_labels = transformed_events['bbox_labels'] if not 'image' in self.outputs else bbox_labels
                     results['events'] = Image.fromarray(events_image) 
-                
-                if DEBUG>=3:
-                    if self.debug_augmented:
-                        if image is not None:
-                            rgb = image.copy()
-                            cv2.cvtColor(rgb, cv2.COLOR_BGR2RGB, rgb)
-                            cvimg = self.vis(rgb, bboxes_pascal_voc, [1]*len(bboxes_pascal_voc), bbox_labels, conf=0.0, class_names=self.DETECTION_CLASSES)
-                            cv2.imwrite(f"debug_augmented_{idx}_{img_info['filename']}.jpg", cvimg)
-                        if events_image is not None:
-                            rgb = events_image.copy()
-                            cv2.cvtColor(rgb, cv2.COLOR_BGR2RGB, rgb)
-                            cvimg = self.vis(rgb, bboxes_pascal_voc, [1]*len(bboxes_pascal_voc), bbox_labels, conf=0.0, class_names=self.DETECTION_CLASSES)
-                            cv2.imwrite(f"debug_augmented_events_{idx}_{img_info['filename']}.jpg", cvimg)
-                        if DEBUG in [3, 4]: self.debug_augmented = False # Only once if DEBUG isn't that high
             except Exception as e:
                 if DEBUG >= 1: print(f"Warning: Albumentations failed for index {idx}, using original image. Error: {e}")
 
@@ -436,6 +440,9 @@ class CustomDataset(Dataset):
             # 5. Pass augmented data to the pre_pipeline
 
             if "BB" in self.outputs: results['BB'] = final_bboxes
+
+        else:
+            if "BB" in self.outputs: results['BB'] = bboxes_cxcywh
 
         self.pre_pipeline(results)
         return results#self.pipeline(results)
@@ -663,6 +670,7 @@ class CustomDataset(Dataset):
         for i in range(len(boxes)):
             box = boxes[i]
             cls_id = int(cls_ids[i])
+            if cls_id < 0: continue
             cls_name = [key for key, value in self.DETECTION_CLASSES.items() if value == cls_id][0] if self.DETECTION_CLASSES is not None else str(cls_id)
             cls_id = class_names[cls_name]
             score = scores[i]
@@ -692,6 +700,26 @@ class CustomDataset(Dataset):
             cv2.putText(img, text, (x0, y0 + txt_size[1]), font, 0.4, txt_color, thickness=1)
 
         return img
+    
+    def  gt_to_vis(self, rgb, results):
+        """
+        Visualize ground truth bounding boxes on the original image. the vis method need x1, y1, x2, y2 format
+        Args: idx (int): Index of the sample
+        Returns: cv2  Image with drawn bounding boxes
+        """
+        labels = []
+        # Convert bboxes from [class_id, x_center, y_center, w, h] to [x1, y1, x2, y2]
+        bboxes_xyxy = []
+        for bbox in results['BB']:
+            class_id, x_center, y_center, w, h = bbox
+            if class_id < 0: continue
+            x1, y1 = x_center-w*0.5, y_center-h*0.5
+            x2, y2 = x1 + w, y1 + h
+            bboxes_xyxy.append([x1, y1, x2, y2])
+            labels.append(int(class_id))
+        cvimg = self.vis(rgb, bboxes_xyxy, [1]*len(bboxes_xyxy), labels, conf=0.1, class_names=self.DETECTION_CLASSES)
+
+        return cvimg
 
     def get_classes_and_palette(self, classes=None, palette=None):
         """Get class names of current dataset.
