@@ -1,8 +1,8 @@
 import cv2
 import numpy as np
 import torch
-    
-def tensor_to_cv2_image(self, image_tensor, mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)):
+
+def tensor_to_cv2_image(image_tensor, mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)):
     """Converts a PyTorch tensor or numpy array to a BGR numpy array for OpenCV."""
     
     if isinstance(image_tensor, torch.Tensor):
