@@ -20,6 +20,7 @@ from utils.helpers import DEBUG
 import cv2
 import wandb
 from PIL import Image
+from utils import visualization as viz
 
 import torch
 from torchvision.ops import nms, batched_nms
@@ -85,33 +86,6 @@ def per_class_AP_table(coco_eval, class_names=COCO_CLASSES, headers=["class", "A
         row_pair, tablefmt="pipe", floatfmt=".3f", headers=table_headers, numalign="left",
     )
     return table
-
-
-def tensor_to_cv2_image(image_tensor, mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)):
-    """Converts a PyTorch tensor or numpy array to a BGR numpy array for OpenCV."""
-    
-    if isinstance(image_tensor, torch.Tensor):
-        img_tensor = image_tensor.cpu()
-        # Handle different tensor shapes
-        if img_tensor.dim() == 3:  # (C, H, W)
-            img_np = img_tensor.permute(1, 2, 0).numpy()
-        elif img_tensor.dim() == 4:  # (B, C, H, W)
-            img_np = img_tensor[0].permute(1, 2, 0).numpy()
-        else:
-            img_np = img_tensor.numpy()
-        
-        # Normalize to 0-255 range if needed
-        if img_np.max() <= 1.0 and img_np.min() >= 0:
-            img_np = (img_np * 255).astype(np.uint8)
-        else:
-            img_np = ((img_np*std) + mean)*255  # Unnormalize
-            img_np = np.clip(img_np, 0, 255).astype(np.uint8)
-    else:
-        img_np = image_tensor.numpy().asarray().astype(np.uint8)
-
-    img_np = cv2.cvtColor(img_np, cv2.COLOR_BGR2RGB)
-    return cv2.UMat(img_np)
-
 
 class DSECEvaluator:
     """
@@ -224,7 +198,7 @@ class DSECEvaluator:
                     if wandb.run is not None and output is not None:
                         if DEBUG >= 1:
                             logger.info(f"Example image idx {img_info[0].data['idx']} processed, gt boxes {targets[0].shape[0]}, pred boxes {outputs[-1][0].shape[0] if outputs[-1][0] is not None else 0}")
-                        img = self.visual(tensor_to_cv2_image(input_frame[0]),outputs[-1][0], img_info[0].data['orig_shape'], cls_conf=self.conf_thre, classes=self.dataloader.dataset.DSEC_DET_CLASSES)
+                        img = self.visual(viz.tensor_to_cv2_image(input_frame[0]),outputs[-1][0], img_info[0].data['orig_shape'], cls_conf=self.conf_thre, classes=self.dataloader.dataset.DSEC_DET_CLASSES)
                         # wandb expects images in RGB format. cv2 uses BGR.
                         wandb.log({"eval/sample_img_with_bb": wandb.Image(Image.fromarray(cv2.cvtColor(img.get(), cv2.COLOR_BGR2RGB)), caption=f"idx_{img_info[0].data['idx']}")})
                     self.step += 1
