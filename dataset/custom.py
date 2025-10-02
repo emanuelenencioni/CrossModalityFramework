@@ -348,7 +348,7 @@ class CustomDataset(Dataset):
                     rgb = results['events']              
                     cvimg = self.gt_to_vis(rgb, results)
                     cv2.imwrite(f"debug_{aug}_events_{idx}_{info['filename']}.jpg", cvimg)
-                if DEBUG.value in [3, 4]: self.debug_gt = False # Only once if DEBUG isn't that high
+                if DEBUG.value <= 8: self.debug_gt = False # Only once if DEBUG isn't that high
         
         # Wrap in DataContainer similar to DSEC
         results['img_metas'] = DataContainer(img_metas, cpu_only=True)
