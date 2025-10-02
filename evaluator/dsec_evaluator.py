@@ -51,7 +51,7 @@ def per_class_AR_table(coco_eval, class_names=DSEC_DET_CLASSES, headers=["class"
         recall = recalls[:, idx, 0, -1]
         recall = recall[recall > -1]
         ar = np.mean(recall) if recall.size else float("nan")
-        per_class_AR[name] = float(ar * 100)
+        per_class_AR["class/AR/"+name] = float(ar * 100)
 
     num_cols = min(colums, len(per_class_AR) * len(headers))
     result_pair = [x for pair in per_class_AR.items() for x in pair]
@@ -60,10 +60,11 @@ def per_class_AR_table(coco_eval, class_names=DSEC_DET_CLASSES, headers=["class"
     table = tabulate(
         row_pair, tablefmt="pipe", floatfmt=".3f", headers=table_headers, numalign="left",
     )
-    return table
+    if DEBUG >= 1: print(table)
+    return per_class_AR
 
 
-def per_class_AP_table(coco_eval, class_names=COCO_CLASSES, headers=["class", "AP"], colums=6):
+def per_class_AP_table(coco_eval, class_names=DSEC_DET_CLASSES, headers=["class", "AP"], colums=6):
     per_class_AP = {}
     precisions = coco_eval.eval["precision"]
     # dimension of precisions: [TxRxKxAxM]
@@ -76,7 +77,7 @@ def per_class_AP_table(coco_eval, class_names=COCO_CLASSES, headers=["class", "A
         precision = precisions[:, :, idx, 0, -1]
         precision = precision[precision > -1]
         ap = np.mean(precision) if precision.size else float("nan")
-        per_class_AP[name] = float(ap * 100)
+        per_class_AP["class/AP/"+name] = float(ap * 100)
 
     num_cols = min(colums, len(per_class_AP) * len(headers))
     result_pair = [x for pair in per_class_AP.items() for x in pair]
@@ -85,7 +86,8 @@ def per_class_AP_table(coco_eval, class_names=COCO_CLASSES, headers=["class", "A
     table = tabulate(
         row_pair, tablefmt="pipe", floatfmt=".3f", headers=table_headers, numalign="left",
     )
-    return table
+    if DEBUG >= 1: print(table)
+    return per_class_AP
 
 class DSECEvaluator:
     """
@@ -254,7 +256,7 @@ class DSECEvaluator:
 
             if DEBUG >= 3 and self.debug_images_folder is not None and images_info[1] is not None:
                 img, img_info = images_info[1][i], images_info[0][i]
-                vis_img = self.visual(img, output[i], img_info.data['orig_shape'], cls_conf=self.conf_thre, classes=self.dataloader.dataset.DSEC_DET_CLASSES)
+                vis_img = self.visual(viz.tensor_to_cv2_image(img), output[i], img_info.data['orig_shape'], cls_conf=self.conf_thre, classes=self.dataloader.dataset.DSEC_DET_CLASSES)
                 cv2.imwrite(str(self.debug_images_folder / f"{img_info.data['idx']}.png"), vis_img)
         return output
 
@@ -487,8 +489,10 @@ class DSECEvaluator:
                     })
             except ImportError:
                 pass
-        return coco_eval.stats if coco_eval is not None else [0.0]*12
-                
+        classAP = per_class_AP_table(coco_eval, class_names=DSEC_DET_CLASSES) if self.per_class_AP and coco_eval is not None else None
+        classAR = per_class_AR_table(coco_eval, class_names=DSEC_DET_CLASSES) if self.per_class_AR and coco_eval is not None else None
+        return coco_eval.stats if coco_eval is not None else [0.0]*12, classAP, classAR
+
 ###### TODO: CONVERSIONE
 """
 Il problema sta che lui va a caricare la gt da file, quando invece io la do per la singola batch. Quindi primo passo convertire questa cosa.

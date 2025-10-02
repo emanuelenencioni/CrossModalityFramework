@@ -151,7 +151,7 @@ class Trainer:
 
             if evaluator is not None:
                 # stats is a numpy array of 12 elements
-                stats = evaluator.evaluate(self.model)
+                stats, classAP, classAR = evaluator.evaluate(self.model)
 
                 if DEBUG >= 1: 
                     # Primary COCO metrics1
@@ -173,7 +173,14 @@ class Trainer:
                         "AR/ARm": stats[10],
                         "AR/ARl": stats[11],
                         "epoch": self.epoch
+                        
                     })
+                    if classAP is not None:
+                        classAP["epoch"] = self.epoch
+                        wandb.log(classAP)
+                    if classAR is not None:
+                        classAR["epoch"] = self.epoch 
+                        wandb.log(classAR)
 
             elif hasattr(self.dataloader.dataset, 'evaluate'):
                 # Use dataset's evaluate method
