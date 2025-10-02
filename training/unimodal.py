@@ -6,6 +6,7 @@ import numpy as np
 import wandb
 import os
 import sys
+from loguru import logger
 
 import torch
 import torch.nn as nn
@@ -30,28 +31,28 @@ class Trainer:
         self.total_epochs = int(self.trainer_cfg['epochs'])
         self.input_type = 'events' if 'events' in dataloader.dataset[0] else 'image'
         if 'events' in dataloader.dataset[0] and 'image' in dataloader.dataset[0]:
-            print("\033[93m"+"WARNING: the dataloader contains both events_vg and image, using events_vg as input type"+"\033[0m")
-        if DEBUG >= 1: print(f"Input type: {self.input_type}")
+            logger.warning("The dataloader contains both events_vg and image, using events_vg as input type in unimodal training mode")
+        if DEBUG >= 1: logger.info(f"Input type: {self.input_type}")
         if pretrained_checkpoint is not None:
             if 'model_state_dict' in pretrained_checkpoint:
                 self.model.load_state_dict(pretrained_checkpoint['model_state_dict'])
-                if DEBUG >= 1: print("Pre-trained model loaded successfully (CrossModalityFramework)")
+                if DEBUG >= 1: logger.success("Pre-trained model loaded successfully (CrossModalityFramework)")
             
             if 'optimizer_state_dict' in pretrained_checkpoint:
                 self.optimizer.load_state_dict(pretrained_checkpoint['optimizer_state_dict'])
-                if DEBUG >= 1: print("Optimizer state loaded successfully")
+                if DEBUG >= 1: logger.success("Optimizer state loaded successfully")
 
             if 'scheduler_state_dict' in pretrained_checkpoint and cfg['trainer'].get('resume_scheduler', False):
                 scheduler_state = pretrained_checkpoint['scheduler_state_dict']
                 if scheduler_state is not None and self.scheduler is not None and \
                 deep_dict_equal(cfg['scheduler'], pretrained_checkpoint['config'].get('scheduler', None)):
                     self.scheduler.load_state_dict(scheduler_state)
-                    if DEBUG >= 1: print("Scheduler state loaded successfully")
+                    if DEBUG >= 1: logger.success("Scheduler state loaded successfully")
 
             if 'epoch' in pretrained_checkpoint:
                 self.epoch = pretrained_checkpoint['epoch'] + 1
                 self.total_epochs = int(self.trainer_cfg['epochs']) + self.epoch - 1
-                if DEBUG >= 1: print(f"Resuming training from epoch {self.epoch}")
+                if DEBUG >= 1: logger.info(f"Resuming training from epoch {self.epoch}")
         
 
         self.checkpoint_interval_epochs = cfg['trainer'].get('checkpoint_interval_epochs', 0)
@@ -75,7 +76,7 @@ class Trainer:
             os.makedirs(self.save_best_dir, exist_ok=True)
             self.save_name = wandb.run.name if self.wandb_log else f"{self.model.__class__.__name__}_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}"
         else:
-            print("\033[93m"+"WARNING: the model will not be saved"+"\033[0m")
+            logger.warning("The model will not be saved")
             self.save_name = None
         self.patience = patience
         self.best_accuracy = 0
@@ -98,7 +99,7 @@ class Trainer:
         losses[0].backward()
         l1_loss = losses[4] if isinstance(losses[4], float) else losses[4].item()
         if DEBUG >= 1: 
-            print(f"weighted_iou_loss: {losses[1].item():.4f}, loss_obj: {losses[2].item():.4f}, loss_cls: {losses[3].item():.4f}, loss_l1: {l1_loss:.4f}")
+            logger.info(f"weighted_iou_loss: {losses[1].item():.4f}, loss_obj: {losses[2].item():.4f}, loss_cls: {losses[3].item():.4f}, loss_l1: {l1_loss:.4f}")
         if self.wandb_log: # TODO make it work with not knowing losses length
             wandb.log({"loss/weighted_iou": losses[1].item(), "loss/obj": losses[2].item(), "loss/cls": losses[3].item(), "loss/l1": l1_loss, "loss/batch(sum):": losses[0].item(), "step": self.step})
         self.optimizer.step()
@@ -118,7 +119,7 @@ class Trainer:
             self.step += 1
         total_losses = np.array(total_losses)
         avg_losses = np.mean(total_losses, axis=0)  #
-        if DEBUG == 1: print(f"Epoch loss: {avg_losses[0]:.4f}")
+        if DEBUG >= 1: logger.info(f"Epoch loss: {avg_losses[0]:.4f}")
         if self.wandb_log:
             wandb.log({"loss/epoch": avg_losses[0],"loss/epoch_iou": avg_losses[1],"loss/epoch_obj": avg_losses[2],"loss/epoch_cls": avg_losses[3],"loss/epoch_l1": avg_losses[4],"epoch": self.epoch})
         return avg_losses[0]
@@ -142,9 +143,9 @@ class Trainer:
                 if self.save_folder is not None:
                     self._save_checkpoint(epoch)
                 else:
-                    print("\033[93m"+"WARNING: the model will not be saved - saving folder need to be specifiedR"+"\033[0m")
-            if DEBUG == 1:
-                print(f"Epoch {epoch+1} completed in {epoch_time:.2f} seconds")
+                    logger.warning("The model will not be saved - saving folder need to be specified")
+            if DEBUG >= 1:
+                logger.info(f"Epoch {epoch+1} completed in {epoch_time:.2f} seconds")
             if self.wandb_log:
                 wandb.log({"lr": self.optimizer.param_groups[0]['lr'], "epoch": self.epoch})
 
@@ -155,7 +156,7 @@ class Trainer:
                 if DEBUG >= 1: 
                     # Primary COCO metrics1
                     ap50_95, ap50 = stats[0], stats[1]
-                    print(f"AP50-95: {ap50_95:.4f}, AP50: {ap50:.4f}")
+                    logger.info(f"AP50-95: {ap50_95:.4f}, AP50: {ap50:.4f}")
 
                 if self.wandb_log:
                     wandb.log({
@@ -177,10 +178,10 @@ class Trainer:
             elif hasattr(self.dataloader.dataset, 'evaluate'):
                 # Use dataset's evaluate method
                 ap50_95, ap50, _ = self.dataloader.dataset.evaluate(self.model)
-                if DEBUG >= 1: print(f"AP50-95: {ap50_95:.4f}, AP50: {ap50:.4f}")
+                if DEBUG >= 1: logger.info(f"AP50-95: {ap50_95:.4f}, AP50: {ap50:.4f}")
 
             if avg_loss < self.best_loss: #TODO: should be on the loss
-                if DEBUG >= 1: print(f"New best loss: {avg_loss:.4f} at epoch {self.epoch}")
+                if DEBUG >= 1: logger.success(f"New best loss: {avg_loss:.4f} at epoch {self.epoch}")
                 # self.best_ap50_95 = ap50_95 if evaluator is not None else None
                 # self.best_ap50 = ap50 if evaluator is not None else None
                 self.best_epoch = self.epoch
@@ -191,7 +192,7 @@ class Trainer:
                     self._save_best()
             self.epoch += 1
 
-        print("Training finished.")
+        logger.success("Training finished.")
 
     def _save_best(self):
         save_path = f"{self.save_best_dir}{self.save_name}_best.pth"
@@ -202,7 +203,7 @@ class Trainer:
             'scheduler_state_dict': self.best_sch_params,
             'config': self.cfg
         }, save_path)
-        print(f"Saved best model to {save_path}")
+        logger.success(f"Saved best model to {save_path}")
 
     def _save_checkpoint(self, epoch):
         timestamp = datetime.datetime.now().strftime('%Y%m%d%H%M')
@@ -214,10 +215,10 @@ class Trainer:
             'scheduler_state_dict': self.scheduler.state_dict() if self.scheduler is not None else None,
             'config': self.cfg
         }, checkpoint_path)
-        print(f"Checkpoint saved at epoch {epoch} to {checkpoint_path}")
+        logger.success(f"Checkpoint saved at epoch {epoch} to {checkpoint_path}")
 
     def load_model_state(self, file_path):
-        print("Loading model...")
+        logger.info("Loading model...")
         checkpoint = torch.load(file_path, map_location=torch.device(self.device))
         self.model.load_state_dict(checkpoint['model_state_dict'])
         self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
