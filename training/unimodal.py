@@ -19,7 +19,7 @@ from utils.helpers import DEBUG, deep_dict_equal
 
 
 class Trainer:
-    def __init__(self, model, dataloader, optimizer, criterion, device, cfg, root_folder,wandb_log=False, scheduler=None, patience=sys.maxsize, pretrained_checkpoint=None):
+    def __init__(self, model, dataloader, optimizer, criterion, device, cfg, root_folder,wandb_log=False, scheduler=None, patience=-1, pretrained_checkpoint=None):
         self.model = model
         self.dataloader = dataloader
         self.optimizer = optimizer
@@ -27,13 +27,16 @@ class Trainer:
         self.epoch = 1
         self.cfg = cfg
         self.trainer_cfg = cfg['trainer']
+
         assert 'epochs' in self.trainer_cfg.keys(), " specify 'epochs' trainer param"
+
         self.total_epochs = int(self.trainer_cfg['epochs'])
         self.input_type = 'events' if 'events' in dataloader.dataset[0] else 'image'
         if 'events' in dataloader.dataset[0] and 'image' in dataloader.dataset[0]:
             logger.warning("The dataloader contains both events_vg and image, using events_vg as input type in unimodal training mode")
         if DEBUG >= 1: logger.info(f"Input type: {self.input_type}")
-        if pretrained_checkpoint is not None:
+
+        if pretrained_checkpoint is not None: # Load checkpoint infos
             if 'model_state_dict' in pretrained_checkpoint:
                 self.model.load_state_dict(pretrained_checkpoint['model_state_dict'])
                 if DEBUG >= 1: logger.success("Pre-trained model loaded successfully (CrossModalityFramework)")
@@ -54,9 +57,8 @@ class Trainer:
                 self.total_epochs = int(self.trainer_cfg['epochs']) + self.epoch - 1
                 if DEBUG >= 1: logger.info(f"Resuming training from epoch {self.epoch}")
         
-
+        # deciding checkpoint interval based on epochs or steps
         self.checkpoint_interval_epochs = cfg['trainer'].get('checkpoint_interval_epochs', 0)
-        
         if self.checkpoint_interval_epochs > 0:
             self.checkpoint_interval = 0
         else: 
@@ -67,6 +69,8 @@ class Trainer:
         self.scheduler = scheduler
         self.wandb_log = True if wandb.run is not None else False
         if self.wandb_log: assert wandb.run is not None, "Wandb run must be initialized before setting wandb_log to True"
+
+        ### Saving related ###
         self.save_folder = root_folder + "/" + self.trainer_cfg['save_folder'] if 'save_folder' in self.trainer_cfg.keys() and self.trainer_cfg['save_folder'] is not None else None
         self.save_best_dir = None
         if self.save_folder is not None:
@@ -78,7 +82,11 @@ class Trainer:
         else:
             logger.warning("The model will not be saved")
             self.save_name = None
+        
+        # Early stopping / patience
         self.patience = patience
+        self.patience_counter = 0  # Counter for epochs without improvement
+        
         self.best_accuracy = 0
         self.best_epoch = 0
         self.counter = 0
@@ -91,6 +99,13 @@ class Trainer:
         self.best_ap50_95 = 0
         self.step = 0
 
+        if DEBUG >= 1:
+            if self.patience < sys.maxsize and self.patience > 0:
+                logger.info(f"Early stopping enabled with patience={self.patience}")
+            else:
+                logger.info("Early stopping disabled")
+
+
     def _train_step(self, batch):
         input_frame = torch.stack([item[self.input_type] for item in batch]).to(self.device)
         targets = torch.stack([item["BB"] for item in batch]).to(self.device) #For now considering only object detection tasks
@@ -98,10 +113,11 @@ class Trainer:
         _, losses = self.model(input_frame, targets)
         losses[0].backward()
         l1_loss = losses[4] if isinstance(losses[4], float) else losses[4].item()
+        
         if DEBUG >= 1: 
             logger.info(f"weighted_iou_loss: {losses[1].item():.4f}, loss_obj: {losses[2].item():.4f}, loss_cls: {losses[3].item():.4f}, loss_l1: {l1_loss:.4f}")
-        if self.wandb_log: # TODO make it work with not knowing losses length
-            wandb.log({"loss/weighted_iou": losses[1].item(), "loss/obj": losses[2].item(), "loss/cls": losses[3].item(), "loss/l1": l1_loss, "loss/batch(sum):": losses[0].item(), "step": self.step})
+        
+        self.log({"loss/weighted_iou": losses[1].item(), "loss/obj": losses[2].item(), "loss/cls": losses[3].item(), "loss/l1": l1_loss, "loss/batch(sum):": losses[0].item(), "step": self.step})
         self.optimizer.step()
         return losses
 
@@ -117,11 +133,14 @@ class Trainer:
                 pbar.set_description(f"Training model {self.model.get_name()}, loss:{losses[0].item():.4f}")
                 pbar.update(1)
             self.step += 1
+        
         total_losses = np.array(total_losses)
         avg_losses = np.mean(total_losses, axis=0)  #
         if DEBUG >= 1: logger.info(f"Epoch loss: {avg_losses[0]:.4f}")
-        if self.wandb_log:
-            wandb.log({"loss/epoch": avg_losses[0],"loss/epoch_iou": avg_losses[1],"loss/epoch_obj": avg_losses[2],"loss/epoch_cls": avg_losses[3],"loss/epoch_l1": avg_losses[4],"epoch": self.epoch})
+        
+        self.log({"loss/epoch": avg_losses[0],"loss/epoch_iou": avg_losses[1],"loss/epoch_obj": avg_losses[2],"loss/epoch_cls": 
+                  avg_losses[3],"loss/epoch_l1": avg_losses[4],"epoch": self.epoch})
+        
         return avg_losses[0]
 
     def train(self, evaluator=None, eval_loss=False):
@@ -146,57 +165,47 @@ class Trainer:
                     logger.warning("The model will not be saved - saving folder need to be specified")
             if DEBUG >= 1:
                 logger.info(f"Epoch {epoch+1} completed in {epoch_time:.2f} seconds")
-            if self.wandb_log:
-                wandb.log({"lr": self.optimizer.param_groups[0]['lr'], "epoch": self.epoch})
+            
+            self.log({"lr": self.optimizer.param_groups[0]['lr'], "epoch": self.epoch})
 
             if evaluator is not None:
                 # stats is a numpy array of 12 elements
                 stats, classAP, classAR = evaluator.evaluate(self.model)
 
                 if DEBUG >= 1: 
-                    # Primary COCO metrics1
                     ap50_95, ap50 = stats[0], stats[1]
                     logger.info(f"AP50-95: {ap50_95:.4f}, AP50: {ap50:.4f}")
 
-                if self.wandb_log:
-                    wandb.log({
-                        "AP/AP(50_95)": stats[0],
-                        "AP/AP50": stats[1],
-                        "AP/AP75": stats[2],
-                        "AP/APs": stats[3],
-                        "AP/APm": stats[4],
-                        "AP/APl": stats[5],
-                        "AR/AR1": stats[6],
-                        "AR/AR10": stats[7],
-                        "AR/AR100": stats[8],
-                        "AR/ARs": stats[9],
-                        "AR/ARm": stats[10],
-                        "AR/ARl": stats[11],
-                        "epoch": self.epoch
-                        
-                    })
-                    if classAP is not None:
-                        classAP["epoch"] = self.epoch
-                        wandb.log(classAP)
-                    if classAR is not None:
-                        classAR["epoch"] = self.epoch 
-                        wandb.log(classAR)
+                self.log_coco_metrics(stats, classAP, classAR)
 
             elif hasattr(self.dataloader.dataset, 'evaluate'):
                 # Use dataset's evaluate method
                 ap50_95, ap50, _ = self.dataloader.dataset.evaluate(self.model)
                 if DEBUG >= 1: logger.info(f"AP50-95: {ap50_95:.4f}, AP50: {ap50:.4f}")
 
-            if avg_loss < self.best_loss: #TODO: should be on the loss
+            # Check for improvement and update patience counter
+            if avg_loss < self.best_loss:
                 if DEBUG >= 1: logger.success(f"New best loss: {avg_loss:.4f} at epoch {self.epoch}")
-                # self.best_ap50_95 = ap50_95 if evaluator is not None else None
-                # self.best_ap50 = ap50 if evaluator is not None else None
+                self.best_loss = avg_loss
                 self.best_epoch = self.epoch
                 self.best_params = self.model.state_dict()
                 self.best_optimizer = self.optimizer.state_dict()
                 self.best_sch_params = self.scheduler.state_dict() if self.scheduler is not None else None
+                self.patience_counter = 0  # Reset counter on improvement
+                
                 if self.save_folder is not None:
                     self._save_best()
+            else:
+                self.patience_counter += 1
+                if DEBUG >= 1:
+                    logger.info(f"No improvement in loss. Patience: {self.patience_counter}/{self.patience}")
+                
+                # Check if patience exceeded
+                if self.patience > 0 and self.patience_counter >= self.patience:
+                    logger.warning(f"Early stopping triggered! No improvement for {self.patience} epochs.")
+                    logger.info(f"Best loss: {self.best_loss:.4f} at epoch {self.best_epoch}")
+                    break
+            
             self.epoch += 1
 
         logger.success("Training finished.")
@@ -234,3 +243,33 @@ class Trainer:
             self.scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
 
 
+
+    def log_coco_metrics(self, stats, classAP=None, classAR=None):
+        if self.wandb_log:
+            wandb.log({
+                "AP/AP(50_95)": stats[0],
+                "AP/AP50": stats[1],
+                "AP/AP75": stats[2],
+                "AP/APs": stats[3],
+                "AP/APm": stats[4],
+                "AP/APl": stats[5],
+                "AR/AR1": stats[6],
+                "AR/AR10": stats[7],
+                "AR/AR100": stats[8],
+                "AR/ARs": stats[9],
+                "AR/ARm": stats[10],
+                "AR/ARl": stats[11],
+                "epoch": self.epoch
+                
+            })
+            if classAP is not None:
+                classAP["epoch"] = self.epoch
+                wandb.log(classAP)
+            if classAR is not None:
+                classAR["epoch"] = self.epoch 
+                wandb.log(classAR)
+
+
+    def log(self, message):
+        if self.wandb_log:
+            wandb.log(message)
