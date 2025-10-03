@@ -192,8 +192,9 @@ class YOLOXHead(nn.Module):
                 tuple: A pair (outputs, losses) where:
                     - outputs (list[Tensor]): A list of output tensors from different scales, each containing concatenated regression,
                       objectness, and classification predictions.
+                    - tot_loss: the total weighted loss
                     - losses: The computed losses obtained from the get_losses function, using the predictions, computed grid shifts,
-                      expanded strides, labels, and original regression predictions (if L1 loss is used).
+                      expanded strides, labels, and original regression predictions (if L1 loss is used), in dict form.
             During inference:
                 Tensor or tuple: If decode_in_inference is True, returns the decoded output predictions;
                 otherwise, returns a tuple (outputs, None), where outputs is a tensor of concatenated predictions across all scales,
@@ -251,7 +252,7 @@ class YOLOXHead(nn.Module):
             outputs.append(output)
 
         if self.training:
-            return outputs, self.get_losses(
+            losses = self.get_losses(
                 imgs,
                 x_shifts,
                 y_shifts,
@@ -261,6 +262,8 @@ class YOLOXHead(nn.Module):
                 origin_preds,
                 dtype=xin[0].dtype,
             )
+            losses_d = {"weighted_iou": losses[1].item(), "loss_obj": losses[2].item(),"loss_l1": losses[3].item() if self.use_l1 else losses[3]}
+            return outputs, losses[0], losses_d
         else:
             self.hw = [x.shape[-2:] for x in outputs]
             # [batch, n_anchors_all, 85]
