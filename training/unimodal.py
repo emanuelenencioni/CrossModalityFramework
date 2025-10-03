@@ -57,6 +57,9 @@ class Trainer:
                 self.total_epochs = int(self.trainer_cfg['epochs']) + self.epoch - 1
                 if DEBUG >= 1: logger.info(f"Resuming training from epoch {self.epoch}")
         
+        # Get loss keys from model
+        self._get_loss_keys()
+        
         # deciding checkpoint interval based on epochs or steps
         self.checkpoint_interval_epochs = cfg['trainer'].get('checkpoint_interval_epochs', 0)
         if self.checkpoint_interval_epochs > 0:
@@ -110,16 +113,18 @@ class Trainer:
         input_frame = torch.stack([item[self.input_type] for item in batch]).to(self.device)
         targets = torch.stack([item["BB"] for item in batch]).to(self.device) #For now considering only object detection tasks
         self.optimizer.zero_grad()
-        _, losses = self.model(input_frame, targets)
-        losses[0].backward()
-        l1_loss = losses[4] if isinstance(losses[4], float) else losses[4].item()
+        _, tot_loss, losses = self.model(input_frame, targets)
+        tot_loss.backward()
         
         if DEBUG >= 1: 
-            logger.info(f"weighted_iou_loss: {losses[1].item():.4f}, loss_obj: {losses[2].item():.4f}, loss_cls: {losses[3].item():.4f}, loss_l1: {l1_loss:.4f}")
+            logger.info(f"loss values: {[f'{k}: {v}' for k, v in losses.items()]}")
         
-        self.log({"loss/weighted_iou": losses[1].item(), "loss/obj": losses[2].item(), "loss/cls": losses[3].item(), "loss/l1": l1_loss, "loss/batch(sum):": losses[0].item(), "step": self.step})
+        step_dict = {key: v for key, v in zip(["loss/batch(sum)"]+self.losses_keys, [tot_loss]+list(losses.values()))}
+        step_dict["step"] = self.step
+        self._log(step_dict)
         self.optimizer.step()
-        return losses
+        loss_list = [tot_loss]
+        return [tot_loss]+list(losses.values()) # python 3.7+ maintains dict order
 
     def _train_epoch(self, pbar=None):
         self.model.train()
@@ -137,14 +142,15 @@ class Trainer:
         total_losses = np.array(total_losses)
         avg_losses = np.mean(total_losses, axis=0)  #
         if DEBUG >= 1: logger.info(f"Epoch loss: {avg_losses[0]:.4f}")
-        
-        self.log({"loss/epoch": avg_losses[0],"loss/epoch_iou": avg_losses[1],"loss/epoch_obj": avg_losses[2],"loss/epoch_cls": 
-                  avg_losses[3],"loss/epoch_l1": avg_losses[4],"epoch": self.epoch})
+        epoch_dict = {key: avg_loss for key, avg_loss in zip(["loss/epoch"]+self.losses_keys, avg_losses)}
+        epoch_dict["epoch"] = self.epoch
+        self._log(epoch_dict)
         
         return avg_losses[0]
 
     def train(self, evaluator=None, eval_loss=False):
-        for epoch in range(self.total_epochs):
+        start_epoch = self.epoch
+        for epoch in range(start_epoch, self.total_epochs):
             self.model.train()
             start_time = time.time()
             with tqdm(total=len(self.dataloader), desc=f"Epoch {self.epoch}/{self.total_epochs}") as pbar:
@@ -166,7 +172,7 @@ class Trainer:
             if DEBUG >= 1:
                 logger.info(f"Epoch {epoch+1} completed in {epoch_time:.2f} seconds")
             
-            self.log({"lr": self.optimizer.param_groups[0]['lr'], "epoch": self.epoch})
+            self._log({"lr": self.optimizer.param_groups[0]['lr'], "epoch": self.epoch})
 
             if evaluator is not None:
                 # stats is a numpy array of 12 elements
@@ -176,7 +182,7 @@ class Trainer:
                     ap50_95, ap50 = stats[0], stats[1]
                     logger.info(f"AP50-95: {ap50_95:.4f}, AP50: {ap50:.4f}")
 
-                self.log_coco_metrics(stats, classAP, classAR)
+                self._log_coco_metrics(stats, classAP, classAR)
 
             elif hasattr(self.dataloader.dataset, 'evaluate'):
                 # Use dataset's evaluate method
@@ -244,7 +250,7 @@ class Trainer:
 
 
 
-    def log_coco_metrics(self, stats, classAP=None, classAR=None):
+    def _log_coco_metrics(self, stats, classAP=None, classAR=None):
         if self.wandb_log:
             wandb.log({
                 "AP/AP(50_95)": stats[0],
@@ -270,6 +276,27 @@ class Trainer:
                 wandb.log(classAR)
 
 
-    def log(self, message):
+    def _log(self, message):
         if self.wandb_log:
             wandb.log(message)
+
+    def _get_loss_keys(self):
+        if hasattr(self.model, 'loss_keys'):
+            self.losses_keys = self.model.loss_keys
+            if DEBUG >= 1: logger.info(f"Loss keys from model attribute: {self.losses_keys}")
+        else:
+            self.model.eval()
+            with torch.no_grad():
+                try:
+                    dummy_input = torch.randn(1, 3, 224, 224).to(self.device)  # Adjust shape as needed
+                    dummy_targets = torch.randn(1, 4).to(self.device)  # Adjust shape as needed
+                    _, _, dummy_losses = self.model(dummy_input, dummy_targets)
+                    
+                    assert isinstance(dummy_losses, dict), "Model forward pass did not return a dict of losses"
+                    self.losses_keys = list(dummy_losses.keys()) 
+                    
+                    if DEBUG >= 1: logger.info(f"Loss keys extracted: {self.losses_keys}")
+                except Exception as e:
+                    logger.warning(f"Could not extract loss keys from dummy forward pass: {e}")
+                    self.losses_keys = []
+            self.model.train()
