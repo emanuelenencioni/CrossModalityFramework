@@ -209,8 +209,8 @@ class DSECEvaluator:
 
     def postprocess(self, prediction, class_agnostic=False, images_info=None):
         box_corner = prediction.new(prediction.shape)
-        ####### WARNING : Convert from (cx, cy, w, h) to (x1, y1, x2, y2) format TODO hw -> wh
-        print("WARNING: Converting from (cx, cy, w, h) to (x1, y1, w, h) format, BE AWARE: OLD CODE has cx,cy,h,w")
+        ####### WARNING : Convert from (cx, cy, w, h) to (x1, y1, x2, y2) format
+        logger.warning("Converting from (cx, cy, w, h) to (x1, y1, x2, y2) format, BE AWARE: OLD CODE has cx,cy,h,w")
         
         box_corner[:, :, 0] = prediction[:, :, 0] - prediction[:, :, 2] / 2
         box_corner[:, :, 1] = prediction[:, :, 1] - prediction[:, :, 3] / 2
@@ -401,7 +401,9 @@ class DSECEvaluator:
             targets: Ground truth targets
             images_info: Image metadata, input frames
         Returns: 
-
+            stats: List of COCO metrics
+            classAP: Per-class AP if enabled
+            classAR: Per-class AR if enabled
         """
         coco_eval = None
 
@@ -417,7 +419,7 @@ class DSECEvaluator:
             #coco_gt_data.append(output)
             # coco_gt_data = [item for t_batch in targets for item in self.create_coco_gt_from_batch(t_batch, images_info)]
             if len(coco_gt_data) == 0:
-                return [0.0]*12, "No ground truth annotations"
+                return [0.0]*12, None, None
             
             #assert len(coco_gt_data) == len(pred_data), "Mismatch between GT and predictions"
 
@@ -430,7 +432,7 @@ class DSECEvaluator:
                 if DEBUG >= 2:
                     # plot image + boxes
                     
-                    print(f"Creating COCO GT with {len(coco_gt_data['images'])} images and {len(coco_gt_data['annotations'])} annotations")
+                    logger.info(f"Creating COCO GT with {len(coco_gt_data['images'])} images and {len(coco_gt_data['annotations'])} annotations")
                 if DEBUG >=3:
                     coco_gt = COCO()
                     coco_gt.dataset = coco_gt_data
@@ -461,14 +463,19 @@ class DSECEvaluator:
 
             except Exception as e:
                 import traceback
-                
                 logger.error(f"Error calculating COCO metrics: {e}")
                 if DEBUG >= 1:
                     logger.warning(f"Full traceback: {traceback.format_exc()}")
                     logger.warning(f"GT data keys: {coco_gt_data.keys() if 'coco_gt_data' in locals() else 'Not created'}")
                     logger.warning(f"Predictions count: {len(pred_data) if 'pred_data' in locals() else 'Not created'}")
             
-            coco_eval.summarize() if coco_eval is not None else None
+            if coco_eval is not None:
+                if DEBUG >= 3:
+                    coco_eval.summarize() if coco_eval is not None else None
+                else:
+                    redirect_string = io.StringIO()
+                    with contextlib.redirect_stdout(open('/dev/null', 'w')):
+                            coco_eval.summarize() if coco_eval is not None else None
             # Log metrics to wandb if available
             try:
                 if wandb.run is not None and coco_eval is not None:
@@ -492,49 +499,3 @@ class DSECEvaluator:
         classAP = per_class_AP_table(coco_eval, class_names=DSEC_DET_CLASSES) if self.per_class_AP and coco_eval is not None else None
         classAR = per_class_AR_table(coco_eval, class_names=DSEC_DET_CLASSES) if self.per_class_AR and coco_eval is not None else None
         return coco_eval.stats if coco_eval is not None else [0.0]*12, classAP, classAR
-
-###### TODO: CONVERSIONE
-"""
-Il problema sta che lui va a caricare la gt da file, quando invece io la do per la singola batch. Quindi primo passo convertire questa cosa.
-Ci sarà sicuramente bisogno di modificare ka evaluate prediction t.c. prenda anche le gt dalla batch e non da file.
-Inoltre, bisogna modificare la parte di convert_to_coco_format per prendere le gt.
-
-In realtà se converto la funzione evaluate_prediciton in modo che prenda direttamente  
-- input_frame = torch.stack([item["events_vg"] for item in imgs]).to(self.device)
-- targets = torch.stack([item["BB"] for item in imgs]).to(self.device),
-Non si ha bisogno di alcun altro metodo, se non quello per convertire tutto in formato COCO. Vediamo.
-"""
-
-
-# Example usage:
-"""
-# How to use the new COCO metrics calculation:
-
-# 1. During evaluation loop:
-evaluator = DSECEvaluator(dataloader, img_size, confthre, nmsthre, num_classes)
-
-for batch in dataloader:
-    input_frame = torch.stack([item["events_vg"] for item in batch])
-    targets = torch.stack([item["BB"] for item in batch])
-    img_info = [item["img_metas"] for item in batch]
-    
-    # Method 1: Evaluate single batch
-    ap50_95, ap50, summary = evaluator.evaluate_single_batch(model, input_frame, targets, img_info)
-    print(f"Batch AP@50:95: {ap50_95:.4f}, AP@50: {ap50:.4f}")
-    
-    # Method 2: Calculate metrics directly from predictions
-    model.eval()
-    with torch.no_grad():
-        outputs, _ = model(input_frame)
-        outputs = postprocess(outputs, num_classes, confthre, nmsthre)
-        
-    ap50_95, ap50, summary = evaluator.calculate_coco_metrics(outputs, targets, img_info)
-    print(f"Direct calculation - AP@50:95: {ap50_95:.4f}, AP@50: {ap50:.4f}")
-    print(summary)
-
-# Important notes:
-# 1. Make sure your targets are in the correct format: [x1, y1, x2, y2, class_id]
-# 2. Make sure img_info contains 'orig_shape' and optionally 'img_id' and 'filename'
-# 3. The method handles batch processing automatically
-# 4. Results are the same metrics as COCO evaluation (AP@IoU=0.5:0.95 and AP@IoU=0.5)
-"""
