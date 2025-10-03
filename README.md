@@ -111,14 +111,14 @@ The DSEC-Night and Cityscapes datasets are currently supported. To prepare them 
     - [X] modules on main (no assert there pls)
     - [X] clean and understandable
 - [X] Add training events on cityscapes with the IC from CMDA
-- [X] Finish logging per class AP and AR
+- [ ] Fix DSECNight
+- [ ] check dsec-det no event on bbox
 - [ ] Fix multimodal training -> refactoring -> sub class of unimodal.
-
+- [ ] Make the logger uniform for all the framework (probably the one in dsec_evaluator)
 - [ ] in custom, get the output frame dims in input (for now it only works with 512x512)
 
 - [ ] check for validity of VGs
  
-- [ ] Make the logger uniform for all the framework (probably loguru)
 - [ ] Add segmentation task (low prio)
 - [ ] Add same build from config as mmcv.
 
