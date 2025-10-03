@@ -111,6 +111,7 @@ The DSEC-Night and Cityscapes datasets are currently supported. To prepare them 
     - [X] modules on main (no assert there pls)
     - [X] clean and understandable
 - [X] Add training events on cityscapes with the IC from CMDA
+- [ ] make unimodal agnostic to the losses defined in the model head, so make the model head agnostic too (use like tot_loss, dict, output), where dict contain all the specific losses. 
 - [ ] Fix DSECNight
 - [ ] check dsec-det no event on bbox
 - [ ] Fix multimodal training -> refactoring -> sub class of unimodal.
