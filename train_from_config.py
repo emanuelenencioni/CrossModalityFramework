@@ -27,6 +27,7 @@ from dataset.dsec import DSECDataset, collate_ssl
 from dataset import dataloader_builder as dl_builder
 from utils.helpers import DEBUG, set_seed
 from utils import argparser as argp
+from evaluator import eval_builder
 
 
 def init_wandb(cfg):
@@ -89,5 +90,6 @@ if __name__ == "__main__":
     else:
         trainer = Trainer(model,train_dl, opti, criterion, device,  CFG, root_folder=dir_path, wandb_log=wandb_log, pretrained_checkpoint=pretrained_checkpoint, scheduler=schdlr)
     in_size = cfg['model']['backbone']['input_size']
-    evaluator = CityscapesEvaluator(test_dl, img_size=(in_size, in_size), confthre=0.3, nmsthre=0.6, num_classes=cfg['dataset']['bb_num_classes'], device=device)
+    evaluator = eval_builder.build_from_config(test_dl, cfg)
+    #evaluator = CityscapesEvaluator(test_dl, img_size=(in_size, in_size), confthre=0.3, nmsthre=0.6, num_classes=cfg['dataset']['bb_num_classes'], device=device)
     trainer.train(evaluator=evaluator)

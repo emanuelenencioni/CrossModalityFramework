@@ -39,7 +39,9 @@ model:
     output_indices: [3, 4] # indices of the output layers to be used
     #dropout: 0.25
 
-
+evaluator:
+  conf_threshold: 0.3
+  nms_threshold: 0.45
 
 # Optimizer parameters
 optimizer:
