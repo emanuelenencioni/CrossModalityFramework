@@ -31,7 +31,7 @@ class CityscapesDataset(CustomDataset):
                'person', 'rider', 'car', 'truck', 'bus', 'train', 'motorcycle',
                'bicycle')
     DSEC_DET_CLASSES = { # map to DSEC detection classes, order of labels is important, correspond to the same as dsec. so it needed to be the same index.
-        11: "person", #the person class
+        11: "person", # this index is the corrisponding index in cityscapes
         12: "rider", 
         13: "car",
         15: "bus",
