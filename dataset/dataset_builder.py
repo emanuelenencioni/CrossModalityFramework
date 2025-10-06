@@ -34,7 +34,7 @@ def build_from_config(cfg):
         raise ValueError("Specify the 'name' parameter under dataset in the cfg.")
     
     aug = None
-    if dataset_cfg.get('use_augmentations', False):
+    if dataset_cfg.get('use_augmentations', True):
         if 'augmentations' in dataset_cfg.keys() and dataset_cfg['augmentations'] is not None:
             # Build the augmentation pipeline from config
             aug_cfg = dataset_cfg['augmentations']
