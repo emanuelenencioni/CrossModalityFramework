@@ -34,10 +34,11 @@ def init_wandb(cfg):
     aug = "aug" if cfg['dataset'].get('use_augmentations', False) else  "noaug"
     schedl_name = cfg['scheduler']['name'] if 'name' in cfg['scheduler'].keys() else ""
     run_name = cfg['model']['backbone']['name'] if ('name' in cfg['model']['backbone'].keys() and cfg['model']['backbone']['name'] != '') else model.get_name()
+    type_ = "uni"
     if cfg.get('dual_modality', True):
         type_ = "dual" if cfg['dual_modality'] else "uni"
     else:
-        type_ += "_event" if 'events' in cfg['model']['outputs'] else "_rgb"
+        type_ += "_event" if 'events' in cfg['dataset']['outputs'] else "_rgb"
     run_name = f"{run_name}_{type_}_{cfg['optimizer']['name']}_{schedl_name}_{aug}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     
     if 'logger' in cfg.keys() and 'name' in cfg['logger'].keys():
