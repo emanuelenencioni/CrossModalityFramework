@@ -7,6 +7,7 @@ from functools import reduce
 from PIL import Image
 import random
 import functools
+import cv2
 
 #import mmcv
 import numpy as np
@@ -475,6 +476,35 @@ class DSECDataset(Dataset):
             if output['img_metas']['flip']:
                 output['img_metas']['flip_direction'] = 'horizontal'
             output['img_metas'] = DataContainer(output['img_metas'], cpu_only=True)
+
+        if DEBUG >= 3: 
+            if 'BB' in self.outputs and ('image' in self.outputs or 'events' in self.outputs):
+                # Work directly in 440x640 space, then resize everything together
+                # Load original image at 640x440 (test mode dimensions)
+                if 'image' in self.outputs:
+                    img_original = Image.open(image_path).convert('BGR')
+                    #img_np = cv2.cvtColor(img_original, cv2.COLOR_RGB2BGR)
+                    img_original = img_original.resize((640, 440), resample=Image.BILINEAR)
+                if 'events' in self.outputs:
+                    img_original = output['events']
+
+                img_np = np.array(img_original)
+                
+                for i in range(self.max_labels):
+                    if output['BB'][i,0] < 0 or output['BB'][i,3] <= 0 or output['BB'][i,4] <= 0:
+                        continue
+                    x1 = int(output['BB'][i,1].item())
+                    y1 = int(output['BB'][i,2].item())
+                    x2 = int(x1+output['BB'][i,3].item())
+                    y2 = int(y1+output['BB'][i,4].item())
+
+                    cls_id = int(output['BB'][i,0].item())
+                    cv2.rectangle(img_np, (x1,y1), (x2,y2), (0,255,0), 2)
+                    cv2.putText(img_np, str(self.DSEC_DET_CLASSES[cls_id]), (x1,y1+20), 
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,0,255), 2)
+                
+                os.makedirs("debug_dsec", exist_ok=True)
+                cv2.imwrite(f"debug_dsec/{idx}_{sequence_name}_{now_image_index}.png", img_np)
 
         return output
 
