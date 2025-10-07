@@ -376,34 +376,6 @@ class DSECDataset(Dataset):
             mask = bounding_boxes['t'] == timestamps[now_image_index]
             filtered_boxes = bounding_boxes[mask]
             
-            # Calculate scaling factors based on the processing pipeline
-            # Original image coordinates need to be scaled to 512x512
-            if 'label' not in self.outputs:  # Training mode with data augmentation
-                # For training: events go from 640x480 -> crop -> resize to 512x512
-                # Images go from original -> resize to 960x720 -> crop -> resize to 512x512
-                events_scale_x = 512.0 / 640.0  # 0.8
-                events_scale_y = 512.0 / 480.0  # 1.067
-                
-                # For image coordinate space (if bboxes are in image coordinates)
-                # This depends on original image size - DSEC images are typically ~1440x1080
-                # But since we resize to 960x720 first, we use that as reference
-                image_scale_x = 512.0 / 960.0  # 0.533
-                image_scale_y = 512.0 / 720.0  # 0.711
-                
-                # Use events coordinate scaling (since bboxes seem to be in events coordinate space)
-                scale_x = events_scale_x
-                scale_y = events_scale_y
-                
-                # Get the crop offsets that were used for events_vg
-                crop_offset_x = x  # random crop x offset
-                crop_offset_y = y  # random crop y offset
-            else:  # Test mode
-                # In test mode, events are cropped to 440 height
-                scale_x = 640.0 / 640.0  # No x scaling in test mode
-                scale_y = 440.0 / 480.0  # Scale y to 440
-                crop_offset_x = 0
-                crop_offset_y = 0
-            
             for i in range(len(filtered_boxes)):
                 if i >= self.max_labels: 
                     break
@@ -414,58 +386,13 @@ class DSECDataset(Dataset):
                 bbox_y = float(filtered_boxes[i][2]) 
                 bbox_w = float(filtered_boxes[i][3])
                 bbox_h = float(filtered_boxes[i][4])
-                
-                # Apply coordinate scaling to match processed image size
-                if 'label' not in self.outputs:  # Training mode
-                    # Apply the same crop offset that was used for events_vg
-                    bbox_x_cropped = bbox_x - crop_offset_x
-                    bbox_y_cropped = bbox_y - crop_offset_y
-                    
-                    # Check if bbox is still visible after cropping
-                    if (bbox_x_cropped + bbox_w <= 0 or bbox_y_cropped + bbox_h <= 0 or
-                        bbox_x_cropped >= self.crop_size[0] or bbox_y_cropped >= self.crop_size[1]):
-                        # Bbox is outside crop region, skip it
-                        continue
-                    
-                    # Clip to crop boundaries
-                    bbox_x_cropped = max(0, bbox_x_cropped)
-                    bbox_y_cropped = max(0, bbox_y_cropped)
-                    bbox_w_cropped = min(bbox_w, self.crop_size[0] - bbox_x_cropped)
-                    bbox_h_cropped = min(bbox_h, self.crop_size[1] - bbox_y_cropped)
-                    
-                    # Apply horizontal flip if needed (same as events_vg)
-                    if flip_flag:
-                        # Flip x coordinate: new_x = crop_width - (old_x + width)
-                        bbox_x_flipped = self.crop_size[0] - (bbox_x_cropped + bbox_w_cropped)
-                        bbox_x_cropped = bbox_x_flipped
-                    
-                    # Scale from crop_size to after_crop_resize_size (512x512)
-                    final_scale_x = self.after_crop_resize_size[0] / self.crop_size[0]
-                    final_scale_y = self.after_crop_resize_size[1] / self.crop_size[1]
-                    
-                    x_scaled = bbox_x_cropped * final_scale_x
-                    y_scaled = bbox_y_cropped * final_scale_y
-                    w_scaled = bbox_w_cropped * final_scale_x
-                    h_scaled = bbox_h_cropped * final_scale_y
-                    
-                else:  # Test mode
-                    x_scaled = bbox_x * scale_x
-                    y_scaled = bbox_y * scale_y
-                    w_scaled = bbox_w * scale_x
-                    h_scaled = bbox_h * scale_y
-                
-                # Ensure coordinates are within final bounds
-                x_scaled = max(0, min(x_scaled, 512 - w_scaled))
-                y_scaled = max(0, min(y_scaled, 512 - h_scaled))
-                w_scaled = max(0, min(w_scaled, 512 - x_scaled))
-                h_scaled = max(0, min(h_scaled, 512 - y_scaled))
-                
+
                 # Store scaled coordinates
                 bb_out[i,0] = torch.tensor(class_id)
-                bb_out[i,1] = torch.tensor(x_scaled)
-                bb_out[i,2] = torch.tensor(y_scaled)
-                bb_out[i,3] = torch.tensor(w_scaled)
-                bb_out[i,4] = torch.tensor(h_scaled)
+                bb_out[i,1] = torch.tensor(bbox_x)
+                bb_out[i,2] = torch.tensor(bbox_y)
+                bb_out[i,3] = torch.tensor(bbox_w)
+                bb_out[i,4] = torch.tensor(bbox_h)
 
             output['BB'] = bb_out
 
