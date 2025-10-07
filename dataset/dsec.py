@@ -172,12 +172,19 @@ class DSECDataset(Dataset):
             self.events_bins = 5
             print('self.events_bins: 5-->avg 1')
         self.events_clip_range = events_clip_range
-        self.crop_size = (crop_size[1], crop_size[0]) if 'label' not in outputs else crop_size  # (H, W)-->(W, H)
+        
+      
+        
+        self.outputs = outputs
+        if 'labels' in self.outputs:
+            self.outputs.remove('labels')
+            self.outputs.append('label')
+
+        self.crop_size = (crop_size[1], crop_size[0]) if 'label' not in self.outputs else crop_size  # (H, W)-->(W, H)
         self.after_crop_resize_size = (after_crop_resize_size[1], after_crop_resize_size[0]) \
-            if 'label' not in outputs else after_crop_resize_size  # (H, W)-->(W, H)
+            if 'label' not in self.outputs else after_crop_resize_size  # (H, W)-->(W, H)
         self.image_change_range = image_change_range
         assert self.image_change_range in {1, 2}
-        self.outputs = outputs
         self.output_num = output_num
         self.CLASSES, self.PALETTE = classes, palette
         self.dataset_txt = np.loadtxt(self.dataset_txt_path, dtype=str, encoding='utf-8')
