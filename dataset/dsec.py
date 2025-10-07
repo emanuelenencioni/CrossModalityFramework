@@ -222,6 +222,8 @@ class DSECDataset(Dataset):
                 self.cached_vg = True
                 print("Found cached voxel grids...")
         
+        self.cached_ev_seq_name = '' # using for caching h5 file when loading events from same sequence
+        self.x_ev, self.y_ev, self.p_ev = None, None, None
 
     def __len__(self):
         """Total number of samples of data."""
@@ -243,10 +245,10 @@ class DSECDataset(Dataset):
         output = dict()
 
         if 'label' not in self.outputs:
-            flip_flag = True if random.random() < 0.5 else False
-            x = random.randint(0, 640 - self.crop_size[0])  # error 680
+            flip_flag = False#True if random.random() < 0.5 else False
+            x = 0 #random.randint(0, 640 - self.crop_size[0])  # error 680
             # y = random.randint(0, 440 - self.crop_size[1])
-            y = random.randint(0, 480 - self.crop_size[1])
+            y = 0 #random.randint(0, 480 - self.crop_size[1])
 
         if 'path' in self.outputs:
             output['path'] = image_path
@@ -260,8 +262,9 @@ class DSECDataset(Dataset):
             # image_x = random.randint(0, _resize_size[0] - 512)  # error 680 # AND HERE WHY RANDOM CROPPING HERE?
             # image_y = random.randint(0, _resize_size[1] - 512)
             # image = image.crop(box=(image_x, image_y, image_x + 512, image_y + 512))
-            if flip_flag:
-                image = self.HorizontalFlip(image)
+            if 'label' not in self.outputs:  # do Data Augmentation
+                if flip_flag:
+                    image = self.HorizontalFlip(image)
             image = self.image_transform(image)
             output['image'] = image
             if DEBUG>2: print(f"image loading: {((time.perf_counter()-start_time)*1000).__round__(3)} ms")
@@ -279,6 +282,40 @@ class DSECDataset(Dataset):
                 warp_image = self.image_transform(warp_image_pil)[:, :440]
             output['warp_image'] = warp_image
 
+        if 'events' or 'event' in self.outputs: #event frames
+            if self.x_ev is None or self.cached_ev_seq_name != sequence_name:
+                self.cached_ev_seq_name = sequence_name
+                h5_file = h5py.File(events_h5_path, 'r')
+                # if self.rectify_events:
+                #     rectify_map_path = image_path.replace('images', 'events')[:-20] + 'rectify_map.h5'
+                #     rectify_map = h5py.File(rectify_map_path, 'r')
+                #     self.rectify_map = np.asarray(rectify_map['rectify_map'])
+
+                self.x_ev = np.asarray(h5_file['events/x'])
+                self.y_ev = np.asarray(h5_file['events/y'])
+                self.p_ev = np.asarray(h5_file['events/p'])
+            # Get events for current frame
+            images_to_events_index = np.loadtxt(
+                image_path.split('left/rectified')[0] + 'images_to_events_index.txt',
+                dtype=str, encoding='utf-8')
+            events_finish_index = int(images_to_events_index[now_image_index])
+            
+            if self.events_num > 0:
+                events_start_index = events_finish_index - self.events_num
+            else:
+                events_start_index = int(images_to_events_index[now_image_index - self.image_change_range])
+            
+            # Slice events for this frame
+            x_ev_frame = torch.from_numpy(self.x_ev[events_start_index:events_finish_index])
+            y_ev_frame = torch.from_numpy(self.y_ev[events_start_index:events_finish_index])
+            p_ev_frame = torch.from_numpy(self.p_ev[events_start_index:events_finish_index])
+
+            # Create RGB frame with enhanced contrast
+            events_rgb = self._events_to_rgb_frame(
+                x_ev_frame, y_ev_frame, p_ev_frame, 
+                height=480, width=640, clip_percentile=99)
+            output['events'] = events_rgb
+ 
         if 'warp_img_self_res' in self.outputs:
             if self.isr_type in {'raw', 'denoised'}:
                 if self.isr_type == 'raw':
