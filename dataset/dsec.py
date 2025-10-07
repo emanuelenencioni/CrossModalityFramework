@@ -139,6 +139,18 @@ class DSECDataset(Dataset):
                'traffic light', 'traffic sign', 'vegetation', 'terrain', 'sky',
                'person', 'rider', 'car', 'truck', 'bus', 'train', 'motorcycle',
                'bicycle')
+    
+    DSEC_DET_CLASSES = [
+        "person",
+        "rider", 
+        "car",
+        "bus",
+        "truck",
+        "bicycle",
+        "motorcycle",
+        "train",
+        "-1"
+    ]
 
     PALETTE = [[128, 64, 128], [244, 35, 232], [70, 70, 70], [102, 102, 156],
                [190, 153, 153], [153, 153, 153], [250, 170, 30], [220, 220, 0],
