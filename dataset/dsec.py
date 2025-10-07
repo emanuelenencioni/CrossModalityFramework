@@ -594,6 +594,58 @@ class DSECDataset(Dataset):
         #         os.remove(file_name)
         return eval_results
 
+    def _events_to_rgb_frame(self, x_ev, y_ev, p_ev, height=440, width=640, clip_percentile=99):
+        """
+        Convert raw events to RGB frame using net polarity.
+        Positive events add +1, negative events add -1.
+        Final sign determines color.
+        """
+        # Create a single accumulation frame
+        net_frame = np.zeros((height, width), dtype=np.float32)
+        
+        # Convert to numpy
+        x_np = x_ev.cpu().numpy().astype(np.int32)
+        y_np = y_ev.cpu().numpy().astype(np.int32)
+        p_np = p_ev.cpu().numpy().astype(np.int32)
+        
+        # Filter out events outside bounds
+        valid_mask = (x_np >= 0) & (x_np < width) & (y_np >= 0) & (y_np < height)
+        x_np = x_np[valid_mask]
+        y_np = y_np[valid_mask]
+        p_np = p_np[valid_mask]
+        
+        # Convert polarity: 0 -> -1, 1 -> +1
+        polarity_signed = p_np * 2 - 1  # Maps 0->-1, 1->+1
+    
+        # Accumulate with sign
+        np.add.at(net_frame, (y_np, x_np), polarity_signed)
+    
+        # Separate positive and negative net values
+        pos_frame = np.clip(net_frame, 0, None)
+        neg_frame = np.clip(-net_frame, 0, None)  # Make positive for visualization
+        
+        # Normalize
+        def normalize_frame(frame, percentile):
+            if frame.max() > 0:
+                nonzero = frame[frame > 0]
+                if len(nonzero) > 0:
+                    p_max = np.percentile(nonzero, percentile)
+                    frame_norm = np.clip(frame / p_max * 255, 0, 255).astype(np.uint8)
+                else:
+                    frame_norm = np.zeros_like(frame, dtype=np.uint8)
+            else:
+                frame_norm = np.zeros_like(frame, dtype=np.uint8)
+            return frame_norm
+        
+        neg_normalized = normalize_frame(neg_frame, clip_percentile)
+        pos_normalized = normalize_frame(pos_frame, clip_percentile)
+        
+        # Create RGB frame
+        rgb_frame = np.zeros((height, width, 3), dtype=np.uint8)
+        rgb_frame[:, :, 0] = neg_normalized  # Red
+        rgb_frame[:, :, 2] = pos_normalized  # Blue
+    
+        return rgb_frame
 
 if __name__ == '__main__':
     events_bins_5_avg_1 = False
