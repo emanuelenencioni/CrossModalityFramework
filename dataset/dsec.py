@@ -172,13 +172,14 @@ class DSECDataset(Dataset):
             self.events_bins = 5
             print('self.events_bins: 5-->avg 1')
         self.events_clip_range = events_clip_range
-        
-      
-        
+
         self.outputs = outputs
         if 'labels' in self.outputs:
             self.outputs.remove('labels')
             self.outputs.append('label')
+        if 'images' in self.outputs:
+            self.outputs.remove('images')
+            self.outputs.append('image')
 
         self.crop_size = (crop_size[1], crop_size[0]) if 'label' not in self.outputs else crop_size  # (H, W)-->(W, H)
         self.after_crop_resize_size = (after_crop_resize_size[1], after_crop_resize_size[0]) \
@@ -465,29 +466,19 @@ class DSECDataset(Dataset):
                 # Work directly in 440x640 space, then resize everything together
                 # Load original image at 640x440 (test mode dimensions)
                 if 'image' in self.outputs:
-                    img_original = Image.open(image_path).convert('BGR')
-                    #img_np = cv2.cvtColor(img_original, cv2.COLOR_RGB2BGR)
+                    img_original = Image.open(image_path).convert('RGB')
                     img_original = img_original.resize((640, 440), resample=Image.BILINEAR)
+                    img_frame = cv2.cvtColor(np.array(img_original), cv2.COLOR_RGB2BGR)
                 if 'events' in self.outputs:
                     img_original = output['events']
+                    event_frame = np.array(img_original)
 
-                img_np = np.array(img_original)
-                
-                for i in range(self.max_labels):
-                    if output['BB'][i,0] < 0 or output['BB'][i,3] <= 0 or output['BB'][i,4] <= 0:
-                        continue
-                    x1 = int(output['BB'][i,1].item())
-                    y1 = int(output['BB'][i,2].item())
-                    x2 = int(x1+output['BB'][i,3].item())
-                    y2 = int(y1+output['BB'][i,4].item())
-
-                    cls_id = int(output['BB'][i,0].item())
-                    cv2.rectangle(img_np, (x1,y1), (x2,y2), (0,255,0), 2)
-                    cv2.putText(img_np, str(self.DSEC_DET_CLASSES[cls_id]), (x1,y1+20), 
-                               cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,0,255), 2)
-                
+                img_frame, event_frame = self._save_bbox_plus_frame(bboxes=output['BB'], img_frame=img_frame.copy(), ev_frame=event_frame.copy())
                 os.makedirs("debug_dsec", exist_ok=True)
-                cv2.imwrite(f"debug_dsec/{idx}_{sequence_name}_{now_image_index}.png", img_np)
+                if img_frame is not None:
+                    cv2.imwrite(f"debug_dsec/{idx}_{sequence_name}_{now_image_index}_img.png", img_frame)
+                if event_frame is not None:
+                    cv2.imwrite(f"debug_dsec/{idx}_{sequence_name}_{now_image_index}_ev.png", event_frame)
 
         return output
 
@@ -659,6 +650,31 @@ class DSECDataset(Dataset):
         rgb_frame[:, :, 2] = pos_normalized  # Blue
     
         return rgb_frame
+
+    def _save_bbox_plus_frame(self, bboxes, img_frame=None, ev_frame=None):
+        """
+        Save bounding boxes on the image and event frames.
+        """
+        for i in range(self.max_labels):
+            if bboxes[i,0] < 0 or bboxes[i,3] <= 0 or bboxes[i,4] <= 0:
+                continue
+            x1 = int(bboxes[i,1].item())
+            y1 = int(bboxes[i,2].item())
+            x2 = int(x1+bboxes[i,3].item())
+            y2 = int(y1+bboxes[i,4].item())
+
+            cls_id = int(bboxes[i,0].item())
+            if(img_frame is not None):
+                cv2.rectangle(img_frame, (x1,y1), (x2,y2), (0,255,0), 2)
+                cv2.putText(img_frame, str(self.DSEC_DET_CLASSES[cls_id]), (x1,y1+20), 
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,0,255), 2)
+            if(ev_frame is not None):
+                cv2.rectangle(ev_frame, (x1,y1), (x2,y2), (0,255,0), 2)
+                cv2.putText(ev_frame, str(self.DSEC_DET_CLASSES[cls_id]), (x1,y1+20), 
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,0,255), 2)
+        
+        return img_frame, ev_frame
+    
 
 if __name__ == '__main__':
     events_bins_5_avg_1 = False
