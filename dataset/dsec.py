@@ -161,12 +161,13 @@ class DSECDataset(Dataset):
     def __init__(self, dataset_txt_path, events_num=-1, events_bins=5, events_clip_range=None, crop_size=(400, 400),
                  after_crop_resize_size=(512, 512), image_change_range=1, outputs={'events_vg', 'image', 'img_metas'}, output_num=1,
                  classes=CLASSES, palette=PALETTE, isr_shift_pixel=4, test_mode=False, events_bins_5_avg_1=False,
-                 isr_parms='', isr_type='real_time', enforce_3_channels=True, shift_type='rightdown', hard_cache=False, max_labels=50):
+                 isr_parms='', isr_type='real_time', enforce_3_channels=True, shift_type='rightdown', hard_cache=False, max_labels=50, output_size=512):
         self.max_labels = max_labels
         self.dataset_txt_path = dataset_txt_path
         self.events_num = events_num
         self.events_bins = events_bins
         self.events_bins_5_avg_1 = events_bins_5_avg_1
+        self.output_size = output_size
         if self.events_bins_5_avg_1:
             assert events_bins == 1
             self.events_bins = 5
@@ -315,8 +316,8 @@ class DSECDataset(Dataset):
             events_rgb = self._events_to_rgb_frame(
                 x_ev_frame, y_ev_frame, p_ev_frame, 
                 height=480, width=640, clip_percentile=99)
-            output['events'] = events_rgb
- 
+            
+            output['events'] = self._rescale_frame_output(events_rgb)
         if 'warp_img_self_res' in self.outputs:
             if self.isr_type in {'raw', 'denoised'}:
                 if self.isr_type == 'raw':
@@ -465,15 +466,17 @@ class DSECDataset(Dataset):
             if 'BB' in self.outputs and ('image' in self.outputs or 'events' in self.outputs):
                 # Work directly in 440x640 space, then resize everything together
                 # Load original image at 640x440 (test mode dimensions)
+                img_frame, event_frame = None, None
                 if 'image' in self.outputs:
-                    img_original = Image.open(image_path).convert('RGB')
-                    img_original = img_original.resize((640, 440), resample=Image.BILINEAR)
+                    distorted_path = image_path.replace('rectified', 'distorted')
+                    img_original = Image.open(distorted_path).convert('RGB')
+                    img_original = img_original.resize((640, 480), resample=Image.BILINEAR)
                     img_frame = cv2.cvtColor(np.array(img_original), cv2.COLOR_RGB2BGR)
                 if 'events' in self.outputs:
                     img_original = output['events']
                     event_frame = np.array(img_original)
 
-                img_frame, event_frame = self._save_bbox_plus_frame(bboxes=output['BB'], img_frame=img_frame.copy(), ev_frame=event_frame.copy())
+                img_frame, event_frame = self._save_bbox_plus_frame(bboxes=output['BB'], img_frame=img_frame, ev_frame=event_frame)
                 os.makedirs("debug_dsec", exist_ok=True)
                 if img_frame is not None:
                     cv2.imwrite(f"debug_dsec/{idx}_{sequence_name}_{now_image_index}_img.png", img_frame)
@@ -655,6 +658,12 @@ class DSECDataset(Dataset):
         """
         Save bounding boxes on the image and event frames.
         """
+        if img_frame is not None:
+            imgf = img_frame.copy()
+        else: imgf = None
+        if ev_frame is not None:
+            evf = ev_frame.copy()
+        else: evf = None
         for i in range(self.max_labels):
             if bboxes[i,0] < 0 or bboxes[i,3] <= 0 or bboxes[i,4] <= 0:
                 continue
@@ -665,16 +674,16 @@ class DSECDataset(Dataset):
 
             cls_id = int(bboxes[i,0].item())
             if(img_frame is not None):
-                cv2.rectangle(img_frame, (x1,y1), (x2,y2), (0,255,0), 2)
-                cv2.putText(img_frame, str(self.DSEC_DET_CLASSES[cls_id]), (x1,y1+20), 
+                cv2.rectangle(imgf, (x1,y1), (x2,y2), (0,255,0), 2)
+                cv2.putText(imgf, str(self.DSEC_DET_CLASSES[cls_id]), (x1,y1+20), 
                             cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,0,255), 2)
             if(ev_frame is not None):
-                cv2.rectangle(ev_frame, (x1,y1), (x2,y2), (0,255,0), 2)
-                cv2.putText(ev_frame, str(self.DSEC_DET_CLASSES[cls_id]), (x1,y1+20), 
+                cv2.rectangle(evf, (x1,y1), (x2,y2), (0,255,0), 2)
+                cv2.putText(evf, str(self.DSEC_DET_CLASSES[cls_id]), (x1,y1+20), 
                             cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,0,255), 2)
-        
-        return img_frame, ev_frame
-    
+
+        return imgf, evf
+
 
 if __name__ == '__main__':
     events_bins_5_avg_1 = False
