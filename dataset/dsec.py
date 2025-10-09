@@ -9,6 +9,12 @@ import random
 import functools
 import cv2
 
+#local utils
+from .utils.transforms import SquarePad
+
+#global utils
+from utils import visualization as visual
+from utils import boxes
 #import mmcv
 import numpy as np
 # from mmcv.utils import print_log
@@ -140,7 +146,7 @@ class DSECDataset(Dataset):
                'person', 'rider', 'car', 'truck', 'bus', 'train', 'motorcycle',
                'bicycle')
     
-    DSEC_DET_CLASSES = [
+    DETECTION_CLASSES = [
         "person",
         "rider", 
         "car",
@@ -151,7 +157,7 @@ class DSECDataset(Dataset):
         "train",
         "-1"
     ]
-
+    _COLORS = boxes._COLORS
     PALETTE = [[128, 64, 128], [244, 35, 232], [70, 70, 70], [102, 102, 156],
                [190, 153, 153], [153, 153, 153], [250, 170, 30], [220, 220, 0],
                [107, 142, 35], [152, 251, 152], [70, 130, 180], [220, 20, 60],
@@ -161,13 +167,13 @@ class DSECDataset(Dataset):
     def __init__(self, dataset_txt_path, events_num=-1, events_bins=5, events_clip_range=None, crop_size=(400, 400),
                  after_crop_resize_size=(512, 512), image_change_range=1, outputs={'events_vg', 'image', 'img_metas'}, output_num=1,
                  classes=CLASSES, palette=PALETTE, isr_shift_pixel=4, test_mode=False, events_bins_5_avg_1=False,
-                 isr_parms='', isr_type='real_time', enforce_3_channels=True, shift_type='rightdown', hard_cache=False, max_labels=50, output_size=512):
+                 isr_parms='', isr_type='real_time', enforce_3_channels=True, shift_type='rightdown', hard_cache=False, max_labels=50, model_in_size=512):
         self.max_labels = max_labels
         self.dataset_txt_path = dataset_txt_path
         self.events_num = events_num
         self.events_bins = events_bins
         self.events_bins_5_avg_1 = events_bins_5_avg_1
-        self.output_size = output_size
+        self.model_in_size = model_in_size
         if self.events_bins_5_avg_1:
             assert events_bins == 1
             self.events_bins = 5
@@ -196,6 +202,8 @@ class DSECDataset(Dataset):
         # img_norm_cfg = dict(mean=[123.675, 116.28, 103.53], std=[58.395, 57.12, 57.375], to_rgb=True)
         image_transform = [standard_transforms.ToTensor(), standard_transforms.Normalize(*self.mean_std)]
         self.image_transform = standard_transforms.Compose(image_transform)
+        obj_det_transf = [SquarePad(), standard_transforms.Resize(self.model_in_size), standard_transforms.ToTensor(), standard_transforms.Normalize(*self.mean_std)]
+        self.obj_det_transform = standard_transforms.Compose(obj_det_transf)
         self.totensor_transform = standard_transforms.Compose([standard_transforms.ToTensor()])
         self.HorizontalFlip = standard_transforms.RandomHorizontalFlip(p=1)
         self.rectify_events = True
@@ -258,17 +266,22 @@ class DSECDataset(Dataset):
         now_image_index = int(image_path.split('/')[-1].split('.')[0])
         if 'image' in self.outputs:
             if DEBUG>2: start_time= time.perf_counter() #TODO: Understand WTF is happening here
-            image = Image.open(image_path).convert('RGB')
-            _resize_size = (720, 540)
-            image = image.resize(size=_resize_size, resample=Image.BILINEAR)
-            # image_x = random.randint(0, _resize_size[0] - 512)  # error 680 # AND HERE WHY RANDOM CROPPING HERE?
-            # image_y = random.randint(0, _resize_size[1] - 512)
-            # image = image.crop(box=(image_x, image_y, image_x + 512, image_y + 512))
-            if 'label' not in self.outputs:  # do Data Augmentation
-                if flip_flag:
-                    image = self.HorizontalFlip(image)
-            image = self.image_transform(image)
-            output['image'] = image
+            if 'BB' in self.outputs: # so object detection task:
+                dist_img_path = image_path.replace('rectified', 'distorted')
+                image = Image.open(dist_img_path).convert('RGB')
+                output['image'] = self.obj_det_transform(image)
+            else: #'seg_map' in self.outputs:    
+                image = Image.open(image_path).convert('RGB')
+                _resize_size = (self.input_size[0],self.input_size[1]) if hasattr(self, 'input_size') else (640, 480)
+                image = image.resize(size=_resize_size, resample=Image.BILINEAR)
+                # image_x = random.randint(0, _resize_size[0] - 512)  # error 680 # AND HERE WHY RANDOM CROPPING HERE?
+                # image_y = random.randint(0, _resize_size[1] - 512)
+                # image = image.crop(box=(image_x, image_y, image_x + 512, image_y + 512))
+                if 'label' not in self.outputs:  # do Data Augmentation
+                    if flip_flag:
+                        image = self.HorizontalFlip(image)
+                image = self.image_transform(image)
+                output['image'] = image
             if DEBUG>2: print(f"image loading: {((time.perf_counter()-start_time)*1000).__round__(3)} ms")
 
         if 'warp_image' in self.outputs:
@@ -284,7 +297,7 @@ class DSECDataset(Dataset):
                 warp_image = self.image_transform(warp_image_pil)[:, :440]
             output['warp_image'] = warp_image
 
-        if 'events' or 'event' in self.outputs: #event frames
+        if 'events' in self.outputs or 'event' in self.outputs:
             if self.x_ev is None or self.cached_ev_seq_name != sequence_name:
                 self.cached_ev_seq_name = sequence_name
                 h5_file = h5py.File(events_h5_path, 'r')
@@ -316,8 +329,8 @@ class DSECDataset(Dataset):
             events_rgb = self._events_to_rgb_frame(
                 x_ev_frame, y_ev_frame, p_ev_frame, 
                 height=480, width=640, clip_percentile=99)
-            
-            output['events'] = self._rescale_frame_output(events_rgb)
+
+            output['events'] = self.obj_det_transform(events_rgb)
         if 'warp_img_self_res' in self.outputs:
             if self.isr_type in {'raw', 'denoised'}:
                 if self.isr_type == 'raw':
@@ -355,19 +368,20 @@ class DSECDataset(Dataset):
             output['19classes'] = _19classes
 
         if 'label' in self.outputs: 
-            label_name = '{}labels/{}_{:06d}_grey_gtFine_labelTrainIds.png'.format(
-                image_path.split('images/left/rectified')[0],
-                sequence_name, now_image_index)
-            label = Image.open(label_name)
-            label = np.asarray(label, dtype=np.float32)
-            label = torch.from_numpy(label)
-            label = torch.round(label).long()
-            label = label[:440, :]
-            output['label'] = label
+            # label_name = '{}labels/{}_{:06d}_grey_gtFine_labelTrainIds.png'.format(
+            #     image_path.split('images/left/rectified')[0],
+            #     sequence_name, now_image_index)
+            # label = Image.open(label_name)
+            # label = np.asarray(label, dtype=np.float32)
+            # label = torch.from_numpy(label)
+            # label = torch.round(label).long()
+            # label = label[:440, :]
+            output['label'] = "dummy_label"#label
 
             # TODO: here need to be BB and classes. 
         if 'BB' in self.outputs:
             bb_out = torch.zeros((self.max_labels, 5))
+            bb_out[:] = -1  # to identify empty bbs
             images_to_events_index = np.loadtxt(image_path.split('left/rectified')[0] + 'images_to_events_index.txt',
                                                     dtype=str, encoding='utf-8')
             timestamps = np.loadtxt(image_path.split('left/rectified')[0]+"timestamps.txt", dtype='uint64')
@@ -395,6 +409,16 @@ class DSECDataset(Dataset):
                 bb_out[i,2] = torch.tensor(bbox_y)
                 bb_out[i,3] = torch.tensor(bbox_w)
                 bb_out[i,4] = torch.tensor(bbox_h)
+                # Bbox are for 640x480 frame, need to be scaled to model input size, careful with padding
+                if self.model_in_size != 640:
+                    #bb_out[i,2] = bb_out[i,2] + np.abs(self.model_in_size-480) / 2
+                    scale = self.model_in_size / 640
+                    bb_out[i,1] = bb_out[i,1] * scale
+                    bb_out[i,2] = bb_out[i,2] * scale
+                    bb_out[i,3] = bb_out[i,3] * scale
+                    bb_out[i,4] = bb_out[i,4] * scale
+                    # handling padding (square image input to the model)
+                    bb_out[i,2] = bb_out[i,2] + (self.model_in_size - int(scale*480)) / 2
 
             output['BB'] = bb_out
 
@@ -468,14 +492,15 @@ class DSECDataset(Dataset):
                 # Load original image at 640x440 (test mode dimensions)
                 img_frame, event_frame = None, None
                 if 'image' in self.outputs:
-                    distorted_path = image_path.replace('rectified', 'distorted')
-                    img_original = Image.open(distorted_path).convert('RGB')
-                    img_original = img_original.resize((640, 480), resample=Image.BILINEAR)
-                    img_frame = cv2.cvtColor(np.array(img_original), cv2.COLOR_RGB2BGR)
-                if 'events' in self.outputs:
-                    img_original = output['events']
-                    event_frame = np.array(img_original)
+                    # distorted_path = image_path.replace('rectified', 'distorted')
+                    # img_original = Image.open(distorted_path).convert('RGB')
+                    # img_original = img_original.resize((640, 480), resample=Image.BILINEAR)
+                    # img_frame = cv2.cvtColor(np.array(img_original), cv2.COLOR_RGB2BGR)
+                    img_frame = output['image']
 
+                if 'events' in self.outputs:
+                    event_frame = output['events']
+                
                 img_frame, event_frame = self._save_bbox_plus_frame(bboxes=output['BB'], img_frame=img_frame, ev_frame=event_frame)
                 os.makedirs("debug_dsec", exist_ok=True)
                 if img_frame is not None:
@@ -651,38 +676,79 @@ class DSECDataset(Dataset):
         rgb_frame = np.zeros((height, width, 3), dtype=np.uint8)
         rgb_frame[:, :, 0] = neg_normalized  # Red
         rgb_frame[:, :, 2] = pos_normalized  # Blue
-    
-        return rgb_frame
+        #from numpy to PIL image
+        return Image.fromarray(rgb_frame)
+        
 
     def _save_bbox_plus_frame(self, bboxes, img_frame=None, ev_frame=None):
         """
         Save bounding boxes on the image and event frames.
         """
         if img_frame is not None:
-            imgf = img_frame.copy()
+            imgf = self.gt_to_vis(img_frame, {'BB': bboxes})
         else: imgf = None
         if ev_frame is not None:
-            evf = ev_frame.copy()
+            evf = self.gt_to_vis(ev_frame, {'BB': bboxes})
         else: evf = None
-        for i in range(self.max_labels):
-            if bboxes[i,0] < 0 or bboxes[i,3] <= 0 or bboxes[i,4] <= 0:
-                continue
-            x1 = int(bboxes[i,1].item())
-            y1 = int(bboxes[i,2].item())
-            x2 = int(x1+bboxes[i,3].item())
-            y2 = int(y1+bboxes[i,4].item())
-
-            cls_id = int(bboxes[i,0].item())
-            if(img_frame is not None):
-                cv2.rectangle(imgf, (x1,y1), (x2,y2), (0,255,0), 2)
-                cv2.putText(imgf, str(self.DSEC_DET_CLASSES[cls_id]), (x1,y1+20), 
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,0,255), 2)
-            if(ev_frame is not None):
-                cv2.rectangle(evf, (x1,y1), (x2,y2), (0,255,0), 2)
-                cv2.putText(evf, str(self.DSEC_DET_CLASSES[cls_id]), (x1,y1+20), 
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,0,255), 2)
 
         return imgf, evf
+
+    def vis(self, img, boxes, scores, cls_ids, conf=0.5, class_names=None):
+        for i in range(len(boxes)):
+            box = boxes[i]
+            cls_id = int(cls_ids[i])
+            if cls_id < 0: continue
+            cls_name = self.DETECTION_CLASSES[cls_id]
+            score = scores[i]
+            if score < conf:
+                continue
+            x0 = int(box[0])
+            y0 = int(box[1])
+            x1 = int(box[2])
+            y1 = int(box[3])
+
+            color = (self._COLORS[cls_id] * 255).astype(np.uint8).tolist()
+            text = '{}:{:.1f}%'.format(cls_name, score * 100)
+            txt_color = (0, 0, 0) if np.mean(self._COLORS[cls_id]) > 0.5 else (255, 255, 255)
+            font = cv2.FONT_HERSHEY_SIMPLEX
+
+            txt_size = cv2.getTextSize(text, font, 0.4, 1)[0]
+            cv2.rectangle(img, (x0, y0), (x1, y1), color, 2)
+
+            txt_bk_color = (self._COLORS[cls_id] * 255 * 0.7).astype(np.uint8).tolist()
+            cv2.rectangle(
+                img,
+                (x0, y0 + 1),
+                (x0 + txt_size[0] + 1, y0 + int(1.5*txt_size[1])),
+                txt_bk_color,
+                -1
+            )
+            cv2.putText(img, text, (x0, y0 + txt_size[1]), font, 0.4, txt_color, thickness=1)
+
+        return img
+    
+    def  gt_to_vis(self,frame, results):
+        """
+        Visualize ground truth bounding boxes on the original image. the vis method need x1, y1, x2, y2 format
+        Args: frame (torch.Tensor): Original image tensor
+              results (dict): Results dictionary containing 'BB' key with bounding boxes
+        Returns: cv2  Image with drawn bounding boxes
+        """
+        labels = []
+        # Convert bboxes from [class_id, x1, y1, w, h] to [x1, y1, x2, y2]
+        bboxes_xyxy = []
+        for bbox in results['BB']:
+            class_id, x1, y1, w, h = bbox
+            if class_id < 0: continue
+            x2, y2 = x1 + w, y1 + h
+            bboxes_xyxy.append([x1, y1, x2, y2])
+            labels.append(int(class_id))
+        
+        frame_ = visual.tensor_to_cv2_image(frame)
+        
+        cv_frame = self.vis(frame_, bboxes_xyxy, [1]*len(bboxes_xyxy), labels, conf=0.1, class_names=self.DETECTION_CLASSES)
+
+        return frame_.get()
 
 
 if __name__ == '__main__':
