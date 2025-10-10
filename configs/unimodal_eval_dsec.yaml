@@ -1,0 +1,15 @@
+dataset:
+  name: DSEC_Night
+  data_dir: data
+  batch_size: 20
+  num_workers: 10
+  outputs: ["images", "BB", "img_metas", "labels"] # these mandatory for unimodal training
+  custom_classes: True # if True, the model will use custom classes defined in the dataset
+  bb_num_classes: 8 # according to DSEC
+  train_split: "night_dataset.txt"
+  val_split: "night_test_dataset.txt"
+  
+
+evaluator:
+  conf_threshold: 0.3
+  nms_threshold: 0.45
