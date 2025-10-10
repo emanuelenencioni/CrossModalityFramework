@@ -20,6 +20,7 @@ from utils.helpers import DEBUG
 import cv2
 import wandb
 from PIL import Image
+
 from utils import visualization as viz
 
 import torch
@@ -30,6 +31,8 @@ from pycocotools.cocoeval import COCOeval
 
 from .coco_classes import COCO_CLASSES
 from .dsec_det_classes import DSEC_DET_CLASSES
+from dataset.dsec import DSECDataset
+
 from utils import (
     gather,
     is_main_process,
@@ -106,7 +109,7 @@ class DSECEvaluator:
         per_class_AP: bool = True,
         per_class_AR: bool = True,
         device = "cpu",
-        input_format = "cxcywh"  # or "xyxy"
+        input_format = "xywh"  # or "xyxy"
     ):
         """
         Args:
@@ -119,6 +122,7 @@ class DSECEvaluator:
             per_class_AP: Show per class AP during evalution or not. Default to True.
             per_class_AR: Show per class AR during evalution or not. Default to True.
         """
+        self.class_names = DSECDataset.DETECTION_CLASSES
         self.dataloader = dataloader
         self.img_size = img_size
         self.conf_thre = confthre
@@ -256,7 +260,7 @@ class DSECEvaluator:
 
             if DEBUG >= 3 and self.debug_images_folder is not None and images_info[1] is not None:
                 img, img_info = images_info[1][i], images_info[0][i]
-                vis_img = self.visual(viz.tensor_to_cv2_image(img), output[i], img_info.data['orig_shape'], cls_conf=self.conf_thre, classes=self.dataloader.dataset.DSEC_DET_CLASSES)
+                vis_img = self.visual(viz.tensor_to_cv2_image(img), output[i], img_info.data['orig_shape'], cls_conf=self.conf_thre)
                 cv2.imwrite(str(self.debug_images_folder / f"{img_info.data['idx']}.png"), vis_img)
         return output
 
@@ -305,7 +309,7 @@ class DSECEvaluator:
 
         return data_list
 
-    def create_coco_gt_from_batch(self, targets, image_info):
+    def create_coco_gt_from_batch(self, targets_batch, images_info):
         """
         Create COCO-style ground truth annotations from batch data
         Args:
@@ -316,10 +320,10 @@ class DSECEvaluator:
         images = []
         annotations = []
         annotation_id = 1
-        
-        for target in targets:
+
+        for targets, image_info in zip(targets_batch, images_info):
             # Add image info
-            orig_height, orig_width = 512,512 #img_info.data['orig_shape'] TODO only for testing it's ok
+            orig_height, orig_width = image_info.data['orig_shape']  # TODO only for testing it's ok
             img_id = int(image_info.data['idx'])  # Ensure it's an integer
                 
             image_data = {
@@ -330,51 +334,56 @@ class DSECEvaluator:
             }
             images.append(image_data)
             # Process target bounding boxes
-            target = target.cpu() if hasattr(target, 'cpu') else target
             
             # Assuming target format is [class_id, x1, y1, x2, y2] or similar
             # Adjust this based on your actual target format
-            if target is not None and len(target.shape) == 2:
-                for ann_idx in range(target.shape[0]):
-                    bbox = target[ann_idx]
-                    if len(bbox) >= 5:  # class_id, x1, y1, x2, y2, 
-                        if self.input_format == "xyxy":
-                            class_id, x1, y1, x2, y2 = bbox[:5]
-                            w = x2 - x1
-                            h = y2 - y1
-                        else:   
-                            class_id, xc, yc, w, h= bbox[:5]
-                            x1 = xc - w * 0.5
-                            y1 = yc - h * 0.5
+            for target in targets:
+                if target is None:
+                    continue
+                target = target.cpu() if hasattr(target, 'cpu') else target
+                if len(target) >= 5:  # convert to class_id, x1, y1, x2, y2
+                    if self.input_format == "xyxy":
+                        class_id, x1, y1, w, y2 = target[:5]
+                        w = x2 - x1
+                        h = y2 - y1
+                    elif self.input_format == "cxcywh":   
+                        class_id, xc, yc, w, h= target[:5]
+                        x1 = xc - w * 0.5
+                        y1 = yc - h * 0.5
+                    elif self.input_format == "xywh":   
+                        class_id, x1, y1, w, h= target[:5]
+                        x2 = x1 + w
+                        y2 = y1 + h
 
-                        # Convert to COCO format (x, y, width, height)
-                        coco_bbox = [
-                            float(x1), 
-                            float(y1), 
-                            float(w), 
-                            float(h)
-                        ]
+                    # Convert to COCO format (x1, y1, x2, y2)
+                    if class_id < 0: continue
+                    coco_bbox = [
+                        float(x1), 
+                        float(y1), 
+                        float(x2), 
+                        float(y2)
+                    ]
 
-                        area = float(w * h)
-                        # Skip very small bounding boxes
-                        if area <= 0: continue
-                        
-                        annotation = {
-                            "id": annotation_id,
-                            "image_id": img_id,
-                            "category_id": int(class_id),
-                            "bbox": coco_bbox,
-                            "area": area,
-                            "iscrowd": 0,
-                            "segmentation": []
-                        }
-                        annotations.append(annotation)
-                        annotation_id += 1
+                    area = float(w * h)
+                    # Skip very small bounding boxes
+                    if area <= 0: continue
+                    
+                    annotation = {
+                        "id": annotation_id,
+                        "image_id": img_id,
+                        "category_id": int(class_id),
+                        "bbox": coco_bbox,
+                        "area": area,
+                        "iscrowd": 0,
+                        "segmentation": []
+                    }
+                    annotations.append(annotation)
+                    annotation_id += 1
         categories = []
         for i in range(self.num_classes):
             categories.append({
                 "id": i,
-                "name": f"class_{i}",
+                "name": f"{self.class_names[i]}",
                 "supercategory": "object"
             })
         
@@ -388,6 +397,7 @@ class DSECEvaluator:
             },
             "licenses": [],
             "images": images,
+            "categories": categories,
             "annotations": annotations,
         }
         
