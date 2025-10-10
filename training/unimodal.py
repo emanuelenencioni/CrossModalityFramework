@@ -123,7 +123,6 @@ class Trainer:
         step_dict["step"] = self.step
         self._log(step_dict)
         self.optimizer.step()
-        loss_list = [tot_loss]
         return [tot_loss]+list(losses.values()) # python 3.7+ maintains dict order
 
     def _train_epoch(self, pbar=None):
