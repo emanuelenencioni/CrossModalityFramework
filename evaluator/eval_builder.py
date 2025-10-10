@@ -25,9 +25,9 @@ def build_from_config(data_loader, cfg: Dict[str, Any]):
     confthre = cfg_eval['conf_threshold']
     nmsthre = cfg_eval['nms_threshold']
     if dataset_type == 'dsec_night':
-        return DSECEvaluator(data_loader, img_size=(in_size, in_size), confthre=confthre, nmsthre=nmsthre, num_classes=cfg['dataset']['bb_num_classes'])
+        return DSECEvaluator(data_loader, img_size=(in_size, in_size), confthre=confthre, nmsthre=nmsthre, num_classes=cfg['dataset']['bb_num_classes'], device=cfg['device'])
     elif dataset_type == 'cityscapes':
-        return CityscapesEvaluator(data_loader, img_size=(in_size, in_size), confthre=confthre, nmsthre=nmsthre, num_classes=cfg['dataset']['bb_num_classes'])
+        return CityscapesEvaluator(data_loader, img_size=(in_size, in_size), confthre=confthre, nmsthre=nmsthre, num_classes=cfg['dataset']['bb_num_classes'], device=cfg['device'])
     else:
         raise ValueError(f"Unsupported dataset type: {dataset_type}. "
                          f"Supported types are: 'dsec', 'cityscapes'")
