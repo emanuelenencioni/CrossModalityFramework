@@ -654,13 +654,12 @@ class CustomDataset(Dataset):
                 print(f"Error drawing bounding boxes: {e}")
             return image_tensor
 
-    def vis(self, img, boxes, scores, cls_ids, conf=0.5, class_names=None):
+    def vis(self, img, boxes, scores, cls_ids, conf=0.5):
         for i in range(len(boxes)):
             box = boxes[i]
             cls_id = int(cls_ids[i])
             if cls_id < 0: continue
             cls_name = [key for key, value in self.DETECTION_CLASSES.items() if value == cls_id][0] if self.DETECTION_CLASSES is not None else str(cls_id)
-            cls_id = class_names[cls_name]
             score = scores[i]
             if score < conf:
                 continue
