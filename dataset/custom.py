@@ -708,7 +708,7 @@ class CustomDataset(Dataset):
         
         frame_ = visual.tensor_to_cv2_image(frame)
         
-        cv_frame = self.vis(frame_, bboxes_xyxy, [1]*len(bboxes_xyxy), labels, conf=0.1, class_names=self.DETECTION_CLASSES)
+        cv_frame = self.vis(frame_, bboxes_xyxy, [1]*len(bboxes_xyxy), labels, conf=0.1)
 
         return frame_.get()
 

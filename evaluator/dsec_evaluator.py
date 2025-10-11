@@ -274,7 +274,7 @@ class DSECEvaluator:
         cls = output[:, 6]
         scores = output[:, 4] * output[:, 5]
 
-        vis_res = self.dataloader.dataset.vis(img, bboxes, scores, cls, cls_conf, classes)
+        vis_res = self.dataloader.dataset.vis(img, bboxes, scores, cls, cls_conf)
         return vis_res
 
     def convert_to_coco_format(self, output_batch, images_info):

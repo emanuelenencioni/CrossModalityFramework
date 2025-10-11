@@ -168,5 +168,3 @@ class CityscapesEvaluator(DSECEvaluator):
         }
         
         return coco_gt
-
-        
