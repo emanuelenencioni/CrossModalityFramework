@@ -57,6 +57,7 @@ class Trainer:
                 self.total_epochs = int(self.trainer_cfg['epochs']) + self.epoch - 1
                 if DEBUG >= 1: logger.info(f"Resuming training from epoch {self.epoch}")
         
+        self.device = device
         
         # Get loss keys from model
         self._get_loss_keys()
@@ -68,8 +69,6 @@ class Trainer:
         else: 
             self.checkpoint_interval = cfg['trainer'].get('checkpoint_interval', 0)
 
-        self.device = device
-        
         self.scheduler = scheduler
         self.wandb_log = True if wandb.run is not None else False
         if self.wandb_log: assert wandb.run is not None, "Wandb run must be initialized before setting wandb_log to True"
@@ -120,9 +119,9 @@ class Trainer:
         if DEBUG >= 1: 
             logger.info(f"loss values: {[f'{k}: {v}' for k, v in losses.items()]}")
         
-        step_dict = {key: v for key, v in zip(["loss/batch(sum)"]+self.losses_keys, [tot_loss]+list(losses.values()))}
+        step_dict = {key: v for key, v in zip(["batch(sum)"]+self.losses_keys, [tot_loss]+list(losses.values()))}
         step_dict["step"] = self.step
-        self._log(step_dict)
+        self._log(step_dict, "loss")
         self.optimizer.step()
         return [tot_loss]+list(losses.values()) # python 3.7+ maintains dict order
 
@@ -142,9 +141,9 @@ class Trainer:
         total_losses = np.array(total_losses)
         avg_losses = np.mean(total_losses, axis=0)  #
         if DEBUG >= 1: logger.info(f"Epoch loss: {avg_losses[0]:.4f}")
-        epoch_dict = {key: avg_loss for key, avg_loss in zip(["loss/epoch"]+self.losses_keys, avg_losses)}
+        epoch_dict = {key: avg_loss for key, avg_loss in zip(["epoch"]+self.losses_keys, avg_losses)}
         epoch_dict["epoch"] = self.epoch
-        self._log(epoch_dict)
+        self._log(epoch_dict, "epoch")
         
         return avg_losses[0]
 
@@ -276,20 +275,26 @@ class Trainer:
                 wandb.log(classAR)
 
 
-    def _log(self, message):
+    def _log(self, message, prefix= ""):
         if self.wandb_log:
-            wandb.log(message)
+            if prefix != "":
+                prefixed_message = {}
+                for k, v in message.items():
+                        prefixed_message[f"{prefix}/{k}"] = v
+                wandb.log(prefixed_message)
+            else:
+                wandb.log(message)
 
     def _get_loss_keys(self):
         if hasattr(self.model, 'loss_keys'):
             self.losses_keys = self.model.loss_keys
             if DEBUG >= 1: logger.info(f"Loss keys from model attribute: {self.losses_keys}")
         else:
-            self.model.eval()
+            self.model.train()
             with torch.no_grad():
                 try:
                     dummy_input = torch.randn(1, 3, 224, 224).to(self.device)  # Adjust shape as needed
-                    dummy_targets = torch.randn(1, 4).to(self.device)  # Adjust shape as needed
+                    dummy_targets = torch.randn(1, 10, 5).to(self.device)  # Adjust shape as needed
                     _, _, dummy_losses = self.model(dummy_input, dummy_targets)
                     
                     assert isinstance(dummy_losses, dict), "Model forward pass did not return a dict of losses"
@@ -299,4 +304,3 @@ class Trainer:
                 except Exception as e:
                     logger.warning(f"Could not extract loss keys from dummy forward pass: {e}")
                     self.losses_keys = []
-            self.model.train()
