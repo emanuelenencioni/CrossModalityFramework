@@ -5,225 +5,349 @@ import torch.optim as optim
 from torch.utils.data import DataLoader, Dataset
 from torchvision import models
 from tqdm import tqdm
+from loguru import logger
+import numpy as np
 
-from utils.helpers import DEBUG, Timing
+from utils.helpers import DEBUG, Timing, deep_dict_equal
 import time
 from datetime import datetime
 import sys
 import os
-# Training Loop
 import wandb
+from torch.optim.lr_scheduler import ReduceLROnPlateau
+from .unimodal import Trainer
 
 
-
-class DualModalityTrainer:
-    def __init__(self, model, dataloader, optimizer, criterion, device, cfg, root_folder, wandb_log=False, scheduler = None, patience=sys.maxsize, pretrained_checkpoint=None):
+class DualModalityTrainer(Trainer):
+    """
+    Trainer for dual modality models (e.g., RGB + Events).
+    Inherits from Trainer and overrides only the dual-modality specific methods.
+    """
+    
+    def __init__(self, model, dataloader, optimizer, criterion, device, cfg, root_folder, wandb_log=False, scheduler=None, patience=-1, pretrained_checkpoint=None):
+        """
+        Initialize DualModalityTrainer.
         
-
-        self.model = model
-        self.dataloader = dataloader
-        self.optimizer = optimizer
-        self.scheduler = scheduler 
+        Args:
+            model: Either a tuple/list of (model1, model2) for separate models,
+                   or a single dual-modality model
+            dataloader: Training dataloader
+            optimizer: Optimizer instance
+            criterion: Contrastive loss function for aligning modalities
+            device: Device to train on
+            cfg: Configuration dictionary
+            root_folder: Root folder for saving checkpoints
+            wandb_log: Whether to log to wandb
+            scheduler: Learning rate scheduler (optional)
+            patience: Early stopping patience (optional)
+            pretrained_checkpoint: Checkpoint to resume from (optional)
+        """
+        # Handle dual model architecture
+        if isinstance(model, (tuple, list)):
+            self.model1, self.model2 = model
+            # For compatibility with parent class, set self.model to model1
+            model = self.model1
+        else:
+            # Single dual-modality model
+            self.model1 = model
+            self.model2 = None
+        self.losses_keys
+        # Store criterion for contrastive loss between modalities
         self.criterion = criterion
-        self.device = device
-        self.cfg = cfg
+        self.feature = cfg['criterion'].get('features', 'projected_feat')
 
-        if pretrained_checkpoint is not None:
-            if 'model_state_dict' in pretrained_checkpoint:
-                self.model.load_state_dict(pretrained_checkpoint['model_state_dict'])
-                if DEBUG>=1: print("Pre-trained model loaded successfully")
-            if 'optimizer_state_dict' in pretrained_checkpoint:
-                self.optimizer.load_state_dict(pretrained_checkpoint['optimizer_state_dict'])
-                if DEBUG>=1: print("Pre-trained optimizer state loaded successfully")
-            if 'scheduler_state_dict' in pretrained_checkpoint and cfg['trainer'].get('resume_scheduler', False):
-                scheduler_state = pretrained_checkpoint['scheduler_state_dict']
-                if scheduler_state is not None and self.scheduler is not None:
-                    self.scheduler.load_state_dict(scheduler_state)
-                    if DEBUG>=1: print("Pre-trained scheduler state loaded successfully")
+        # Call parent constructor
+        super().__init__(
+            model=model,
+            dataloader=dataloader,
+            optimizer=optimizer,
+            device=device,
+            cfg=cfg,
+            root_folder=root_folder,
+            wandb_log=wandb_log,
+            scheduler=scheduler,
+            patience=patience,
+            pretrained_checkpoint=pretrained_checkpoint
+        )
         
-        self.trainer_cfg = cfg['trainer']
-        assert 'epochs' in self.trainer_cfg.keys(), " specify 'epochs' trainer param"
-        self.epochs = int(self.trainer_cfg['epochs'])
-        # The cfg Must be the sub dict relative to 'trainer'
-        #assert 'log_interval' in cfg.keys(), "specify 'log_interval' trainer param"
-        #assert 'val_interval' in cfg.keys(), "specify 'val_interval' trainer param"
-
-        self.checkpoint_interval = int(self.trainer_cfg['checkpoint_interval']) if 'checkpoint_interval' in self.trainer_cfg.keys() else 0
-
+        # Override input type for dual modality
+        self.input_type = 'dual'  # Both RGB and events
         
-        self.wandb_log = wandb_log
-        if self.wandb_log: assert wandb.run is not None, "Wandb run must be initialized before setting wandb_log to True"
-        self.save_folder = root_folder +"/"+ self.trainer_cfg['save_folder'] if 'save_folder' in self.trainer_cfg.keys() and self.trainer_cfg['save_folder'] is not None else None
+        # Update model name for saving
+        if self.save_name is not None and self.model2 is not None:
+            model_name = f"{self.model1.__class__.__name__}_{self.model2.__class__.__name__}"
+            self.save_name = wandb.run.name if self.wandb_log else f"{model_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         
-        self.save_name = None
-        self.save_best_dir = None
-        if self.save_folder is not None:
-            if self.save_folder[-1] != '/':
-                self.save_folder = self.save_folder + '/'
-            self.save_best_dir = f"{self.save_folder}best/"
-            if not os.path.isdir(self.save_best_dir): os.makedirs(self.save_best_dir)
-
-            self.save_name = wandb.run.name if self.wandb_log else f"{self.model.name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-        else:
-            print("\033[93m"+"WARNING: the model will not be saved"+"\033[0m")
-
-        self.total_loss = 0
-        self.loss = 0
-
-        # patience
-        self.patience=patience
-        self.best_loss = float('inf')
-        self.counter = 0
-        self.current_step = 0
-        self.current_epoch = 0
-
+        # Store best parameters for both models
+        if self.model2 is not None:
+            self.best_params2 = self.model2.state_dict()
         
+        if DEBUG >= 1:
+            logger.info(f"DualModalityTrainer initialized with {'two separate models' if self.model2 else 'single dual-modality model'}") # TODO Can be
+
     def _train_step(self, batch):
-            rgbs = torch.stack([item["image"] for item in batch]).to(self.device)
-            events = torch.stack([item["events_vg"] for item in batch]).to(self.device)
-            rgb_proj, event_proj = self.model(rgbs, events)
-            self.loss = self.criterion(rgb_proj['projected_feat'], event_proj['projected_feat'])
-            self.optimizer.zero_grad()
-            self.loss.backward()
-            self.optimizer.step()
-
-    def _train_step_debug(self, batch):   
-        if(DEBUG>1): start_tm = time.perf_counter()# Timing
+        """
+        Single training step for dual modality.
+        Extracts both RGB and event data, forward through models, and computes contrastive loss.
         
+        Args:
+            batch: Batch of data containing 'image' and 'events'
+            
+        Returns:
+            List of losses [contrastive_loss]
+        """
+        # Extract modalities from batch
         rgbs = torch.stack([item["image"] for item in batch]).to(self.device)
-        events = torch.stack([item["events_vg"] for item in batch]).to(self.device)
-        if(DEBUG>1): 
-            end_tm = ((time.perf_counter()-start_tm)*1000).__round__(3)
-            print(f"frame extraction: {end_tm} ms")
-            if(self.wandb_log): wandb.log({"frame_extraction_time":end_tm},step=self.current_step)
-
-        if(DEBUG>1): start_tm = time.perf_counter()# Timing
-        rgb_proj, event_proj = self.model(rgbs, events)
-        if(DEBUG>1): 
-            end_tm = time.perf_counter()-start_tm
-            print(f"inference time: {((end_tm)*1000).__round__(3)} ms")
-            if(self.wandb_log): wandb.log({"inference_time":(end_tm*1000).__round__(3)}, step=self.current_step)
-
-        # Compute loss
-        if(DEBUG>1): start_tm = time.perf_counter()
-        
-        self.loss = self.criterion(rgb_proj['projected_feat'], event_proj['projected_feat'])
-        if(DEBUG>1): 
-            end_tm = time.perf_counter()-start_tm
-            print(f"calculating loss: {((end_tm)*1000).__round__(3)} ms")
-            if(self.wandb_log): wandb.log({"loss_time":(end_tm*1000).__round__(3)}, step=self.current_step)
-        # Backward
+        events = torch.stack([item["events"] for item in batch]).to(self.device)
+        targets = torch.stack([item["BB"] for item in batch]).to(self.device)
         self.optimizer.zero_grad()
-        if(DEBUG>1): start_tm = time.perf_counter()# Timing
-        
-        self.loss.backward()
-        if(DEBUG>1): 
-            end_tm = time.perf_counter()-start_tm
-            print(f"backprop time: {((end_tm)*1000).__round__(3)} ms")
-            if(self.wandb_log): wandb.log({"backprop_time":(end_tm*1000).__round__(3)}, step=self.current_step)
-        self.optimizer.step()        
-        pass
-
-    def _train_epoch(self, pbar=None):
-        start_tm = time.perf_counter()
-
-        for batch in self.dataloader:
-            if(DEBUG>1):
-                end_tm = time.perf_counter()-start_tm
-                print(f"batch loading: {((end_tm)*1000).__round__(3)} ms")
-                if(self.wandb_log): wandb.log({"batch_loading_time":(end_tm*1000).__round__(3)}, step=self.current_step)
-
-            if DEBUG>0: self._train_step_debug(batch)
-            else: self._train_step(batch)
-            
-            if pbar is not None: pbar.set_description(f"Training backbones, loss:{self.loss.item()}")
-            self.total_loss += self.loss.item()
-            if self.current_step % self.checkpoint_interval == 0 and self.current_step > 0 and self.save_folder is not None:
-                self._save_checkpoint()
-            if self.wandb_log:
-                wandb.log({"batch_loss": self.loss.item()}, step=self.current_step)
-
-                rgb_n, event_n = self.model.get_grad_norm()
-                wandb.log({"rgb_grad_norm": rgb_n}, step=self.current_step)
-                wandb.log({"event_grad_norm": event_n}, step=self.current_step)
-
-                rgb_n, event_n = self.model.get_weights_norm()
-                wandb.log({"rgb_weight_norm": rgb_n}, step=self.current_step)
-                wandb.log({"event_weight_norm": event_n}, step=self.current_step)
-            
-            self.current_step += 1
-
-            if pbar is not None: pbar.update(1)
-            if(DEBUG>1): start_tm = time.perf_counter()# Timing
-
-        
-    def train(self):
-        self.current_step = 0
-        self.model.train()
-        if DEBUG>2:
-            self._train_debug()
+        if self.model2 is not None:
+            # Two separate models approach
+            out1,tot_loss1, losses_1 = self.model1(rgbs, targets)
+            out2,tot_loss2, losses_2 = self.model2(events, targets)
         else:
-            for i in range(self.epochs):  
-                self.total_loss = 0
-                pbar = tqdm(total=len(self.dataloader),desc=f"Training backbones, loss:{self.loss}")
-                self._train_epoch(pbar)
-                epoch_loss = self.total_loss / len(self.dataloader)
-                if epoch_loss < self.best_loss:
-                    self.best_loss = epoch_loss
-                    self.counter = 0
-                    if self.save_folder is not None: self._save_best()
-                else: self.counter+=1
-                if self.counter >= self.patience: #If the counter exceeds the patience value
-                    print("Early stopping triggered")
-                    return #Stop the training loop
+            # Single dual-modality model
+            out1,tot_loss1, losses_1 = self.model1(rgbs, events)
+            out2,tot_loss2, losses_2 = None, None, None
 
-                if self.wandb_log:
-                    wandb.log({"average_loss": epoch_loss}, step=self.current_step)
+        # Compute loss between modalities
+        bb_loss = self.criterion(out1[self.feature], out2[self.feature])
+        tot_loss = bb_loss + tot_loss1 + (tot_loss2 if tot_loss2 is not None else 0)
+        tot_loss.backward()
+        self.optimizer.step()
 
-                if self.scheduler is not None: self.scheduler.step()
-                self.current_epoch += 1
-            wandb.finish()
-            print("training finished")
+        # Log step
+        if DEBUG >= 1:
+            logger.info(f"Contrastive loss: {bb_loss.item():.4f}")
+        step_dict = {key: v for key, v in zip(["batch(sum)"]+self.losses_keys, [tot_loss]+[bb_loss]+list(losses_1.values()))} # THIS dict order total, multimodal, model1 losses, model2 losses
+        step_dict["step"] = self.step
+        self._log(step_dict, 'loss')
 
-    def _train_debug(self):
-        from torch.profiler import profile, record_function, ProfilerActivity
-        activties = [ProfilerActivity.CPU, ProfilerActivity.CUDA]
-        if self.wandb_log: sys.exit("ERROR - wandb logger not yet available in debug mode, please deactivate it")
-        with profile(activities=activties) as prof:
-            if len(self.dataloader) < 25:
-                self._train_epoch()
+        return [tot_loss] + [bb_loss] + list(losses_1.values()) + list(losses_2.values()) if losses_2 is not None else []
+
+    def train(self, evaluator=None, eval_loss=False):
+        """
+        Main training loop for dual modality.
+        Can optionally evaluate both models separately.
+        """
+        start_epoch = self.epoch
+        
+        for epoch in range(start_epoch, self.total_epochs):
+            self.model1.train()
+            if self.model2 is not None:
+                self.model2.train()
+            
+            start_time = time.time()
+            
+            with tqdm(total=len(self.dataloader), desc=f"Epoch {self.epoch}/{self.total_epochs}") as pbar:
+                self.model1.train()
+                if self.model2 is not None:
+                    self.model2.train()
+                avg_loss = self._train_epoch(pbar)
+            
+            epoch_time = time.time() - start_time
+            
+            # Step scheduler
+            if self.scheduler is not None:
+                if isinstance(self.scheduler, ReduceLROnPlateau):
+                    self.scheduler.step(avg_loss)
+                else:
+                    self.scheduler.step()
+            
+            # Save checkpoint at epoch intervals
+            if (self.checkpoint_interval_epochs > 0 and (epoch + 1) % self.checkpoint_interval_epochs == 0):
+                if self.save_folder is not None:
+                    self._save_checkpoint(epoch)
+                else:
+                    logger.warning("The model will not be saved - saving folder need to be specified")
+            
+            if DEBUG >= 1:
+                logger.info(f"Epoch {epoch+1} completed in {epoch_time:.2f} seconds")
+            
+            # Log learning rate
+            self._log({"lr": self.optimizer.param_groups[0]['lr'], "epoch": self.epoch})
+            
+            # Evaluation
+            if evaluator is not None:
+                if self.model2 is not None:
+                    # Evaluate both models separately
+                    stats1, classAP1, classAR1 = evaluator.evaluate(self.model1)
+                    stats2, classAP2, classAR2 = evaluator.evaluate(self.model2)
+                    
+                    if DEBUG >= 1:
+                        logger.info(f"Model1 (RGB) - AP50-95: {stats1[0]:.4f}, AP50: {stats1[1]:.4f}")
+                        logger.info(f"Model2 (Event) - AP50-95: {stats2[0]:.4f}, AP50: {stats2[1]:.4f}")
+                    
+                    # Log both models' metrics
+                    self._log_coco_metrics(stats1, classAP1, classAR1, prefix="model1_rgb")
+                    self._log_coco_metrics(stats2, classAP2, classAR2, prefix="model2_event")
+                else:
+                    # Evaluate single dual-modality model
+                    stats, classAP, classAR = evaluator.evaluate(self.model1)
+                    
+                    if DEBUG >= 1:
+                        ap50_95, ap50 = stats[0], stats[1]
+                        logger.info(f"AP50-95: {ap50_95:.4f}, AP50: {ap50:.4f}")
+                    
+                    self._log_coco_metrics(stats, classAP, classAR)
+            
+            # Check for improvement and update patience counter
+            if avg_loss < self.best_loss:
+                if DEBUG >= 1:
+                    logger.success(f"New best loss: {avg_loss:.4f} at epoch {self.epoch}")
+                
+                self.best_loss = avg_loss
+                self.best_epoch = self.epoch
+                self.best_params = self.model1.state_dict()
+                if self.model2 is not None:
+                    self.best_params2 = self.model2.state_dict()
+                self.best_optimizer = self.optimizer.state_dict()
+                self.best_sch_params = self.scheduler.state_dict() if self.scheduler is not None else None
+                self.patience_counter = 0  # Reset counter on improvement
+                
+                if self.save_folder is not None:
+                    self._save_best()
             else:
-                for i, batch in enumerate(self.dataloader):
-                    self._train_step_debug(batch)
-                    self.current_step += 1
-                    if i >= 25:
-                        break
-        print(prof.key_averages(group_by_input_shape=True).table(sort_by="cpu_time_total", row_limit=20))
+                self.patience_counter += 1
+                if DEBUG >= 1:
+                    logger.info(f"No improvement in loss. Patience: {self.patience_counter}/{self.patience}")
+                
+                # Check if patience exceeded
+                if self.patience > 0 and self.patience_counter >= self.patience:
+                    logger.warning(f"Early stopping triggered! No improvement for {self.patience} epochs.")
+                    logger.info(f"Best loss: {self.best_loss:.4f} at epoch {self.best_epoch}")
+                    break
+            
+            self.epoch += 1
+        
+        logger.success("Training finished.")
 
     def _save_best(self):
+        """Save the best model checkpoint (overrides parent to handle two models)."""
         save_path = f"{self.save_best_dir}{self.save_name}_best.pth"
+        
+        model_state = {
+            'model1': self.best_params
+        }
+        if self.model2 is not None:
+            model_state['model2'] = self.best_params2
+        
         torch.save({
-                'step': self.current_step,
-                'epoch': self.current_epoch,
-                'model_state_dict': self.model.state_dict(),
-                'optimizer_state_dict': self.optimizer.state_dict(),
-                'loss': self.loss,
-                # Optionally save scheduler state too
-                'scheduler_state_dict': self.scheduler.state_dict() if self.scheduler else None,
-                'config': self.cfg
-            }, save_path)
-        print(f"saved best model to {save_path}")
+            'epoch': self.best_epoch,
+            'model_state_dict': model_state,
+            'optimizer_state_dict': self.best_optimizer,
+            'scheduler_state_dict': self.best_sch_params,
+            'config': self.cfg
+        }, save_path)
+        logger.success(f"Saved best model to {save_path}")
     
-    def _save_checkpoint(self):
-        checkpoint_path = f"{self.save_folder}{self.save_name}_checkpoint_step_{self.current_step}.pth"
+    def _save_checkpoint(self, epoch):
+        """Save a training checkpoint (overrides parent to handle two models)."""
+        timestamp = datetime.now().strftime('%Y%m%d%H%M')
+        checkpoint_path = f"{self.save_folder}{self.save_name}_checkpoint_epoch_{epoch}_{timestamp}.pth"
+        
+        model_state = {
+            'model1': self.model1.state_dict()
+        }
+        if self.model2 is not None:
+            model_state['model2'] = self.model2.state_dict()
+        
         torch.save({
-                    'step': self.current_step,
-                    'epoch': self.current_epoch,  
-                    'model_state_dict': self.model.state_dict(),
-                    'optimizer_state_dict': self.optimizer.state_dict(),
-                    'loss': self.loss,
-                    # Optionally save scheduler state too
-                    'scheduler_state_dict': self.scheduler.state_dict() if self.scheduler else None,
-                    'config': self.cfg
-                }, checkpoint_path)
-        print(f"Checkpoint saved at step {self.current_step} to {checkpoint_path}")
+            'epoch': epoch,
+            'model_state_dict': model_state,
+            'optimizer_state_dict': self.optimizer.state_dict(),
+            'scheduler_state_dict': self.scheduler.state_dict() if self.scheduler is not None else None,
+            'criterion': self.criterion.params if hasattr(self.criterion, 'params') else None,
+            'config': self.cfg
+        }, checkpoint_path)
+        logger.success(f"Checkpoint saved at epoch {epoch} to {checkpoint_path}")
+
+    def load_model_state(self, file_path):
+        """Load model state from checkpoint (overrides parent to handle two models)."""
+        logger.info("Loading model...")
+        checkpoint = torch.load(file_path, map_location=torch.device(self.device))
+        
+        model_state = checkpoint['model_state_dict']
+        
+        if isinstance(model_state, dict) and 'model1' in model_state:
+            # Load both models
+            self.model1.load_state_dict(model_state['model1'])
+            if self.model2 is not None and 'model2' in model_state:
+                self.model2.load_state_dict(model_state['model2'])
+        else:
+            # Backward compatibility - single model state
+            self.model1.load_state_dict(model_state)
+        
+        self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        self.epoch = checkpoint['epoch']
+        if self.scheduler is not None and checkpoint.get('scheduler_state_dict') is not None:
+            self.scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+
+    def _log_coco_metrics(self, stats, classAP=None, classAR=None, prefix=""):
+        """Log COCO evaluation metrics with optional prefix for dual models."""
+        if self.wandb_log:
+            prefix_str = f"{prefix}/" if prefix else ""
+            wandb.log({
+                f"{prefix_str}AP/AP(50_95)": stats[0],
+                f"{prefix_str}AP/AP50": stats[1],
+                f"{prefix_str}AP/AP75": stats[2],
+                f"{prefix_str}AP/APs": stats[3],
+                f"{prefix_str}AP/APm": stats[4],
+                f"{prefix_str}AP/APl": stats[5],
+                f"{prefix_str}AR/AR1": stats[6],
+                f"{prefix_str}AR/AR10": stats[7],
+                f"{prefix_str}AR/AR100": stats[8],
+                f"{prefix_str}AR/ARs": stats[9],
+                f"{prefix_str}AR/ARm": stats[10],
+                f"{prefix_str}AR/ARl": stats[11],
+                "epoch": self.epoch
+            })
+            if classAP is not None:
+                classAP_prefixed = {f"{prefix_str}{k}": v for k, v in classAP.items()}
+                classAP_prefixed["epoch"] = self.epoch
+                wandb.log(classAP_prefixed)
+            if classAR is not None:
+                classAR_prefixed = {f"{prefix_str}{k}": v for k, v in classAR.items()}
+                classAR_prefixed["epoch"] = self.epoch
+                wandb.log(classAR_prefixed)
+
+    def _get_loss_keys(self):
+        """Override parent's loss key extraction for contrastive loss."""
+        self.losses_keys = ['contrastive_loss']
+        if DEBUG >= 1:
+            logger.info(f"Loss keys for dual modality: {self.losses_keys}")
+        
+
+
+    def _get_loss_keys(self):
+        lmodel1 = get_loss_keys_model(self.model1)
+        lmodel2 = get_loss_keys_model(self.model2) if self.model2 is not None else []
+        for i, k in enumerate(lmodel1):
+            lmodel1[i] = f"model1/{k}"
+        for i, k in enumerate(lmodel2):
+            lmodel2[i] = f"model2/{k}"
+        mm_loss_name = str(self.criterion.__class__.__name__).lower()
+        self.losses_keys = ['multimodal_'+mm_loss_name] + lmodel1 + lmodel2
+
+
+def get_loss_keys_model(model):
+    if hasattr(model, 'loss_keys'):
+            if DEBUG >= 1: logger.info(f"Loss keys from model attribute: {model.loss_keys}")
+            return model.loss_keys
+    else:
+        model.eval()
+        with torch.no_grad():
+            try:
+                device = next(model.parameters()).device
+                dummy_input = torch.randn(1, 3, 224, 224).to(device)  # Adjust shape as needed
+                dummy_targets = torch.randn(1, 4).to(device)  # Adjust shape as needed
+                _, _, dummy_losses = model(dummy_input, dummy_targets)
+
+                assert isinstance(dummy_losses, dict), "Model forward pass did not return a dict of losses"
+                losses_keys = list(dummy_losses.keys()) 
+                
+                if DEBUG >= 1: logger.info(f"Loss keys extracted: {losses_keys}")
+            except Exception as e:
+                logger.warning(f"Could not extract loss keys from dummy forward pass: {e}")
+                losses_keys = []
+        model.train()
