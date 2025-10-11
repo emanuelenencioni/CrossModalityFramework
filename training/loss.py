@@ -4,7 +4,7 @@ import torch.nn.functional as F
 import torch
 
 
-class CLIP_loss(nn.Module):
+class CLIP(nn.Module):
     """
         Implementation of the CLIP loss function (https://arxiv.org/pdf/2103.00020)
     """
@@ -142,7 +142,7 @@ def build_from_config(cfg):
 
     if criterion in ["clip", "clip_loss"]:
         cfg['learnable_loss'] = True
-        return CLIP_loss()
+        return CLIP()
     elif criterion in ["barlow_twins", "barlowtwins", "barlow_twins_loss", "barlow_twin", "barlowtwin"]:
         assert "lambda" in loss_cfg.keys(), "Missing lambda parameter in the configuration file"
         assert isinstance(loss_cfg["lambda"], float), "lambda_coeff must be a float"
