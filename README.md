@@ -141,8 +141,8 @@ def forward(self, x, targets=None):
     - [X] clean and understandable
 - [X] Add training events on cityscapes with the IC from CMDA
 - [X] make unimodal agnostic to the losses defined in the model head, so make the model head agnostic too (use like tot_loss, dict, output), where dict contain all the specific losses. 
-- [ ] Fix DSECNight
-- [ ] check dsec-det no event on bbox
+- [X] Fix DSECNight
+- [X] check dsec-det no event on bbox
 - [ ] Fix multimodal training -> refactoring -> sub class of unimodal.
 - [ ] Make the logger uniform for all the framework (probably the one in dsec_evaluator)
 - [ ] in custom, get the output frame dims in input (for now it only works with 512x512)
