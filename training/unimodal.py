@@ -18,12 +18,12 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 from utils.helpers import DEBUG, deep_dict_equal
 
 
+
 class Trainer:
-    def __init__(self, model, dataloader, optimizer, criterion, device, cfg, root_folder,wandb_log=False, scheduler=None, patience=-1, pretrained_checkpoint=None):
+    def __init__(self, model, dataloader, optimizer, device, cfg, root_folder,wandb_log=False, scheduler=None, patience=-1, pretrained_checkpoint=None):
         self.model = model
         self.dataloader = dataloader
         self.optimizer = optimizer
-        self.criterion = criterion
         self.epoch = 1
         self.cfg = cfg
         self.trainer_cfg = cfg['trainer']
@@ -56,6 +56,7 @@ class Trainer:
                 self.epoch = pretrained_checkpoint['epoch'] + 1
                 self.total_epochs = int(self.trainer_cfg['epochs']) + self.epoch - 1
                 if DEBUG >= 1: logger.info(f"Resuming training from epoch {self.epoch}")
+        
         
         # Get loss keys from model
         self._get_loss_keys()
