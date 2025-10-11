@@ -112,6 +112,7 @@ class Trainer:
     def _train_step(self, batch):
         input_frame = torch.stack([item[self.input_type] for item in batch]).to(self.device)
         targets = torch.stack([item["BB"] for item in batch]).to(self.device) #For now considering only object detection tasks
+        self.model.train()
         self.optimizer.zero_grad()
         _, tot_loss, losses = self.model(input_frame, targets)
         tot_loss.backward()
@@ -126,12 +127,9 @@ class Trainer:
         return [tot_loss]+list(losses.values()) # python 3.7+ maintains dict order
 
     def _train_epoch(self, pbar=None):
-        self.model.train()
-        self.total_loss = 0
         total_losses = []
         for batch in self.dataloader:
             losses = self._train_step(batch)
-            self.total_loss += losses[0].item()
             total_losses.append([loss.item() if not isinstance(loss, float) else loss for loss in losses])
             if pbar is not None:
                 pbar.set_description(f"Training model {self.model.get_name()}, loss:{losses[0].item():.4f}")
