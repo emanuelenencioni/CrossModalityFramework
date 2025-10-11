@@ -63,7 +63,7 @@ This guide provides instructions to set up and run the framework:
 
     Use existing templates as a reference.
     ### ⚠️⚠️⚠️ Warning ⚠️⚠️⚠️
-    The config `.yaml` file must include all the parameters defined in the argparse for them to take effect. Otherwise, the argument parsing WILL NOT WORK.  You can see the `yaml` file as the default arguments for your specific training.
+    The config `.yaml` file must include all the parameters defined in the argparse for them to take effect. Otherwise, the argument parsing WILL NOT WORK.  You can think of the `.yaml` file as containing the default arguments for your specific training run.
 
 3. **The losses**, two types:
     - **Unimodal Tasks:** Losses are computed within each head of the respective models, such as the "YoloXHead." A base class will be implemented soon to ensure a consistent interface across all heads. 
@@ -143,7 +143,8 @@ def forward(self, x, targets=None):
 - [X] make unimodal agnostic to the losses defined in the model head, so make the model head agnostic too (use like tot_loss, dict, output), where dict contain all the specific losses. 
 - [X] Fix DSECNight
 - [X] check dsec-det no event on bbox
-- [ ] Fix multimodal training -> refactoring -> sub class of unimodal.
+- [ ] Fix multimodal training 
+        [X] refactoring -> sub class of unimodal.
 - [ ] Make the logger uniform for all the framework (probably the one in dsec_evaluator)
 - [ ] in custom, get the output frame dims in input (for now it only works with 512x512)
 
