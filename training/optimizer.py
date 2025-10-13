@@ -14,12 +14,15 @@ def build_from_config(model, criterion, cfg):
         ValueError: If the specified optimizer 'name' in the configuration is not supported.
     """
     assert 'optimizer' in cfg.keys(), "'optimizer' params list missing in yaml file"
-    opti_cfg = cfg['optimizer']
-    if cfg.get("learnable_loss") is not None:
-        params = list(model.parameters()) + list(criterion.parameters())
-        print(criterion.parameters())
+    if cfg.get('dual_modality', True):
+        params = list(model[0].parameters()) + list(model[1].parameters())
     else:
         params = model.parameters()
+
+    opti_cfg = cfg['optimizer']
+    if cfg.get("learnable_loss") is not None:
+        params +=  list(criterion.parameters())
+        print(criterion.parameters())
 
     opti = opti_cfg['name'].lower()  # Convert to lowercase for case-insensitive matching
     if opti == 'adam':
