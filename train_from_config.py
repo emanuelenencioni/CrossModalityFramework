@@ -61,7 +61,8 @@ if __name__ == "__main__":
     set_seed(cfg)
 
     model = build_model_from_cfg(cfg)
-
+    
+    # MULTI MODALITY LOSS
     criterion = loss.build_from_config(cfg)
     if isinstance(model, tuple):
         params = list(model[0].parameters()) + list(model[1].parameters())
@@ -73,6 +74,7 @@ if __name__ == "__main__":
 
     wandb_log = init_wandb(cfg)
 
+    # Device
     if torch.cuda.is_available():
         device = cfg['device'] if 'device' in cfg.keys() else "cuda"
     else:
