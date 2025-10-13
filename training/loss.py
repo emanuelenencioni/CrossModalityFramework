@@ -129,13 +129,13 @@ def build_from_config(cfg):
     Returns:
         The loss criterion, and a boolean value indicating whether the loss criterion have learnable parameters
     """
-    if cfg["dual_modality"]:
-        assert 'loss' in cfg.keys(), "loss params list missing in yaml file"
+    if cfg.get('dual_modality', True):
+        assert 'multi_modality_loss' in cfg.keys(), "multi_modality_loss params list missing in yaml file"
     else:
-        if 'loss' not in cfg.keys():
-            print("\033[93mWarning - loss params list missing in yaml file, remember: this param is mandatory in DualModality\033[0m")
+        if 'multi_modality_loss' not in cfg.keys():
+            print("\033[93mWarning - multi_modality_loss params list missing in yaml file, remember: this param is mandatory in DualModality\033[0m")
             return None, False
-    loss_cfg = cfg['loss']
+    loss_cfg = cfg['multi_modality_loss']
 
     assert 'name' in loss_cfg.keys(), "specify 'name' loss param"
     criterion = loss_cfg['name'].lower()
