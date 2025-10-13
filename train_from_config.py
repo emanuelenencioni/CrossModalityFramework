@@ -7,12 +7,8 @@ import torch
 from datetime import datetime
 
 import wandb
-import argparse
-import random
-import numpy as np
+from loguru import logger
 
-from model.backbone import DualModalityBackbone, UnimodalBackbone
-from model.yolox_head import YOLOXHead
 from model.builder import build_model_from_cfg
 
 from training import optimizer,loss
@@ -20,8 +16,6 @@ from training.multimodal import DualModalityTrainer
 from training.unimodal import Trainer
 from training.scheduler import scheduler_builder
 
-from evaluator.dsec_evaluator import DSECEvaluator
-from evaluator.cityscapes_evaluator import CityscapesEvaluator
 import dataset.dataset_builder as dataset_builder
 from dataset.dsec import DSECDataset, collate_ssl
 from dataset import dataloader_builder as dl_builder
@@ -30,11 +24,16 @@ from utils import argparser as argp
 from evaluator import eval_builder
 
 
+
 def init_wandb(cfg):
     wandb_log = False
     aug = "aug" if cfg['dataset'].get('use_augmentations', False) else  "noaug"
     schedl_name = cfg['scheduler']['name'] if 'name' in cfg['scheduler'].keys() else ""
-    run_name = cfg['model']['backbone']['name'] if ('name' in cfg['model']['backbone'].keys() and cfg['model']['backbone']['name'] != '') else model.get_name()
+    if cfg.get('dual_modality', True):
+        run_name = cfg['model1']['backbone']['name'] if ('name' in cfg['model1']['backbone'].keys() and cfg['model1']['backbone']['name'] != '') else "model1"
+        run_name += f"_{cfg['model2']['backbone']['name']}" if ('name' in cfg['model2']['backbone'].keys() and cfg['model2']['backbone']['name'] != '') else "_model2"
+    else:
+        run_name = cfg['model']['backbone']['name'] if ('name' in cfg['model']['backbone'].keys() and cfg['model']['backbone']['name'] != '') else model.get_name()
     type_ = "uni"
     if cfg.get('dual_modality', True):
         type_ = "dual" if cfg['dual_modality'] else "uni"
@@ -64,7 +63,8 @@ if __name__ == "__main__":
     model = build_model_from_cfg(cfg)
 
     criterion = loss.build_from_config(cfg)
-
+    if isinstance(model, tuple):
+        params = list(model[0].parameters()) + list(model[1].parameters())
     opti = optimizer.build_from_config(model, criterion, cfg)
 
     train_ds, test_ds = dataset_builder.build_from_config(cfg)
@@ -73,8 +73,17 @@ if __name__ == "__main__":
 
     wandb_log = init_wandb(cfg)
 
-    device = cfg['device'] if 'device' in cfg.keys() else "cuda"
-    model.to(device)    
+    if torch.cuda.is_available():
+        device = cfg['device'] if 'device' in cfg.keys() else "cuda"
+    else:
+        device = "cpu"
+    if DEBUG >=1: logger.info(f"Using device: {device}")
+
+    if cfg.get('dual_modality', True):
+        model[0].to(device)
+        model[1].to(device)
+    else:   
+        model.to(device)    
 
     # Scheduler
     schdlr = None
