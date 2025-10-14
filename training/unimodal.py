@@ -114,7 +114,7 @@ class Trainer:
         targets = torch.stack([item["BB"] for item in batch]).to(self.device) #For now considering only object detection tasks
         self.model.train()
         self.optimizer.zero_grad()
-        _, tot_loss, losses = self.model(input_frame, targets)
+        _, (_, tot_loss, losses) = self.model(input_frame, targets) # cause now we have: features, (head output)
         tot_loss.backward()
         
         if DEBUG >= 1: 
@@ -293,7 +293,7 @@ class Trainer:
                 try:
                     dummy_input = torch.randn(1, 3, 224, 224).to(self.device)  # Adjust shape as needed
                     dummy_targets = torch.randn(1, 10, 5).to(self.device)  # Adjust shape as needed
-                    _, _, dummy_losses = self.model(dummy_input, dummy_targets)
+                    _, (_, _, dummy_losses) = self.model(dummy_input, dummy_targets)
                     
                     assert isinstance(dummy_losses, dict), "Model forward pass did not return a dict of losses"
                     self.losses_keys = list(dummy_losses.keys()) 
