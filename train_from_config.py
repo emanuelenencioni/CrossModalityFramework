@@ -100,7 +100,6 @@ if __name__ == "__main__":
         trainer = DualModalityTrainer(model, train_dl, opti, criterion, device, CFG, root_folder=dir_path, wandb_log=wandb_log, pretrained_checkpoint=pretrained_checkpoint)
     else:
         trainer = Trainer(model,train_dl, opti, device,  CFG, root_folder=dir_path, wandb_log=wandb_log, pretrained_checkpoint=pretrained_checkpoint, scheduler=schdlr)
-    in_size = cfg['model']['backbone']['input_size']
+
     evaluator = eval_builder.build_from_config(test_dl, cfg)
-    #evaluator = CityscapesEvaluator(test_dl, img_size=(in_size, in_size), confthre=0.3, nmsthre=0.6, num_classes=cfg['dataset']['bb_num_classes'], device=device)
     trainer.train(evaluator=evaluator)
