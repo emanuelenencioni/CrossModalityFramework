@@ -27,10 +27,9 @@ class DualModalityTrainer(Trainer):
     def __init__(self, model, dataloader, optimizer, criterion, device, cfg, root_folder, wandb_log=False, scheduler=None, patience=-1, pretrained_checkpoint=None):
         """
         Initialize DualModalityTrainer.
-        
         Args:
             model: Either a tuple/list of (model1, model2) for separate models,
-                   or a single dual-modality model
+                    or a single dual-modality model
             dataloader: Training dataloader
             optimizer: Optimizer instance
             criterion: Contrastive loss function for aligning modalities
@@ -51,10 +50,14 @@ class DualModalityTrainer(Trainer):
             # Single dual-modality model
             self.model1 = model
             self.model2 = None
-        self.losses_keys
-        # Store criterion for contrastive loss between modalities
+
         self.criterion = criterion
-        self.feature = cfg['criterion'].get('features', 'projected_feat')
+
+        self._get_loss_keys()
+        # Store criterion for contrastive loss between modalities
+        self.feature = cfg['multi_modality_loss'].get('features', 'preflatten_feat')
+        if self.feature == 'preflatten_feat':
+            logger.warning(f"Using feature '{self.feature}' for contrastive loss between modalities, ensure same dimensions in both models feature outputs.")
 
         # Call parent constructor
         super().__init__(
@@ -311,13 +314,6 @@ class DualModalityTrainer(Trainer):
                 classAR_prefixed["epoch"] = self.epoch
                 wandb.log(classAR_prefixed)
 
-    def _get_loss_keys(self):
-        """Override parent's loss key extraction for contrastive loss."""
-        self.losses_keys = ['contrastive_loss']
-        if DEBUG >= 1:
-            logger.info(f"Loss keys for dual modality: {self.losses_keys}")
-        
-
 
     def _get_loss_keys(self):
         lmodel1 = get_loss_keys_model(self.model1)
@@ -351,3 +347,4 @@ def get_loss_keys_model(model):
                 logger.warning(f"Could not extract loss keys from dummy forward pass: {e}")
                 losses_keys = []
         model.train()
+        return losses_keys
