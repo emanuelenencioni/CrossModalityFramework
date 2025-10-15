@@ -124,7 +124,7 @@ class Trainer:
         if DEBUG >= 1: 
             logger.info(f"loss values: {[f'{k}: {v}' for k, v in losses.items()]}")
         
-        step_dict = {key: v for key, v in zip(["batch(sum)"]+self.losses_keys, [tot_loss]+list(losses.values()))}
+        step_dict = {key: v for key, v in zip(["batch(sum)"]+self.losses_keys, [tot_loss]+list(losses.values()))} # python 3.7+ maintains dict order
         step_dict["step"] = self.step
         self._log(step_dict, "loss")
         
