@@ -69,9 +69,9 @@ class UnimodalBackbone(nn.Module):
     def get_feature_output_dim(self):
         dummy_in  = torch.randn(1, 3, self.img_size, self.img_size)
         if self.out_indices is None:
-            return self.backbone.forward_features(dummy_in).flatten().shape[-1]
+            return self.backbone.forward_features(dummy_in).flatten(start_dim=1).shape[-1]
         else:
-            return self.backbone(dummy_in)[-1].shape[-1]
+            return self.backbone(dummy_in)[-1].flatten(start_dim=1).shape[-1]
 
     def _get_features(self, feat):
         """
@@ -87,15 +87,15 @@ class UnimodalBackbone(nn.Module):
         out_dict = {}
         last_feat = feat[-1] if isinstance(feat, list) else feat
         if "preflatten_feat" in self.outputs:
-            out_dict["preflatten_feat"] = feat
-        last_feat = last_feat.flatten(start_dim=1)
+            out_dict["preflatten_feat"] = feat.copy()
+        flatten_feat = last_feat.flatten(start_dim=1).clone()
         if "flatten_feat" in self.outputs:
-            out_dict['flatten_feat'] = last_feat
-        if "projected_feat" in self.outputs :
-            if self.projector is not None:
-                out_dict["projected_feat"] = self.projector(last_feat)
-            else:
-                print("\033[93m"+"WARNING: Projector not found"+"\033[0m")
+            out_dict['flatten_feat'] = flatten_feat
+        # if "projected_feat" in self.outputs :
+        #     if self.projector is not None:
+        #         out_dict["projected_feat"] = self.projector(flatten_feat)
+        #     else:
+        #         print("\033[93m"+"WARNING: Projector not found"+"\033[0m")
 
         return out_dict
 
