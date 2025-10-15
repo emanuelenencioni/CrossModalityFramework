@@ -288,21 +288,27 @@ class Trainer:
                 wandb.log(message)
 
     def _get_loss_keys(self):
-        if hasattr(self.model, 'loss_keys'):
-            self.losses_keys = self.model.loss_keys
-            if DEBUG >= 1: logger.info(f"Loss keys from model attribute: {self.losses_keys}")
-        else:
-            self.model.train()
-            with torch.no_grad():
-                try:
-                    dummy_input = torch.randn(1, 3, 224, 224).to(self.device)  # Adjust shape as needed
-                    dummy_targets = torch.randn(1, 10, 5).to(self.device)  # Adjust shape as needed
-                    _, (_, _, dummy_losses) = self.model(dummy_input, dummy_targets)
-                    
-                    assert isinstance(dummy_losses, dict), "Model forward pass did not return a dict of losses"
-                    self.losses_keys = list(dummy_losses.keys()) 
-                    
-                    if DEBUG >= 1: logger.info(f"Loss keys extracted: {self.losses_keys}")
-                except Exception as e:
-                    logger.warning(f"Could not extract loss keys from dummy forward pass: {e}")
-                    self.losses_keys = []
+        self.losses_keys = get_loss_keys_model(self.model)
+
+
+def get_loss_keys_model(model):
+    if hasattr(model, 'loss_keys'):
+            if DEBUG >= 1: logger.info(f"Loss keys from model attribute: {model.loss_keys}")
+            return model.loss_keys
+    else:
+        model.train()
+        with torch.no_grad():
+            try:
+                device = next(model.parameters()).device
+                dummy_input = torch.randn(1, 3, 224, 224).to(device)  # Adjust shape as needed
+                dummy_targets = torch.randn(1, 10, 5).to(device)  # Adjust shape as needed
+                dummy_dict = model(dummy_input, dummy_targets)
+
+                assert isinstance(dummy_dict['losses'], dict), "Model forward pass did not return a dict of losses"
+                losses_keys = list(dummy_dict['losses'].keys()) 
+                
+                if DEBUG >= 1: logger.info(f"Loss keys extracted: {losses_keys}")
+            except Exception as e:
+                logger.warning(f"Could not extract loss keys from dummy forward pass: {e}")
+                losses_keys = []
+        return losses_keys
