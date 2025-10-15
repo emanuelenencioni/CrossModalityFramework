@@ -15,7 +15,7 @@ import sys
 import os
 import wandb
 from torch.optim.lr_scheduler import ReduceLROnPlateau
-from .unimodal import Trainer
+from .unimodal import Trainer, get_loss_keys_model
 
 
 class DualModalityTrainer(Trainer):
@@ -106,15 +106,21 @@ class DualModalityTrainer(Trainer):
         self.optimizer.zero_grad()
         if self.model2 is not None:
             # Two separate models approach
-            out1,tot_loss1, losses_1 = self.model1(rgbs, targets)
-            out2,tot_loss2, losses_2 = self.model2(events, targets)
+            out_dict1 = self.model1(rgbs, targets)
+            out_dict2 = self.model2(events, targets)
+            
         else:
             # Single dual-modality model
-            out1,tot_loss1, losses_1 = self.model1(rgbs, events)
-            out2,tot_loss2, losses_2 = None, None, None
-
+            out_dict1 = self.model1(rgbs, events)
+            out_dict2 = None
+        
+        tot_loss1 = out_dict1['total_loss']
+        tot_loss2 = out_dict2['total_loss'] if out_dict2 is not None else None
+        losses_1 = out_dict1['losses']
+        losses_2 = out_dict2['losses'] if out_dict2 is not None else None
+        bb_out = out_dict1['backbone_features'][self.feature], out_dict2['backbone_features'][self.feature] if out_dict2 is not None else None
         # Compute loss between modalities
-        bb_loss = self.criterion(out1[self.feature], out2[self.feature])
+        bb_loss = self.criterion(*bb_out)
         tot_loss = bb_loss + tot_loss1 + (tot_loss2 if tot_loss2 is not None else 0)
         tot_loss.backward()
         self.optimizer.step()
@@ -324,27 +330,3 @@ class DualModalityTrainer(Trainer):
             lmodel2[i] = f"model2/{k}"
         mm_loss_name = str(self.criterion.__class__.__name__).lower()
         self.losses_keys = ['multimodal_'+mm_loss_name] + lmodel1 + lmodel2
-
-
-def get_loss_keys_model(model):
-    if hasattr(model, 'loss_keys'):
-            if DEBUG >= 1: logger.info(f"Loss keys from model attribute: {model.loss_keys}")
-            return model.loss_keys
-    else:
-        model.eval()
-        with torch.no_grad():
-            try:
-                device = next(model.parameters()).device
-                dummy_input = torch.randn(1, 3, 224, 224).to(device)  # Adjust shape as needed
-                dummy_targets = torch.randn(1, 4).to(device)  # Adjust shape as needed
-                _, _, dummy_losses = model(dummy_input, dummy_targets)
-
-                assert isinstance(dummy_losses, dict), "Model forward pass did not return a dict of losses"
-                losses_keys = list(dummy_losses.keys()) 
-                
-                if DEBUG >= 1: logger.info(f"Loss keys extracted: {losses_keys}")
-            except Exception as e:
-                logger.warning(f"Could not extract loss keys from dummy forward pass: {e}")
-                losses_keys = []
-        model.train()
-        return losses_keys
