@@ -192,7 +192,8 @@ class DSECEvaluator:
                 img_info = [item["img_metas"] for item in batch]
                 #imgs = input_frame.type(tensor_type)
                 # skip the last iters since batchsize might be not enough for batch inference
-                output, _ = model(input_frame)
+                out_dict = model(input_frame)
+                output = out_dict['head_outputs']
                 
                 gts.append(targets.cpu())
                 if DEBUG >= 3 and cur_iter == 0: #only for the first batch

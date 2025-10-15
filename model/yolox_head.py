@@ -271,9 +271,9 @@ class YOLOXHead(nn.Module):
                 [x.flatten(start_dim=2) for x in outputs], dim=2
             ).permute(0, 2, 1)
             if self.decode_in_inference:
-                return self.decode_outputs(outputs, dtype=xin[0].type()), None
+                return self.decode_outputs(outputs, dtype=xin[0].type()), None, None
             else:
-                return outputs, None
+                return outputs, None, None
 
     def get_output_and_grid(self, output, k, stride, dtype):
         grid = self.grids[k]

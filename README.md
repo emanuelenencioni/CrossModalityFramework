@@ -158,6 +158,31 @@ def forward(self, x, targets=None):
 
 ## Model Output Format
 
+All models in this framework follow a standardized output format to ensure consistency and easy integration with the training pipeline.
+
+### Standard Model Output Structure
+
+Models must return a dictionary with the following structure:
+
+```python
+{
+    'backbone_features': {
+        'preflatten_feat': [...],    # Multi-scale features (list of tensors)
+        'flattened_feat': tensor,    # Flattened features (optional)
+        # ... other backbone-specific outputs
+    },
+    'head_outputs': tensor,          # Task-specific predictions
+    'total_loss': scalar,            # Total weighted loss (training only)
+    'losses': {                      # Individual loss components (training only)
+        'iou_loss': scalar,
+        'obj_loss': scalar,
+        'cls_loss': scalar,
+        'l1_loss': scalar,           # Optional, task-dependent
+        # ... other task-specific losses
+    }
+}
+```
+
 ### YOLOXHead Input and Output Specifications
 
 #### **Input Format (Training)**

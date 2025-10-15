@@ -114,16 +114,20 @@ class Trainer:
         targets = torch.stack([item["BB"] for item in batch]).to(self.device) #For now considering only object detection tasks
         self.model.train()
         self.optimizer.zero_grad()
-        _, (_, tot_loss, losses) = self.model(input_frame, targets) # cause now we have: features, (head output)
+        out_dict = self.model(input_frame, targets) # cause now we have: features, (head output)
+        tot_loss = out_dict['total_loss']
+        losses = out_dict['losses']
+
         tot_loss.backward()
-        
+        self.optimizer.step()
+
         if DEBUG >= 1: 
             logger.info(f"loss values: {[f'{k}: {v}' for k, v in losses.items()]}")
         
         step_dict = {key: v for key, v in zip(["batch(sum)"]+self.losses_keys, [tot_loss]+list(losses.values()))}
         step_dict["step"] = self.step
         self._log(step_dict, "loss")
-        self.optimizer.step()
+        
         return [tot_loss]+list(losses.values()) # python 3.7+ maintains dict order
 
     def _train_epoch(self, pbar=None):

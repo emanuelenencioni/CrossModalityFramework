@@ -74,10 +74,37 @@ class Resnet50_yolox(nn.Module):
             targets (torch.Tensor, optional): Ground truth for training. If None, the model is in inference mode.
 
         Returns:
-            If targets is not None (training): a dictionary of losses.
-            If targets is None (inference): model predictions.
+            dict: A dictionary containing:
+                - 'backbone_features': Dict with all backbone features (e.g., 'preflatten_feat', 'flattened_feat', etc.)
+                - 'head_outputs': Bounding box predictions/detections
+                - 'total_loss': Total loss scalar (only during training)
+                - 'losses': Dict of individual loss components (only during training)
+                    - 'iou_loss': IoU loss
+                    - 'obj_loss': Objectness loss
+                    - 'cls_loss': Classification loss
+                    - 'l1_loss': L1 loss (if applicable)
         """
-        features = self.backbone(x)
-
-        # The YOLOX head internally handles both training and inference logic
-        return features, self.head(features["preflatten_feat"], labels=targets)
+        # Get backbone features (already a dict)
+        backbone_features = self.backbone(x)
+        
+        # Get head outputs
+        head_output = self.head(backbone_features["preflatten_feat"], labels=targets)
+        
+        # Build output dictionary
+        output = {
+            'backbone_features': backbone_features,  # Dict: {'preflatten_feat': [...], 'flattened_feat': [...], ...}
+        }
+        head_predictions, total_loss, losses_dict = head_output
+        if targets is not None:
+            # Training mode: head_output is (outputs, total_loss, losses_dict)
+            
+            output.update({
+                'head_outputs': head_predictions,
+                'total_loss': total_loss,
+                'losses': losses_dict  # Dict: {'iou_loss': ..., 'obj_loss': ..., 'cls_loss': ..., 'l1_loss': ...}
+            })
+        else:
+            # Inference mode: head_output is just the predictions
+            output['head_outputs'] = head_predictions
+        
+        return output
