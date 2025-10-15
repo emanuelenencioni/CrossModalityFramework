@@ -24,7 +24,7 @@ class Resnet50_yolox(nn.Module):
             pretrained=backbone.get('pretrained', True),
             pretrained_weights=backbone.get("pretrained_weights", None),
             img_size=backbone.get('input_size'),
-            outputs=["preflatten_feat"],
+            outputs=["preflatten_feat", "projected_feat", "flatten_feat"],
             output_indices=backbone.get('output_indices')  # Default to last 3 layers if not specified
         )
         
