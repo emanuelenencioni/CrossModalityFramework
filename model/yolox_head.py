@@ -262,7 +262,7 @@ class YOLOXHead(nn.Module):
                 origin_preds,
                 dtype=xin[0].dtype,
             )
-            losses_d = {"weighted_iou": losses[1].item(), "loss_obj": losses[2].item(),"loss_l1": losses[3].item() if self.use_l1 else losses[3]}
+            losses_d = {"weighted_iou": losses[1].item(),"loss_obj": losses[2].item(), "loss_cls": losses[3].item(),"loss_l1": losses[4].item() if self.use_l1 else losses[3]}
             return outputs, losses[0], losses_d
         else:
             self.hw = [x.shape[-2:] for x in outputs]
