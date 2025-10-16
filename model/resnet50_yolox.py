@@ -14,13 +14,16 @@ class Resnet50_yolox(nn.Module):
         head (dict): Head configuration dictionary.
         freeze (bool): If True, freeze backbone and head parameters.
     """
-    def __init__(self,  backbone: dict, name: str="resnet50_yolox", head: dict={'name': 'yolox_head','num_classes': 8}, freeze: bool=False):
+    def __init__(self,  backbone: dict, name: str="resnet50_yolox", head: dict={'name': 'yolox_head','num_classes': 8}, freeze: bool=False, **kwargs):
         super().__init__()
         assert 'output_indices' in backbone, "Error - output_indices must be specified in the backbone config"
         out_indices = backbone['output_indices']
         # 1. Init backbone to extract 3 feat lvls
+        backbone_name = backbone.get('name', 'resnet50')
+        if backbone_name == '':
+            backbone_name = 'resnet50'
         self.backbone = UnimodalBackbone(
-            backbone=backbone.get('name', 'resnet50'),
+            backbone=backbone_name,
             pretrained=backbone.get('pretrained', True),
             pretrained_weights=backbone.get("pretrained_weights", None),
             img_size=backbone.get('input_size'),
