@@ -88,6 +88,8 @@ def parse_arguments():
     parser.add_argument("--losses_weights", type=list, help="Losses weights", default=None)
     parser.add_argument("--use_augmentations", type=bool, help="Use augmentations", default=False, action=argparse.BooleanOptionalAction)
 
+    parser.add_argument("--model-pretrained_weights", type=str, help="Path to pretrained weights", default=None, dest="model-pretrained_weights")
+
     # Backbone parameters
     parser.add_argument("--model-backbone-name", type=str, help="Backbone name", default=None, dest="model-backbone-name")
     parser.add_argument("--rgb_backbone", type=str, help="RGB backbone name", default=None)
@@ -97,7 +99,7 @@ def parse_arguments():
     parser.add_argument("--num_classes", type=int, help="Number of classes")
     parser.add_argument("--outputs", type=list, help="Dropout rate", default=None)
     parser.add_argument("--model-backbone-pretrained_weights", type=str, help="Path to pretrained weights", default=None, dest="model-backbone-pretrained_weights")
-
+    parser.add_argument("--model-backbone-old_projector", type=bool, help="Use old projector architecture", default=None, dest="model-backbone-old_projector", action=argparse.BooleanOptionalAction)
     # Optimizer parameters
     parser.add_argument("--optimizer-name", type=str, help="Optimizer name", default=None, dest="optimizer-name")
     parser.add_argument("--lr", type=float, help="Learning rate", default=None)
