@@ -7,7 +7,7 @@ import os
 
 class UnimodalBackbone(nn.Module):
     def __init__(self, backbone=None, pretrained=True, pretrained_weights=None,
-                 embed_dim=256, img_size=224, model_name='',outputs=["projector"], output_indices = None):
+                 embed_dim=256, img_size=224, model_name='',outputs=["projector"], output_indices = None, old_projector=True):
         """
         Args:
             bacbkone: Timm model name or custom module
@@ -41,9 +41,9 @@ class UnimodalBackbone(nn.Module):
         if use_multiple_features:
             if DEBUG>=1: print(f"\033[93m"+"WARNING: Using multiple features from backbone. Make sure to set out_indices correctly."+"\033[0m")
             self.feature_info = self.backbone.feature_info
-
+    
         self.projector = nn.Sequential(
-            nn.Linear(self.get_feature_output_dim(), embed_dim),
+            nn.Linear(self.get_feature_output_dim(old_projector), embed_dim),
             nn.ReLU(),
             nn.Linear(embed_dim, embed_dim)
         )
@@ -66,12 +66,16 @@ class UnimodalBackbone(nn.Module):
         if unexpected_keys:
             print(f"Unexpected keys: {unexpected_keys}, total: {len(unexpected_keys)}")
 
-    def get_feature_output_dim(self):
+    def get_feature_output_dim(self, old_projector=False):
+        
         dummy_in  = torch.randn(1, 3, self.img_size, self.img_size)
         if self.out_indices is None:
             return self.backbone.forward_features(dummy_in).flatten(start_dim=1).shape[-1]
         else:
-            return self.backbone(dummy_in)[-1].flatten(start_dim=1).shape[-1]
+            if old_projector:
+                return self.backbone(dummy_in)[-1].shape[-1]
+            else:
+                return self.backbone(dummy_in)[-1].flatten(start_dim=1).shape[-1]
 
     def _get_features(self, feat):
         """
