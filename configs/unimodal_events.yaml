@@ -16,7 +16,9 @@ dataset:
 
 # Model parameters TODO
 
-
+evaluator:
+  conf_threshold: 0.3
+  nms_threshold: 0.45
 
 model:
   name: 'resnet50_yolox'
