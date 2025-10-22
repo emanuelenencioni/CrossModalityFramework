@@ -143,7 +143,7 @@ class Trainer:
         total_losses = np.array(total_losses)
         avg_losses = np.mean(total_losses, axis=0)  #
         if DEBUG >= 1: logger.info(f"Epoch loss: {avg_losses[0]:.4f}")
-        epoch_dict = {key: avg_loss for key, avg_loss in zip(["epoch"]+self.losses_keys, avg_losses)}
+        epoch_dict = {key: avg_loss for key, avg_loss in zip(["epoch_l"]+self.losses_keys, avg_losses)}
         epoch_dict["epoch"] = self.epoch
         self._log(epoch_dict, "epoch")
         

@@ -157,6 +157,7 @@ class DSECDataset(Dataset):
         "train",
         "-1"
     ]
+    DSEC_DET_CLASSES = DETECTION_CLASSES
     _COLORS = boxes._COLORS
     PALETTE = [[128, 64, 128], [244, 35, 232], [70, 70, 70], [102, 102, 156],
                [190, 153, 153], [153, 153, 153], [250, 170, 30], [220, 220, 0],

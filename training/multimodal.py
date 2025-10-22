@@ -180,8 +180,13 @@ class DualModalityTrainer(Trainer):
             if evaluator is not None:
                 if self.model2 is not None:
                     # Evaluate both models separately
-                    stats1, classAP1, classAR1 = evaluator.evaluate(self.model1)
-                    stats2, classAP2, classAR2 = evaluator.evaluate(self.model2)
+                    if isinstance(evaluator, tuple):
+                        evaluator1, evaluator2 = evaluator
+                        stats1, classAP1, classAR1 = evaluator1.evaluate(self.model1)
+                        stats2, classAP2, classAR2 = evaluator2.evaluate(self.model2)
+                    else:
+                        stats1, classAP1, classAR1 = evaluator.evaluate(self.model1)
+                        stats2, classAP2, classAR2 = evaluator.evaluate(self.model2)
                     
                     if DEBUG >= 1:
                         logger.info(f"Model1 (RGB) - AP50-95: {stats1[0]:.4f}, AP50: {stats1[1]:.4f}")
