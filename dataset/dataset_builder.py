@@ -93,16 +93,18 @@ def build_from_config(cfg):
         
     elif dataset_name.lower() in ["cityscape", "cityscapes", "cityscapes_dataset", "cityscape_dataset", "cityscapesdataset", "cityscapedataset"]:
         event_keys = ["events", "events_vg", "events_frames"]
+        rgb_keys = ["rgb", "images", "image"]
 
-        assert any(key in dataset_cfg["outputs"] for key in ["rgb", "image", *event_keys]), "At least one of 'rgb', 'image' or event modalities must be specified in 'outputs' for CityscapesDataset"
+        assert any(key in dataset_cfg["outputs"] for key in [*rgb_keys, *event_keys]), "At least one of 'rgb', 'image' or event modalities must be specified in 'outputs' for CityscapesDataset"
         
         if any(key in dataset_cfg["outputs"] for key in event_keys):
             use_events = True
         else: use_events = False
-        if "rgb" in dataset_cfg["outputs"] or "image" in dataset_cfg["outputs"]:
+        
+        if any(key in dataset_cfg["outputs"] for key in rgb_keys):
             use_rgb = True
         else: use_rgb = False
-
+        
         dataset_cfg["data_root"] = dataset_cfg["data_dir"]
         if dataset_cfg.get("custom_classes", False) == True: 
             dataset_cfg["extract_bboxes_from_masks"] = True
