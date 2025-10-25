@@ -119,6 +119,7 @@ class CustomDataset(Dataset):
         self.split = split
         self.outputs = kwargs.get("outputs", ["rgb"])
         self.event_keys = ["events", "events_vg", "events_frames"] # possible event keys
+        self.image_keys = ["rgb", "image", "images"] # possible image keys
         self.data_root = data_root
         self.test_mode = test_mode
         self.ignore_index = ignore_index
@@ -150,20 +151,17 @@ class CustomDataset(Dataset):
             ], bbox_params=A.BboxParams(format='pascal_voc', label_fields=['bbox_labels'], min_visibility=0.3))
         
         # join paths if data_root is specified
-        if self.data_root is not None and self.img_dir is not None:
-            if not osp.isabs(self.img_dir):
-                self.img_dir = osp.join(self.data_root, self.img_dir)
+        if self.data_root is not None:
             if not (self.ann_dir is None or osp.isabs(self.ann_dir)):
                 self.ann_dir = osp.join(self.data_root, self.ann_dir)
             if not (self.split is None or osp.isabs(self.split)):
                 self.split = osp.join(self.data_root, self.split)
-        elif self.data_root is not None:
-            if not osp.isabs(self.events_dir):
+            if self.img_dir is not None and not osp.isabs(self.img_dir):
+                    self.img_dir = osp.join(self.data_root, self.img_dir)
+            if self.events_dir is not None and not osp.isabs(self.events_dir):
                 self.events_dir = osp.join(self.data_root, self.events_dir)
-            if not (self.ann_dir is None or osp.isabs(self.ann_dir)):
-                self.ann_dir = osp.join(self.data_root, self.ann_dir)
-            if not (self.split is None or osp.isabs(self.split)):
-                self.split = osp.join(self.data_root, self.split)
+
+
 
         # load annotations
         if self.img_dir is not None:
@@ -185,7 +183,7 @@ class CustomDataset(Dataset):
         """Total number of samples of data."""
         return len(self.img_infos) if self.img_dir is not None else len(self.events_infos)
 
-    def load_annotations(self, img_dir, img_suffix, ann_dir, seg_map_suffix, split):
+    def load_annotations(self, img_dir, img_suffix, ann_dir, seg_map_suffix, split, is_event=False):
         """Load annotation from directory.
         Args:
             img_dir (str): Path to image directory
@@ -200,8 +198,13 @@ class CustomDataset(Dataset):
 
         img_infos = []
         if split is not None:
-            with open(split) as f:
+             with open(split) as f:
                 for line in f:
+                    if is_event:
+                        #instead of leftImg8bit we have leftImg8bitEvents when using the standard split
+                        line = line.replace("leftImg8bit/", "leftImg8bitEvents/")
+
+
                     img_name = line.strip().split("/")[-1]
                     img_info = dict(filename=img_name + img_suffix)
                     if ann_dir is not None:
@@ -237,7 +240,7 @@ class CustomDataset(Dataset):
         # Check if augmented data is provided
         # TODO: switch ifs (use aug internal to the others)
         if self.use_augmentations and not self.test_mode: # and 'image' in results and 'BB' in results:
-            if 'image' in self.outputs:
+            if any(key in self.outputs for key in self.image_keys):
                 image_pil = results['image']
                 padded_resized_image, _, padding_info = self.pad_and_resize_pil_image(image_pil, target_size=(512, 512))
                 results['image'] = self.image_transform(padded_resized_image)
@@ -260,13 +263,13 @@ class CustomDataset(Dataset):
             transformed_bboxes, _ = self.get_padded_and_scaled_bbox_info(idx, target_size=(512, 512))
             if 'BB' in self.outputs: results['BB'] = transformed_bboxes
             # Load image with padding and scaling to 512x512
-            if 'image' in self.outputs:
+            if any(key in self.outputs for key in self.image_keys):
                 padded_resized_image, scale_factor, padding_info = self.load_and_resize_image(idx, target_size=(512, 512))
             
                 if padded_resized_image is not None:
                     # Convert PIL image to numpy array and normalize to [0, 1]
                     results['padding_info'] = padding_info
-                    if 'image' in self.outputs: 
+                    if any(key in self.outputs for key in self.image_keys):
                         results['image'] = self.image_transform(padded_resized_image)
                     
                     # Get transformed bounding boxe
@@ -340,7 +343,7 @@ class CustomDataset(Dataset):
                 aug = ""
                 if self.use_augmentations: aug = "augmented"
                 else: aug = "original"
-                if 'image' in self.outputs:
+                if any(key in self.outputs for key in self.image_keys):
                     rgb = results['image']
                     cvimg = self.gt_to_vis(rgb, results)
                     cv2.imwrite(f"debug_{aug}_{idx}_{info['filename']}.jpg", cvimg)
@@ -369,7 +372,7 @@ class CustomDataset(Dataset):
         Returns: dict: Training data and annotation after pipeline with new keys introduced by pipeline.
         """
         img_info, event_info = None, None
-        if 'image' in self.outputs:
+        if any(key in self.outputs for key in self.image_keys):
             img_info = self.img_infos[idx]
         if any(event_key in self.outputs for event_key in self.event_keys) and self.events_dir is not None:
             event_info = self.events_infos[idx]
@@ -393,7 +396,7 @@ class CustomDataset(Dataset):
 
             # 3. Apply augmentations
             try:
-                if "image" in self.outputs:
+                if any(key in self.outputs for key in self.image_keys):
                     img_path = osp.join(self.img_dir, img_info['ann']['subfolder'], img_info['filename'])
                     image = cv2.imread(img_path)
                     image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
