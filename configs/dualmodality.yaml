@@ -8,8 +8,8 @@ checkpoint_path: "" # path to a checkpoint to resume training from, if null trai
 dataset:
   name: DSEC_Night
   data_dir: data
-  batch_size: 12
-  num_workers: 8
+  batch_size: 4
+  num_workers: 4
   outputs: ["events", "images", "BB", "img_metas", "labels"] # these mandatory for unimodal training
   custom_classes: True # if True, the model will use custom classes defined in the dataset
   bb_num_classes: 8 # according to DSEC
@@ -26,7 +26,7 @@ dataset:
 model1:
   name: 'resnet50_yolox'
   # when using this, the successive parameters will be ignored
-  pretrained_weights: unimodal_rgb_checkpoints/resnet50_yolox_sgd_reduce_lr_on_plateau_20250826_094957_checkpoint_epoch_94_202508261617.pth #'../resnet50_backbone_from_detr.pth' # path to pretrained weights if needed
+  pretrained_weights: resnet50_uni_rgb_Adam_multistep_lr_noaug_20251016_222446_checkpoint_epoch_99_202510171030.pth #'../resnet50_backbone_from_detr.pth' # path to pretrained weights if needed
   head: 
     name: 'yolox_head' # redundant here, but useful for clarity
     num_classes: 8
@@ -45,7 +45,7 @@ model2:
   freeze: True # if True, the model2 weights will not be updated during training
   name: 'resnet50_yolox'
   # when using this, the successive parameters will be ignored
-  pretrained_weights: unimodal_events_checkpoints/resnet50_yolox_Adam_step_lr_noaug_20251001_150632_checkpoint_epoch_49_202510011931.pth #'../resnet50_backbone_from_detr.pth' # path to pretrained weights if needed
+  pretrained_weights: unimodal_events_saves_251016/resnet50_uni_event_Adam_ReduceLROnPlateau_noaug_20251018_170457_checkpoint_epoch_99_202510182304.pth #'../resnet50_backbone_from_detr.pth' # path to pretrained weights if needed
   head: 
     name: 'yolox_head' # redundant here, but useful for clarity
     num_classes: 8
@@ -80,7 +80,7 @@ trainer:
   epochs: 100
   log_interval: 500 # steps
   checkpoint_interval_epochs: 5 # save checkpoint every 5 epochs
-  save_folder: unimodal_rgb_checkpoints
+  save_folder: dualModalty__chckpoints
 
 # Scheduler parameters (optional)
 scheduler:
@@ -90,6 +90,6 @@ scheduler:
 
 # Logging parameters
 logger:
-  name: wandbasd
+  name: wandb
   project: Cross_Modality_Framework  # Replace with your wandb project name
   entity: TwoGuysOneCode
