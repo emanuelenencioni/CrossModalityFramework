@@ -8,7 +8,7 @@ from tqdm import tqdm
 from loguru import logger
 import numpy as np
 
-from utils.helpers import DEBUG, Timing, deep_dict_equal
+from utils.helpers import DEBUG,DEBUG_EVAL, Timing, deep_dict_equal
 import time
 from datetime import datetime
 import sys
@@ -143,41 +143,43 @@ class DualModalityTrainer(Trainer):
         Can optionally evaluate both models separately.
         """
         start_epoch = self.epoch
+        avg_loss = float('inf')
         
         for epoch in range(start_epoch, self.total_epochs):
-            self.model1.train()
-            if self.model2 is not None:
-                self.model2.train()
-            
-            start_time = time.time()
-            
-            with tqdm(total=len(self.dataloader), desc=f"Epoch {self.epoch}/{self.total_epochs}") as pbar:
+            if DEBUG_EVAL == 0:
                 self.model1.train()
                 if self.model2 is not None:
                     self.model2.train()
-                avg_loss = self._train_epoch(pbar)
-            
-            epoch_time = time.time() - start_time
-            
-            # Step scheduler
-            if self.scheduler is not None:
-                if isinstance(self.scheduler, ReduceLROnPlateau):
-                    self.scheduler.step(avg_loss)
-                else:
-                    self.scheduler.step()
-            
-            # Save checkpoint at epoch intervals
-            if (self.checkpoint_interval_epochs > 0 and (epoch + 1) % self.checkpoint_interval_epochs == 0):
-                if self.save_folder is not None:
-                    self._save_checkpoint(epoch)
-                else:
-                    logger.warning("The model will not be saved - saving folder need to be specified")
-            
-            if DEBUG >= 1:
-                logger.info(f"Epoch {epoch+1} completed in {epoch_time:.2f} seconds")
-            
-            # Log learning rate
-            self._log({"lr": self.optimizer.param_groups[0]['lr'], "epoch": self.epoch})
+                
+                start_time = time.time()
+                
+                with tqdm(total=len(self.dataloader), desc=f"Epoch {self.epoch}/{self.total_epochs}") as pbar:
+                    self.model1.train()
+                    if self.model2 is not None:
+                        self.model2.train()
+                    avg_loss = self._train_epoch(pbar)
+                
+                epoch_time = time.time() - start_time
+                
+                # Step scheduler
+                if self.scheduler is not None:
+                    if isinstance(self.scheduler, ReduceLROnPlateau):
+                        self.scheduler.step(avg_loss)
+                    else:
+                        self.scheduler.step()
+                
+                # Save checkpoint at epoch intervals
+                if (self.checkpoint_interval_epochs > 0 and (epoch + 1) % self.checkpoint_interval_epochs == 0):
+                    if self.save_folder is not None:
+                        self._save_checkpoint(epoch)
+                    else:
+                        logger.warning("The model will not be saved - saving folder need to be specified")
+                
+                if DEBUG >= 1:
+                    logger.info(f"Epoch {epoch+1} completed in {epoch_time:.2f} seconds")
+                
+                # Log learning rate
+                self._log({"lr": self.optimizer.param_groups[0]['lr'], "epoch": self.epoch})
             
             # Evaluation
             if evaluator is not None:

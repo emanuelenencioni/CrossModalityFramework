@@ -25,7 +25,7 @@ from torch.utils.data import Dataset
 import torch.nn.functional as F
 import torch
 import sys
-
+from loguru import logger
 # if __name__ == "__main__":
 #     from builder import DATASETS
 # else:
@@ -188,6 +188,9 @@ class DSECDataset(Dataset):
         if 'images' in self.outputs:
             self.outputs.remove('images')
             self.outputs.append('image')
+
+        self.debug_bb = 0
+        if DEBUG >= 6: logger.warning("Debug BB mode activated, will save EACH images with BBs drawn!!!")
 
         self.crop_size = (crop_size[1], crop_size[0]) if 'label' not in self.outputs else crop_size  # (H, W)-->(W, H)
         self.after_crop_resize_size = (after_crop_resize_size[1], after_crop_resize_size[0]) \
@@ -488,26 +491,29 @@ class DSECDataset(Dataset):
             output['img_metas'] = DataContainer(output['img_metas'], cpu_only=True)
 
         if DEBUG >= 3: 
-            if 'BB' in self.outputs and ('image' in self.outputs or 'events' in self.outputs):
-                # Work directly in 440x640 space, then resize everything together
-                # Load original image at 640x440 (test mode dimensions)
-                img_frame, event_frame = None, None
-                if 'image' in self.outputs:
-                    # distorted_path = image_path.replace('rectified', 'distorted')
-                    # img_original = Image.open(distorted_path).convert('RGB')
-                    # img_original = img_original.resize((640, 480), resample=Image.BILINEAR)
-                    # img_frame = cv2.cvtColor(np.array(img_original), cv2.COLOR_RGB2BGR)
-                    img_frame = output['image']
+            if DEBUG >= 6 or self.debug_bb < 1:
+                if 'BB' in self.outputs and ('image' in self.outputs or 'events' in self.outputs):
+                    # Work directly in 440x640 space, then resize everything together
+                    # Load original image at 640x440 (test mode dimensions)
+                    img_frame, event_frame = None, None
+                    if 'image' in self.outputs:
+                        # distorted_path = image_path.replace('rectified', 'distorted')
+                        # img_original = Image.open(distorted_path).convert('RGB')
+                        # img_original = img_original.resize((640, 480), resample=Image.BILINEAR)
+                        # img_frame = cv2.cvtColor(np.array(img_original), cv2.COLOR_RGB2BGR)
+                        img_frame = output['image']
 
-                if 'events' in self.outputs:
-                    event_frame = output['events']
-                
-                img_frame, event_frame = self._save_bbox_plus_frame(bboxes=output['BB'], img_frame=img_frame, ev_frame=event_frame)
-                os.makedirs("debug_dsec", exist_ok=True)
-                if img_frame is not None:
-                    cv2.imwrite(f"debug_dsec/{idx}_{sequence_name}_{now_image_index}_img.png", img_frame)
-                if event_frame is not None:
-                    cv2.imwrite(f"debug_dsec/{idx}_{sequence_name}_{now_image_index}_ev.png", event_frame)
+                    if 'events' in self.outputs:
+                        event_frame = output['events']
+                    
+                    img_frame, event_frame = self._save_bbox_plus_frame(bboxes=output['BB'], img_frame=img_frame, ev_frame=event_frame)
+                    os.makedirs("debug_dsec", exist_ok=True)
+                    if img_frame is not None:
+                        cv2.imwrite(f"debug_dsec/{idx}_{sequence_name}_{now_image_index}_img.png", img_frame)
+                    if event_frame is not None:
+                        cv2.imwrite(f"debug_dsec/{idx}_{sequence_name}_{now_image_index}_ev.png", event_frame)
+                if DEBUG < 6:
+                    self.debug_bb = 1
 
         return output
 
