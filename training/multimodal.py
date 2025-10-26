@@ -128,7 +128,10 @@ class DualModalityTrainer(Trainer):
         # Log step
         if DEBUG >= 1:
             logger.info(f"Contrastive loss: {bb_loss.item():.4f}")
-        step_dict = {key: v for key, v in zip(["batch(sum)"]+self.losses_keys, [tot_loss]+[bb_loss]+list(losses_1.values()))} # THIS dict order total, multimodal, model1 losses, model2 losses
+        #add prefix to losses_1 and losses_2 keys
+        losses_1 = {f"model1_{k}": v for k, v in losses_1.items()}
+        losses_2 = {f"model2_{k}": v for k, v in losses_2.items()} if losses_2 is not None else {}
+        step_dict = {key: v for key, v in zip(["batch(sum)"]+self.losses_keys, [tot_loss]+[bb_loss]+list(losses_1.values())+list(losses_2.values()) if losses_2 is not None else [])} # THIS dict order total, multimodal, model1 losses, model2 losses
         step_dict["step"] = self.step
         self._log(step_dict, 'loss')
 
