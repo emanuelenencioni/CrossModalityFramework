@@ -34,9 +34,10 @@ class CityscapesEvaluator(DSECEvaluator):
         num_classes: int,
         testdev: bool = False,
         per_class_AP: bool = True,
-        per_class_AR: bool = True,
+        per_class_AR: bool = True, 
         device = "cpu",
-        input_format = "cxcywh"  # or "xyxy"
+        input_format = "cxcywh",  # or "xyxy"
+        input_type = None
     ):
         """
         Args:
@@ -50,7 +51,7 @@ class CityscapesEvaluator(DSECEvaluator):
             per_class_AR: Show per class AR during evalution or not. Default to True.
         """
         super().__init__(dataloader, img_size, confthre, nmsthre, num_classes, 
-                         testdev, per_class_AP, per_class_AR, device, input_format)
+                         testdev, per_class_AP, per_class_AR, device, input_format, input_type=input_type)
         
         # Override class names for Cityscapes
         self.class_names = self._get_cityscapes_class_names()

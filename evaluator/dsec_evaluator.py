@@ -109,7 +109,8 @@ class DSECEvaluator:
         per_class_AP: bool = True,
         per_class_AR: bool = True,
         device = "cpu",
-        input_format = "xywh"  # or "xyxy"
+        input_format = "xywh",  # or "xyxy"
+        input_type = None
     ):
         """
         Args:
@@ -133,7 +134,10 @@ class DSECEvaluator:
         self.per_class_AR = per_class_AR
         self.device = device
         self.input_format = input_format
-        self.input_type = 'events' if 'events' in dataloader.dataset[0] else 'image'
+        if input_type is not None:
+            self.input_type = input_type
+        else:
+            self.input_type = 'events' if 'events' in dataloader.dataset[0] else 'image'
         self.step = 0
         if DEBUG >= 3:
             self.debug_images_folder = ROOT_FOLDER / "debug_images"
