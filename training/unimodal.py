@@ -153,6 +153,7 @@ class Trainer:
 
     def train(self, evaluator=None, eval_loss=False):
         start_epoch = self.epoch
+        avg_loss = float('inf')
         for epoch in range(start_epoch, self.total_epochs):
             if DEBUG_EVAL == 0:
                 self.model.train()
