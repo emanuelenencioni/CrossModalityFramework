@@ -69,6 +69,7 @@ class ContextVar:
     def __lt__(self, x): return self.value < x
 
 DEBUG = ContextVar("DEBUG", 0)
+DEBUG_EVAL = ContextVar("DEBUG_EVAL", 0) # Disable training loops and just run evaluation for debugging
 TORCH_VERSION = torch.__version__
 
 # **************** timer and profiler ****************

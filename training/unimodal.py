@@ -17,7 +17,7 @@ import torch.optim as optim
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 
-from utils.helpers import DEBUG, deep_dict_equal
+from utils.helpers import DEBUG, DEBUG_EVAL, deep_dict_equal
 
 
 
@@ -154,28 +154,29 @@ class Trainer:
     def train(self, evaluator=None, eval_loss=False):
         start_epoch = self.epoch
         for epoch in range(start_epoch, self.total_epochs):
-            self.model.train()
-            start_time = time.time()
-            with tqdm(total=len(self.dataloader), desc=f"Epoch {self.epoch}/{self.total_epochs}") as pbar:
-                avg_loss = self._train_epoch(pbar)
-            epoch_time = time.time() - start_time
-            if self.scheduler is not None:
-                if isinstance(self.scheduler, ReduceLROnPlateau):
-                    # ReduceLROnPlateau requires a metric value
-                    self.scheduler.step(avg_loss)
-                else:
-                    # Standard schedulers that step based on epochs
-                    self.scheduler.step()
+            if DEBUG_EVAL == 0:
+                self.model.train()
+                start_time = time.time()
+                with tqdm(total=len(self.dataloader), desc=f"Epoch {self.epoch}/{self.total_epochs}") as pbar:
+                    avg_loss = self._train_epoch(pbar)
+                epoch_time = time.time() - start_time
+                if self.scheduler is not None:
+                    if isinstance(self.scheduler, ReduceLROnPlateau):
+                        # ReduceLROnPlateau requires a metric value
+                        self.scheduler.step(avg_loss)
+                    else:
+                        # Standard schedulers that step based on epochs
+                        self.scheduler.step()
 
-            if (self.checkpoint_interval > 0 and (self.step % self.checkpoint_interval == 0)) or (self.checkpoint_interval_epochs > 0 and (epoch + 1) % self.checkpoint_interval_epochs == 0):
-                if self.save_folder is not None:
-                    self._save_checkpoint(epoch)
-                else:
-                    logger.warning("The model will not be saved - saving folder need to be specified")
-            if DEBUG >= 1:
-                logger.info(f"Epoch {epoch+1} completed in {epoch_time:.2f} seconds")
-            
-            self._log({"lr": self.optimizer.param_groups[0]['lr'], "epoch": self.epoch})
+                if (self.checkpoint_interval > 0 and (self.step % self.checkpoint_interval == 0)) or (self.checkpoint_interval_epochs > 0 and (epoch + 1) % self.checkpoint_interval_epochs == 0):
+                    if self.save_folder is not None:
+                        self._save_checkpoint(epoch)
+                    else:
+                        logger.warning("The model will not be saved - saving folder need to be specified")
+                if DEBUG >= 1:
+                    logger.info(f"Epoch {epoch+1} completed in {epoch_time:.2f} seconds")
+                
+                self._log({"lr": self.optimizer.param_groups[0]['lr'], "epoch": self.epoch})
 
             if evaluator is not None:
                 # stats is a numpy array of 12 elements
