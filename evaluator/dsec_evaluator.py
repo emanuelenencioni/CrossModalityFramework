@@ -411,106 +411,118 @@ class DSECEvaluator:
     def calculate_coco_metrics(self, predictions, targets, images_info):
         """
         Calculate COCO AP metrics (AP@50:95 and AP@50) from predictions and targets.
-        Args:
-            predictions: Model predictions
-            targets: Ground truth targets
-            images_info: Image metadata, input frames
-        Returns: 
-            stats: List of COCO metrics
-            classAP: Per-class AP if enabled
-            classAR: Per-class AR if enabled
         """
         coco_eval = None
 
-        # Convert predictions to COCO format
-        pred_data = []
-        coco_gt_data = []
-        for idx, (pred_batch, t_batch, img_info) in enumerate(zip(predictions,targets, images_info)):
-            pred_data = self.convert_to_coco_format(pred_batch, img_info)
-            if len(pred_data) == 0:
-                pred_data = [{}]
-                if DEBUG >= 1: logger.warning(f"No predictions for image_id {img_info[0][0].data['idx']}, this can generate errors in COCO evaluation")
-            coco_gt_data = self.create_coco_gt_from_batch(t_batch, img_info[0])
-            #coco_gt_data.append(output)
-            # coco_gt_data = [item for t_batch in targets for item in self.create_coco_gt_from_batch(t_batch, images_info)]
-            if len(coco_gt_data) == 0:
-                return [0.0]*12, None, None
-            
-            #assert len(coco_gt_data) == len(pred_data), "Mismatch between GT and predictions"
+        # Accumulate ALL predictions and ground truth data
+        all_pred_data = []
+        all_images = []
+        all_annotations = []
+        annotation_id = 1
 
-            try:
-                # Create temporary COCO objects
-                import tempfile
-                import json
-                from pycocotools.coco import COCO
-                
-                if DEBUG >= 2:
-                    # plot image + boxes
-                    
-                    logger.info(f"Creating COCO GT with {len(coco_gt_data['images'])} images and {len(coco_gt_data['annotations'])} annotations")
-                if DEBUG >=3:
+        for idx, (pred_batch, t_batch, img_info) in enumerate(zip(predictions, targets, images_info)):
+            # Convert predictions to COCO format
+            batch_pred_data = self.convert_to_coco_format(pred_batch, img_info)
+            all_pred_data.extend(batch_pred_data)
+            
+            # Create ground truth for this batch
+            batch_gt_data = self.create_coco_gt_from_batch(t_batch, img_info[0])
+            
+            # Accumulate images and annotations
+            all_images.extend(batch_gt_data['images'])
+            
+            # Re-index annotations to ensure unique IDs
+            for ann in batch_gt_data['annotations']:
+                ann['id'] = annotation_id
+                all_annotations.append(ann)
+                annotation_id += 1
+    
+        # Create single COCO GT dataset with ALL data
+        coco_gt_data = {
+            "info": {
+                "description": "DSEC Dataset",
+                "version": "1.0",
+                "year": 2024,
+                "contributor": "DSEC",
+                "date_created": "2024-01-01"
+            },
+            "licenses": [],
+            "images": all_images,
+            "categories": [
+                {"id": i, "name": self.class_names[i], "supercategory": "object"}
+                for i in range(self.num_classes)
+            ],
+            "annotations": all_annotations,
+        }
+        
+        if len(all_pred_data) == 0:
+            logger.warning("No predictions across entire dataset")
+            return [0.0]*12, None, None
+        
+        if len(all_annotations) == 0:
+            logger.warning("No ground truth annotations")
+            return [0.0]*12, None, None
+
+        try:
+            if DEBUG >= 2:
+                logger.info(f"Creating COCO GT with {len(all_images)} images and {len(all_annotations)} annotations")
+                logger.info(f"Total predictions: {len(all_pred_data)}")
+            
+            # Create COCO objects once with all data
+            if DEBUG >= 3:
+                coco_gt = COCO()
+                coco_gt.dataset = coco_gt_data
+                coco_gt.createIndex()
+                coco_dt = coco_gt.loadRes(all_pred_data)
+            else:
+                with contextlib.redirect_stdout(open('/dev/null', 'w')):
                     coco_gt = COCO()
                     coco_gt.dataset = coco_gt_data
                     coco_gt.createIndex()
-
-                    # Load predictions from list in memory
-                    coco_dt = coco_gt.loadRes(pred_data)
-                else:
-                    # Suppress output from COCO API
-                    with contextlib.redirect_stdout(open('/dev/null', 'w')):
-                        coco_gt = COCO()
-                        coco_gt.dataset = coco_gt_data
-                        coco_gt.createIndex()
-                        coco_dt = coco_gt.loadRes(pred_data)
-
-                    
-                if DEBUG >= 3:
+                    coco_dt = coco_gt.loadRes(all_pred_data)
+            
+            # Evaluate once on all data
+            if DEBUG >= 3:
+                coco_eval = COCOeval(coco_gt, coco_dt, 'bbox')
+                coco_eval.evaluate()
+                coco_eval.accumulate()
+                coco_eval.summarize()
+            else:
+                with contextlib.redirect_stdout(open('/dev/null', 'w')):
                     coco_eval = COCOeval(coco_gt, coco_dt, 'bbox')
                     coco_eval.evaluate()
                     coco_eval.accumulate()
+                    coco_eval.summarize()
 
-                else:
-                    redirect_string = io.StringIO()
-                    with contextlib.redirect_stdout(open('/dev/null', 'w')):
-                        coco_eval = COCOeval(coco_gt, coco_dt, 'bbox')
-                        coco_eval.evaluate()
-                        coco_eval.accumulate()
-
-            except Exception as e:
-                import traceback
-                logger.error(f"Error calculating COCO metrics: {e}")
-                if DEBUG >= 1:
-                    logger.warning(f"Full traceback: {traceback.format_exc()}")
-                    logger.warning(f"GT data keys: {coco_gt_data.keys() if 'coco_gt_data' in locals() else 'Not created'}")
-                    logger.warning(f"Predictions count: {len(pred_data) if 'pred_data' in locals() else 'Not created'}")
-            
-            if coco_eval is not None:
-                if DEBUG >= 3:
-                    coco_eval.summarize() if coco_eval is not None else None
-                else:
-                    redirect_string = io.StringIO()
-                    with contextlib.redirect_stdout(open('/dev/null', 'w')):
-                            coco_eval.summarize() if coco_eval is not None else None
-            # Log metrics to wandb if available
-            try:
-                if wandb.run is not None and coco_eval is not None:
-                    wandb.log({
-                        "eval/AP_IoU=0.50:0.95": coco_eval.stats[0],
-                        "eval/AP_IoU=0.50": coco_eval.stats[1],
-                        "eval/AP_IoU=0.75": coco_eval.stats[2],
-                        "eval/AP_small": coco_eval.stats[3],
-                        "eval/AP_medium": coco_eval.stats[4],
-                        "eval/AP_large": coco_eval.stats[5],
-                        "eval/AR_maxDets=1": coco_eval.stats[6],
-                        "eval/AR_maxDets=10": coco_eval.stats[7],
-                        "eval/AR_maxDets=100": coco_eval.stats[8],
-                        "eval/AR_small": coco_eval.stats[9],
-                        "eval/AR_medium": coco_eval.stats[10],
-                        "eval/AR_large": coco_eval.stats[11],
-                        "test_batch": self.step
-                    })
-            except ImportError:
-                pass
+        except Exception as e:
+            import traceback
+            logger.error(f"Error calculating COCO metrics: {e}")
+            if DEBUG >= 1:
+                logger.warning(f"Full traceback: {traceback.format_exc()}")
+                logger.warning(f"GT data images: {len(all_images)}")
+                logger.warning(f"GT data annotations: {len(all_annotations)}")
+                logger.warning(f"Predictions count: {len(all_pred_data)}")
+            return [0.0]*12, None, None
+        
+        # Log metrics to wandb once
+        if wandb.run is not None and coco_eval is not None:
+            wandb.log({
+                "eval/AP_IoU=0.50:0.95": coco_eval.stats[0],
+                "eval/AP_IoU=0.50": coco_eval.stats[1],
+                "eval/AP_IoU=0.75": coco_eval.stats[2],
+                "eval/AP_small": coco_eval.stats[3],
+                "eval/AP_medium": coco_eval.stats[4],
+                "eval/AP_large": coco_eval.stats[5],
+                "eval/AR_maxDets=1": coco_eval.stats[6],
+                "eval/AR_maxDets=10": coco_eval.stats[7],
+                "eval/AR_maxDets=100": coco_eval.stats[8],
+                "eval/AR_small": coco_eval.stats[9],
+                "eval/AR_medium": coco_eval.stats[10],
+                "eval/AR_large": coco_eval.stats[11],
+                "epoch": self.step  # Changed from test_batch to epoch
+            })
+        
         classAP = per_class_AP_table(coco_eval, class_names=DSEC_DET_CLASSES) if self.per_class_AP and coco_eval is not None else None
         classAR = per_class_AR_table(coco_eval, class_names=DSEC_DET_CLASSES) if self.per_class_AR and coco_eval is not None else None
+        
         return coco_eval.stats if coco_eval is not None else [0.0]*12, classAP, classAR
