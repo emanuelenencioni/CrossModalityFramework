@@ -12,9 +12,9 @@ from .cityscapes import CityscapesDataset
 
 def build_from_config(cfg):
     """
-    Factory method. Given the dataset configuration dictionary, instantiate and return the desired dataset train and test split.
-    
-    Currently implemented: DSEC_Night dataset.
+    Factory method. Given the dataset configuration dictionary, instantiate and return the desired dataset train and val split.
+
+    Currently implemented: DSEC_Night, cityscapes
     """
     assert "dataset" in cfg.keys(), "'dataset' params list missing from config file "
     dataset_cfg = cfg.get("dataset")
@@ -122,10 +122,14 @@ def build_from_config(cfg):
         train_txt = os.path.join(project_root,"dataset", dataset_cfg.get("train_split", "train.txt"))
         val_txt = os.path.join(project_root,"dataset", dataset_cfg.get("val_split", "val.txt"))
         train_ds =  CityscapesDataset(**dataset_cfg, split=train_txt)
-
-        dataset_cfg["ann_dir"] = dataset_cfg["ann_dir"].replace("train", "val")
-        if use_events: dataset_cfg["events_dir"] = dataset_cfg["events_dir"].replace("train", "val")
-        if use_rgb: dataset_cfg["img_dir"] = dataset_cfg["img_dir"].replace("train", "val")
+        if dataset_cfg.get("build_test", False):
+            dataset_cfg["ann_dir"] = dataset_cfg["ann_dir"].replace("train", "test")
+            if use_events: dataset_cfg["events_dir"] = dataset_cfg["events_dir"].replace("train", "test")
+            if use_rgb: dataset_cfg["img_dir"] = dataset_cfg["img_dir"].replace("train", "test")
+        else:
+            dataset_cfg["ann_dir"] = dataset_cfg["ann_dir"].replace("train", "val")
+            if use_events: dataset_cfg["events_dir"] = dataset_cfg["events_dir"].replace("train", "val")
+            if use_rgb: dataset_cfg["img_dir"] = dataset_cfg["img_dir"].replace("train", "val")
         # For test dataset NO aug
         dataset_cfg['use_augmentations'] = False
         dataset_cfg["augmentations"] = None
@@ -134,6 +138,17 @@ def build_from_config(cfg):
     else:
         raise NotImplementedError(f"Dataset {dataset_name} not implemented yet.")
 
+def build_test(cfg):
+    """
+    Factory method. Given the dataset configuration dictionary, instantiate and return the desired TEST dataset split.
+
+    Currently implemented: same as build_from_config but only returns test split (not val split, test split).
+    """
+    assert "test_split" in cfg['dataset'].keys(), "'test_split' params missing from dataset config file "
+    cfg['dataset']['val_split'] = cfg['dataset']['test_split']
+    cfg['dataset']['build_test'] = True
+    _, test_ds = build_from_config(cfg)
+    return test_ds
 
 
 def augmentation_builder(aug_cfg):

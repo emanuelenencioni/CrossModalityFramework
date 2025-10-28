@@ -482,7 +482,7 @@ class CustomDataset(Dataset):
         
         if not osp.exists(json_file_path):
             if DEBUG >= 1: print(f"JSON annotation file not found: {json_file_path}")
-            return [], [], []
+            return [], []
         all_bboxes = torch.zeros((self.max_labels, 5), dtype=torch.float32)
         all_bboxes[:, 0] = -1  # Initialize with -1 for empty cells
         try:

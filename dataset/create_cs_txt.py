@@ -1,17 +1,20 @@
 import os
 
-def scan_folders_and_create_txt(folder1, folder2, output_file1, output_file2):
+def scan_folders_and_create_txt(folder1, folder2, folder3, output_file1, output_file2, output_file3):
     """
-    Scan two folders and create separate txt files with file paths from each folder.
+    Scan three folders and create separate txt files with file paths from each folder.
     
     Args:
-        folder1 (str): Path to first folder
-        folder2 (str): Path to second folder
+        folder1 (str): Path to first folder (train)
+        folder2 (str): Path to second folder (val)
+        folder3 (str): Path to third folder (test)
         output_file1 (str): Path to output txt file for folder1
         output_file2 (str): Path to output txt file for folder2
+        output_file3 (str): Path to output txt file for folder3
     """
     files1 = []
     files2 = []
+    files3 = []
     
     # Scan first folder
     for root, dirs, files in os.walk(folder1):
@@ -29,6 +32,14 @@ def scan_folders_and_create_txt(folder1, folder2, output_file1, output_file2):
             file_path = file_path.replace("_leftImg8bit.png", "")
             files2.append(file_path)
     
+    # Scan third folder
+    for root, dirs, files in os.walk(folder3):
+        for file in files:
+            file_path = os.path.join(root, file)
+            # Remove "_leftImg8bit.png" from the file path
+            file_path = file_path.replace("_leftImg8bit.png", "")
+            files3.append(file_path)
+    
     # Write file paths from folder1 to first output file
     with open(output_file1, 'w') as f:
         for file_path in sorted(files1):
@@ -39,15 +50,23 @@ def scan_folders_and_create_txt(folder1, folder2, output_file1, output_file2):
         for file_path in sorted(files2):
             f.write(file_path + '\n')
     
+    # Write file paths from folder3 to third output file
+    with open(output_file3, 'w') as f:
+        for file_path in sorted(files3):
+            f.write(file_path + '\n')
+    
     print(f"Created {output_file1} with {len(files1)} file paths")
     print(f"Created {output_file2} with {len(files2)} file paths")
+    print(f"Created {output_file3} with {len(files3)} file paths")
 
 if __name__ == "__main__":
     # Specify your folder paths here
     dataset_folder = os.path.dirname(os.path.abspath(__file__))
     folder1_path = os.path.join(dataset_folder.split("dataset")[0],"data/cityscapes/leftImg8bit/train")
     folder2_path = os.path.join(dataset_folder.split("dataset")[0], "data/cityscapes/leftImg8bit/val")
+    folder3_path = os.path.join(dataset_folder.split("dataset")[0], "data/cityscapes/leftImg8bit/test")
     output_txt_file1 = os.path.join(dataset_folder, "cs_train.txt")
     output_txt_file2 = os.path.join(dataset_folder, "cs_val.txt")
+    output_txt_file3 = os.path.join(dataset_folder, "cs_test.txt")
 
-    scan_folders_and_create_txt(folder1_path, folder2_path, output_txt_file1, output_txt_file2)
+    scan_folders_and_create_txt(folder1_path, folder2_path, folder3_path, output_txt_file1, output_txt_file2, output_txt_file3)

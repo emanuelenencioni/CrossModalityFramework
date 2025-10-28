@@ -149,7 +149,7 @@ def main():
     
     # Build evaluation dataset and dataloader
     logger.info("Building evaluation dataset...")
-    _, test_ds = dataset_builder.build_from_config(cfg)
+    test_ds = dataset_builder.build_test(cfg)
     
     if test_ds is None:
         raise ValueError("No test dataset created. Check your dataset config.")
