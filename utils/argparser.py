@@ -86,7 +86,7 @@ def parse_arguments():
     parser.add_argument("--train_split", type=str, help="Training split file", default=None)
     parser.add_argument("--val_split", type=str, help="Validation split file", default=None)
     parser.add_argument("--losses_weights", type=list, help="Losses weights", default=None)
-    parser.add_argument("--use_augmentations", type=bool, help="Use augmentations", default=False, action=argparse.BooleanOptionalAction)
+    parser.add_argument("--use_augmentations", help="Use augmentations", default=None, action="store_true")
 
     parser.add_argument("--model-pretrained_weights", type=str, help="Path to pretrained weights", default=None, dest="model-pretrained_weights")
 
