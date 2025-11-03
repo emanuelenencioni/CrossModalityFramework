@@ -5,6 +5,7 @@ import albumentations as A
 import sys
 from pathlib import Path
 from utils.helpers import DEBUG
+import copy
 
 
 from .dsec import DSECDataset  # make sure this import path is correct based on your project structure
@@ -17,7 +18,7 @@ def build_from_config(cfg):
     Currently implemented: DSEC_Night, cityscapes
     """
     assert "dataset" in cfg.keys(), "'dataset' params list missing from config file "
-    dataset_cfg = cfg.get("dataset")
+    dataset_cfg = copy.deepcopy(cfg.get("dataset"))
     project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
     dataset_name = dataset_cfg.get("name", None)
     
