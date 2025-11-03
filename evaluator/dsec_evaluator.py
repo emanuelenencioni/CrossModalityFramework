@@ -54,7 +54,7 @@ def per_class_AR_table(coco_eval, class_names=DSEC_DET_CLASSES, headers=["class"
         recall = recalls[:, idx, 0, -1]
         recall = recall[recall > -1]
         ar = np.mean(recall) if recall.size else float("nan")
-        per_class_AR["class/AR/"+name] = float(ar * 100)
+        per_class_AR["class/AR/"+name] = float(ar)
 
     num_cols = min(colums, len(per_class_AR) * len(headers))
     result_pair = [x for pair in per_class_AR.items() for x in pair]
@@ -80,7 +80,7 @@ def per_class_AP_table(coco_eval, class_names=DSEC_DET_CLASSES, headers=["class"
         precision = precisions[:, :, idx, 0, -1]
         precision = precision[precision > -1]
         ap = np.mean(precision) if precision.size else float("nan")
-        per_class_AP["class/AP/"+name] = float(ap * 100)
+        per_class_AP["class/AP/"+name] = float(ap)
 
     num_cols = min(colums, len(per_class_AP) * len(headers))
     result_pair = [x for pair in per_class_AP.items() for x in pair]
