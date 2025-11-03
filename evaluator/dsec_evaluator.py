@@ -218,9 +218,7 @@ class DSECEvaluator:
 
     def postprocess(self, prediction, class_agnostic=False, images_info=None):
         box_corner = prediction.new(prediction.shape)
-        ####### WARNING : Convert from (cx, cy, w, h) to (x1, y1, x2, y2) format
-        logger.warning("Converting from (cx, cy, w, h) to (x1, y1, x2, y2) format, BE AWARE: OLD CODE has cx,cy,h,w")
-        
+        ####### WARNING : Convert from (cx, cy, w, h) to (x1, y1, x2, y2) format        
         box_corner[:, :, 0] = prediction[:, :, 0] - prediction[:, :, 2] / 2
         box_corner[:, :, 1] = prediction[:, :, 1] - prediction[:, :, 3] / 2
         box_corner[:, :, 2] = prediction[:, :, 0] + prediction[:, :, 2] / 2
@@ -503,24 +501,6 @@ class DSECEvaluator:
                 logger.warning(f"GT data annotations: {len(all_annotations)}")
                 logger.warning(f"Predictions count: {len(all_pred_data)}")
             return [0.0]*12, None, None
-        
-        # Log metrics to wandb once
-        if wandb.run is not None and coco_eval is not None:
-            wandb.log({
-                "eval/AP_IoU=0.50:0.95": coco_eval.stats[0],
-                "eval/AP_IoU=0.50": coco_eval.stats[1],
-                "eval/AP_IoU=0.75": coco_eval.stats[2],
-                "eval/AP_small": coco_eval.stats[3],
-                "eval/AP_medium": coco_eval.stats[4],
-                "eval/AP_large": coco_eval.stats[5],
-                "eval/AR_maxDets=1": coco_eval.stats[6],
-                "eval/AR_maxDets=10": coco_eval.stats[7],
-                "eval/AR_maxDets=100": coco_eval.stats[8],
-                "eval/AR_small": coco_eval.stats[9],
-                "eval/AR_medium": coco_eval.stats[10],
-                "eval/AR_large": coco_eval.stats[11],
-                "epoch": self.step  # Changed from test_batch to epoch
-            })
         
         classAP = per_class_AP_table(coco_eval, class_names=DSEC_DET_CLASSES) if self.per_class_AP and coco_eval is not None else None
         classAR = per_class_AR_table(coco_eval, class_names=DSEC_DET_CLASSES) if self.per_class_AR and coco_eval is not None else None
