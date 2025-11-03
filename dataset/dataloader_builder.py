@@ -17,11 +17,12 @@ def build_from_config(train_ds, test_ds, cfg):
     """
     assert 'batch_size' in cfg['dataset'].keys(), " specify 'batch_size' dataset param"
     num_workers = cfg['dataset'].get('num_workers', 2)
-        
-    train_dl = DataLoader(train_ds, batch_size=cfg['dataset']['batch_size'], 
-                          num_workers=num_workers, shuffle=True, collate_fn=collate_ssl, pin_memory=True) if train_ds is not None else None
-    test_dl = DataLoader(test_ds, batch_size=cfg['dataset']['batch_size'], 
-                         num_workers=num_workers, shuffle=False, collate_fn=collate_ssl, pin_memory=True) if test_ds is not None else None
+    pin_memory = cfg.get('pin_memory', False)
+
+    train_dl = DataLoader(train_ds, batch_size=cfg['dataset']['batch_size'],
+                          num_workers=num_workers, shuffle=True, collate_fn=collate_ssl, pin_memory=pin_memory) if train_ds is not None else None
+    test_dl = DataLoader(test_ds, batch_size=cfg['dataset']['batch_size'],
+                         num_workers=num_workers, shuffle=False, collate_fn=collate_ssl, pin_memory=pin_memory) if test_ds is not None else None
 
 
     return train_dl, test_dl
