@@ -1,5 +1,3 @@
-
-
 import inspect
 import datetime
 import time
@@ -102,6 +100,7 @@ class Trainer:
         self.best_optimizer = self.optimizer.state_dict()
         self.best_sch_params = self.scheduler.state_dict() if self.scheduler is not None else None
         self.best_ap50_95 = 0
+        self.best_ap50 = 0  # Add this
         self.step = 0
 
         if DEBUG >= 1:
@@ -179,12 +178,14 @@ class Trainer:
                 
                 self._log({"lr": self.optimizer.param_groups[0]['lr'], "epoch": self.epoch})
 
+            # Evaluate and get mAP
+            ap50_95 = 0  # Default value if no evaluation
             if evaluator is not None:
                 # stats is a numpy array of 12 elements
                 stats, classAP, classAR = evaluator.evaluate(self.model)
+                ap50_95, ap50 = stats[0], stats[1]
 
                 if DEBUG >= 1: 
-                    ap50_95, ap50 = stats[0], stats[1]
                     logger.info(f"AP50-95: {ap50_95:.4f}, AP50: {ap50:.4f}")
 
                 self._log_coco_metrics(stats, classAP, classAR)
@@ -194,10 +195,25 @@ class Trainer:
                 ap50_95, ap50, _ = self.dataloader.dataset.evaluate(self.model)
                 if DEBUG >= 1: logger.info(f"AP50-95: {ap50_95:.4f}, AP50: {ap50:.4f}")
 
-            # Check for improvement and update patience counter
-            if avg_loss < self.best_loss:
-                if DEBUG >= 1: logger.success(f"New best loss: {avg_loss:.4f} at epoch {self.epoch}")
-                self.best_loss = avg_loss
+            # Check for improvement based on mAP (primary) or loss (fallback)
+            improved = False
+            if evaluator is not None or hasattr(self.dataloader.dataset, 'evaluate'):
+                # Use mAP as the primary metric
+                if ap50_95 > self.best_ap50_95:
+                    if DEBUG >= 1: 
+                        logger.success(f"New best AP50-95: {ap50_95:.4f} at epoch {self.epoch} (previous: {self.best_ap50_95:.4f})")
+                    self.best_ap50_95 = ap50_95
+                    self.best_ap50 = ap50
+                    improved = True
+            else:
+                # Fallback to loss if no evaluator is available
+                if avg_loss < self.best_loss:
+                    if DEBUG >= 1: 
+                        logger.success(f"New best loss: {avg_loss:.4f} at epoch {self.epoch}")
+                    self.best_loss = avg_loss
+                    improved = True
+            
+            if improved:
                 self.best_epoch = self.epoch
                 self.best_params = self.model.state_dict()
                 self.best_optimizer = self.optimizer.state_dict()
@@ -209,12 +225,16 @@ class Trainer:
             else:
                 self.patience_counter += 1
                 if DEBUG >= 1:
-                    logger.info(f"No improvement in loss. Patience: {self.patience_counter}/{self.patience}")
+                    metric_name = "AP50-95" if (evaluator is not None or hasattr(self.dataloader.dataset, 'evaluate')) else "loss"
+                    logger.info(f"No improvement in {metric_name}. Patience: {self.patience_counter}/{self.patience}")
                 
                 # Check if patience exceeded
                 if self.patience > 0 and self.patience_counter >= self.patience:
                     logger.warning(f"Early stopping triggered! No improvement for {self.patience} epochs.")
-                    logger.info(f"Best loss: {self.best_loss:.4f} at epoch {self.best_epoch}")
+                    if evaluator is not None or hasattr(self.dataloader.dataset, 'evaluate'):
+                        logger.info(f"Best AP50-95: {self.best_ap50_95:.4f} at epoch {self.best_epoch}")
+                    else:
+                        logger.info(f"Best loss: {self.best_loss:.4f} at epoch {self.best_epoch}")
                     break
             
             self.epoch += 1
