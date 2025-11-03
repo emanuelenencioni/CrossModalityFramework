@@ -77,6 +77,7 @@ def parse_arguments():
     parser.add_argument("--seed", type=int, help="Seed value", default=None)
     parser.add_argument("--device", type=str, help="Device to use (cuda or cpu)", default="cuda")
     parser.add_argument("--checkpoint_path", type=str, help="Path to the checkpoint file", default=None)
+    parser.add_argument("--pin_memory", help="Pin memory during data loading", default=None, action="store_true")
     # Dataset parameters
     parser.add_argument("--dataset-name", type=str, help="Dataset name", default=None, dest="dataset-name")
     parser.add_argument("--data_dir", type=str, help="Data directory", default=None)
