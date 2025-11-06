@@ -140,7 +140,15 @@ class HungarianMatcher(nn.Module):
         C = C.view(bs, num_queries, -1).float().cpu()  # convert to float because bfloat16 doesn't play nicely with CPU
 
         # we assume any good match will not cause NaN or Inf, so we replace them with a large value
-        max_cost = C.max() if C.numel() > 0 else 0
+        # First check if we have any valid (non-NaN, non-Inf) values
+        valid_mask = ~(C.isinf() | C.isnan())
+        if valid_mask.any():
+            max_cost = C[valid_mask].max()
+        else:
+            # If all values are NaN/Inf, use a large default value
+            max_cost = 1e8
+        
+        # Replace NaN and Inf with large value
         C[C.isinf() | C.isnan()] = max_cost * 2
 
         sizes = [len(v["boxes"]) for v in targets]

@@ -119,7 +119,14 @@ class Trainer:
         tot_loss = out_dict['total_loss']
         losses = out_dict['losses']
 
+        # Check for NaN in loss
+        self.check_grad_nan(tot_loss, losses)
+
         tot_loss.backward()
+        
+        # Add gradient clipping to prevent NaN values
+        torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
+        
         self.optimizer.step()
 
         if DEBUG >= 1: 
@@ -314,7 +321,14 @@ class Trainer:
     def _get_loss_keys(self):
         self.losses_keys = get_loss_keys_model(self.model)
 
-
+    def check_grad_nan(self, loss, losses):
+        if torch.isnan(loss) or torch.isinf(loss):
+            logger.error(f"NaN or Inf detected in total loss!")
+            logger.error(f"Individual losses: {losses}")
+            raise ValueError(f"Training failed: NaN or Inf in loss. This may be caused by: "
+                           f"1) Learning rate too high (current: {self.optimizer.param_groups[0]['lr']}) "
+                           f"2) Invalid bounding boxes in data "
+                           f"3) Dimension mismatch in model configuration")
 def get_loss_keys_model(model):
     if hasattr(model, 'loss_keys'):
             if DEBUG >= 1: logger.info(f"Loss keys from model attribute: {model.loss_keys}")
