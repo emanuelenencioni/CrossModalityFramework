@@ -125,6 +125,7 @@ class CustomDataset(Dataset):
         self.ignore_index = ignore_index
         self.reduce_zero_label = reduce_zero_label
         self.label_map = None
+        self.output_size = kwargs.get('output_size', (512, 512))
         self.CLASSES, self.PALETTE = self.get_classes_and_palette(
             classes, palette)
         self.custom_classes = kwargs.get('custom_classes', False)
@@ -242,12 +243,12 @@ class CustomDataset(Dataset):
         if self.use_augmentations and not self.test_mode: # and 'image' in results and 'BB' in results:
             if any(key in self.outputs for key in self.image_keys):
                 image_pil = results['image']
-                padded_resized_image, _, padding_info = self.pad_and_resize_pil_image(image_pil, target_size=(512, 512))
+                padded_resized_image, _, padding_info = self.pad_and_resize_pil_image(image_pil, target_size=self.output_size)
                 results['image'] = self.image_transform(padded_resized_image)
             
             if any(event_key in self.outputs for event_key in self.event_keys) and self.events_dir is not None:
                 event_pil = results['events']
-                padded_resized_events, _, padding_info = self.pad_and_resize_pil_image(event_pil, target_size=(512, 512))
+                padded_resized_events, _, padding_info = self.pad_and_resize_pil_image(event_pil, target_size=self.output_size)
                 results['events'] = self.event_transform(padded_resized_events)
 
             if 'BB' in self.outputs:
@@ -260,12 +261,12 @@ class CustomDataset(Dataset):
         # Add bounding box information if available (original logic for test mode or no augmentations)
         else: 
             idx = results.get('idx', 0)
-            transformed_bboxes, _ = self.get_padded_and_scaled_bbox_info(idx, target_size=(512, 512))
+            transformed_bboxes, _ = self.get_padded_and_scaled_bbox_info(idx, target_size=self.output_size)
             if 'BB' in self.outputs: results['BB'] = transformed_bboxes
             # Load image with padding and scaling to 512x512
             if any(key in self.outputs for key in self.image_keys):
-                padded_resized_image, scale_factor, padding_info = self.load_and_resize_image(idx, target_size=(512, 512))
-            
+                padded_resized_image, scale_factor, padding_info = self.load_and_resize_image(idx, target_size=self.output_size)
+
                 if padded_resized_image is not None:
                     # Convert PIL image to numpy array and normalize to [0, 1]
                     results['padding_info'] = padding_info
@@ -276,21 +277,21 @@ class CustomDataset(Dataset):
                     
                     if DEBUG >= 2:
                         orig_size = padding_info.get('original_size', (0, 0))
-                        print(f"Loaded image: {orig_size} -> padded to square -> resized to (512, 512) "
+                        print(f"Loaded image: {orig_size} -> padded to square -> resized to {self.output_size} "
                             f"with {len(transformed_bboxes)} transformed bboxes")
                 else:
                     # Fallback: create empty image
-                    results['image'] = torch.zeros((3, 512, 512), dtype=torch.float32)
+                    results['image'] = torch.zeros((3, *self.output_size), dtype=torch.float32)
                     results['padding_info'] = {}
                     results['BB'] = torch.zeros((self.max_labels, 5), dtype=torch.float32)
             
             if any(event_key in self.outputs for event_key in self.event_keys) and self.events_dir is not None:
-                padded_resized_events, _, _ = self.load_and_resize_events(idx, target_size=(512, 512))
+                padded_resized_events, _, _ = self.load_and_resize_events(idx, target_size=self.output_size)
                 if padded_resized_events is not None:
                     results['events'] = self.image_transform(padded_resized_events)
                 else:
                     # Fallback: create empty events image
-                    results['events'] = torch.zeros((3, 512, 512), dtype=torch.float32)
+                    results['events'] = torch.zeros((3, *self.output_size), dtype=torch.float32)
                     results['padding_info'] = {}
                     results['BB'] = torch.zeros((self.max_labels, 5), dtype=torch.float32)
         
@@ -326,10 +327,10 @@ class CustomDataset(Dataset):
                         self.orig_width, self.orig_height = pil_img.size
                 except Exception:
                     pass
-        
-        img_metas['img_shape'] = (512, 512)  # Current processed size
-        img_metas['pad_shape'] = (512, 512)
-        img_metas['ori_shape'] = (512, 512)  # Size after initial processing
+
+        img_metas['img_shape'] = self.output_size  # Current processed size
+        img_metas['pad_shape'] = self.output_size
+        img_metas['ori_shape'] = self.output_size  # Size after initial processing
         img_metas['orig_shape'] = (self.orig_width, self.orig_height)  # Original image size
         img_metas['ori_filename'] = info['filename']
         img_metas['idx'] = idx
