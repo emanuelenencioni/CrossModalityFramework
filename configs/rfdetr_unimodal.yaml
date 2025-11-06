@@ -27,7 +27,7 @@ model:
   name: "rfdetrwrapper"  # Must match the module name (without .py)
   
   backbone:
-    name: "dinov2_base"      # Must be dinov2_base, dinov2_small, dinov2_large, etc.
+    name: "dinov2_small"      # Must be dinov2_base, dinov2_small, dinov2_large, etc.
                              # Options: dinov2_small, dinov2_base, dinov2_large, dinov2_giant
                              # Can include: dinov2_registers_base, dinov2_windowed_base, etc.
     embed_dim: 768           # Hidden dimension (768 for base, 384 for small, 1024 for large)
@@ -114,3 +114,8 @@ evaluator:
   name: rfdetr_evaluator
   conf_threshold: 0.3
   nms_threshold: 0.45
+
+logger:
+  name: wandb
+  project: Cross_Modality_Framework
+  entity: TwoGuysOneCode
