@@ -8,7 +8,7 @@ checkpoint_path: "" # path to a checkpoint to resume training from, if null trai
 dataset:
   name: cityscapes
   data_dir: data
-  batch_size: 20
+  batch_size: 4
   num_workers: 10
   outputs: ["image", "BB", "labels", "img_metas"] # these mandatory for unimodal training
   custom_classes: True # if True, the model will use custom classes defined in the dataset
@@ -16,8 +16,9 @@ dataset:
   train_split: "cs_train.txt"
   val_split: "cs_val.txt"
   use_augmentations: True
+  output_size: [560, 560]  # height, width
   augmentations:
-    resize: [512, 1024] # height, width
+    resize: [560, 1024] # height, width
     hflip_prob: 0.5
     scale: [0.8, 1.2]
     ratio: [0.9, 1.1]
