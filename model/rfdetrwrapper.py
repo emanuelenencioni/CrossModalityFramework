@@ -14,7 +14,7 @@ class Rfdetrwrapper(nn.Module):
     model:
       name: "rfdetrwrapper"
       backbone:
-        type: "resnet50"      # Backbone type
+        name: "resnet50"      # Backbone name
         embed_dim: 256        # Hidden dimension
         input_size: 640       # Input image size
         num_feature_levels: 4
@@ -51,7 +51,7 @@ class Rfdetrwrapper(nn.Module):
         
         Args:
             backbone (dict): Backbone configuration with keys:
-                - type: backbone type (resnet50, resnet101, dinov2, etc.)
+                - name: backbone name (resnet50, resnet101, dinov2, etc.)
                 - embed_dim: hidden dimension
                 - input_size: input image size
                 - dilation: whether to use dilation
@@ -139,7 +139,7 @@ class Rfdetrwrapper(nn.Module):
         """Build backbone based on configuration."""
         from model.rf_detr.models.backbone import build_backbone
         
-        backbone_type = self.backbone_cfg.get('type', 'resnet50')
+        backbone_type = self.backbone_cfg.get('name', 'resnet50')
         hidden_dim = self.backbone_cfg.get('embed_dim', 256)
         
         if DEBUG >= 1:
