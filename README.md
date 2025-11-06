@@ -136,15 +136,7 @@ def forward(self, x, targets=None):
 
 
 ## TODO
-- [ ] REFACTORING:
-    - [X] modules on main (no assert there pls)
-    - [X] clean and understandable
-- [X] Add training events on cityscapes with the IC from CMDA
-- [X] make unimodal agnostic to the losses defined in the model head, so make the model head agnostic too (use like tot_loss, dict, output), where dict contain all the specific losses. 
-- [X] Fix DSECNight
-- [X] check dsec-det no event on bbox
-- [ ] Fix multimodal training 
-        [X] refactoring -> sub class of unimodal.
+- [ ] Implement new model -> thinking about rf-detr
 - [ ] Make the logger uniform for all the framework (probably the one in dsec_evaluator)
 - [ ] in custom, get the output frame dims in input (for now it only works with 512x512)
 
