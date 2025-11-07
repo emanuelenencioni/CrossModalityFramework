@@ -23,7 +23,7 @@ def test_rfdetr_wrapper():
     logger.info("=" * 60)
     
     # Load config
-    config_path = project_root / "configs" / "rfdetr.yaml"
+    config_path = project_root / "configs" / "rfdetr_unimodal.yaml"
     logger.info(f"Loading config from: {config_path}")
     
     with open(config_path) as f:
