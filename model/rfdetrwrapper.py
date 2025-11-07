@@ -209,19 +209,26 @@ class Rfdetrwrapper(nn.Module):
         
         Returns:
             dict with keys:
-                - 'backbone_features': dict of backbone features at different scales
+                - 'backbone_features': dict with 'preflatten_feat' (list of tensors)
+                - 'head_outputs': model predictions
                 - 'total_loss': scalar tensor (if targets provided)
                 - 'losses': dict of individual losses (if targets provided)
-                - 'predictions': model predictions (if targets not provided)
         """
         # Forward through model
         outputs = self.model(x)
         
-        # Get backbone features for multimodal compatibility
+        # Get multi-scale backbone features
+        if hasattr(self.model.backbone, 'body'):
+            backbone_feats = self.model.backbone.body(x)
+        else:
+            backbone_feats = []
+        
+        # Build result dict following framework standard
         result = {
             'backbone_features': {
-                'preflatten_feat': self.model.backbone.body(x)[-1] if hasattr(self.model.backbone, 'body') else None
-            }
+                'preflatten_feat': backbone_feats if isinstance(backbone_feats, list) else [backbone_feats]
+            },
+            'head_outputs': outputs['pred_logits'] if 'pred_logits' in outputs else outputs
         }
         
         if targets is not None:
@@ -237,8 +244,6 @@ class Rfdetrwrapper(nn.Module):
             
             result['total_loss'] = total_loss
             result['losses'] = loss_dict
-        else:
-            result['predictions'] = outputs
         
         return result
     
