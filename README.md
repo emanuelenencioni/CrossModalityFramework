@@ -99,40 +99,12 @@ The DSEC-Night and Cityscapes datasets are currently supported. To prepare them 
     - Use the `DEBUG` environment variable to monitor the internal processes. Higher values (>=1) will increase the verbosity of the output, Most used are:          
         - `DEBUG=1`: Provides basic information such as real-time loss for each batch and setup details.
         - `DEBUG=3`: e.g. saves and allows inspection of ground truth bounding box images (just one, >4 for all of them).
-
+    - For testing purposes, use the `DEBUG_EVAL` environment variable to skip the training loop and run only the evaluation pipeline.
 6. **Evaluating the Model:**
     - Run the evaluation script:
       ```shell
       python detect_from_config.py --config config/your_config.yaml --checkpoint path/to/your/checkpoint.pth --input_image path_to_image
       ```
-## How to Create a Custom Task Head
-
-This guide explains how to implement a custom task head (e.g., classification, detection) that integrates seamlessly with the framework's training loop. 
-
-### Forward Function Requirements
-
-Your custom head's `forward()` method **need** to implement and calculate its own task specific loss. It also must follow this signature during training:
-
-```python
-def forward(self, x, targets=None):
-    """
-    Args:
-        x: Input features from the backbone
-        targets: Ground truth labels (required during training)
-    
-    Returns:
-        During training:
-            tuple: (outputs, total_loss, losses_dict)
-                - outputs: Your model's predictions
-                - total_loss: Single scalar tensor with the weighted sum of all losses
-                - losses_dict: Dictionary with individual loss values
-        
-        During inference:
-            tuple: (outputs, None) or just outputs
-    """
-    # Your implementation here
-    pass
-```
 
 
 ## TODO
