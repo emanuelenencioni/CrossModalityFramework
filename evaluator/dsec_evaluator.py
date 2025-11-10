@@ -240,20 +240,23 @@ class DSECEvaluator:
             detections = detections[conf_mask]
             if not detections.size(0):
                 continue
-
-            if class_agnostic:
-                nms_out_index = nms(
-                    detections[:, :4],
-                    detections[:, 4] * detections[:, 5],
-                    self.nms_thre,
-                )
+            if self.nms_thre > 0:
+                if class_agnostic:
+                    nms_out_index = nms(
+                        detections[:, :4],
+                        detections[:, 4] * detections[:, 5],
+                        self.nms_thre,
+                    )
+                else:
+                    nms_out_index = batched_nms(
+                        detections[:, :4],
+                        detections[:, 4] * detections[:, 5],
+                        detections[:, 6],
+                        self.nms_thre,
+                    )
             else:
-                nms_out_index = batched_nms(
-                    detections[:, :4],
-                    detections[:, 4] * detections[:, 5],
-                    detections[:, 6],
-                    self.nms_thre,
-                )
+            # If NMS is disabled, keep all detections
+                nms_out_index = torch.arange(detections.size(0))
 
             detections = detections[nms_out_index]
             if output[i] is None:
