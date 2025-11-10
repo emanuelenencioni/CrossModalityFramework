@@ -8,7 +8,7 @@ checkpoint_path: "" # path to a checkpoint to resume training from, if null trai
 dataset:
   name: cityscapes
   data_dir: data
-  batch_size: 4
+  batch_size: 6
   num_workers: 10
   outputs: ["image", "BB", "labels", "img_metas"] # these mandatory for unimodal training
   custom_classes: True # if True, the model will use custom classes defined in the dataset
@@ -30,7 +30,7 @@ model:
     name: "dinov2_small"      # Must be dinov2_base, dinov2_small, dinov2_large, etc.
                              # Options: dinov2_small, dinov2_base, dinov2_large, dinov2_giant
                              # Can include: dinov2_registers_base, dinov2_windowed_base, etc.
-    embed_dim: 768           # Hidden dimension (768 for base, 384 for small, 1024 for large)
+    embed_dim: 384           # Hidden dimension (768 for base, 384 for small, 1024 for large)
                              # IMPORTANT: out_channels MUST equal embed_dim!
     input_size: 560          # Input image size (must be divisible by 56 for DINOv2 with num_windows=4)
                              # 560 = 56 * 10, or use 448 = 56 * 8, or 672 = 56 * 12
@@ -43,7 +43,7 @@ model:
     vit_encoder_num_layers: 12
     window_block_indexes: []
     drop_path: 0.0
-    out_channels: 768          # Output channels for projector - MUST match embed_dim!
+    out_channels: 384          # Output channels for projector - MUST match embed_dim!
     out_feature_indexes: [3, 6, 9, 12]  # Which DINOv2 layers to use (stages 3, 6, 9, 12)
     projector_scale: ["P3", "P4", "P5", "P6"]  # Feature pyramid levels - P6 generated via pooling
                                                 # MUST have 4 levels to match num_feature_levels!
@@ -60,7 +60,7 @@ model:
     positional_encoding_size: null
   
   head:
-    num_classes: 10          # Number of classes (required by builder.py)
+    num_classes: 8 # DSEC + no object         # Number of classes (required by builder.py)
     num_queries: 300         # Number of object queries
     aux_loss: true           # Use auxiliary decoding losses
     group_detr: 1            # Group DETR parameter
@@ -93,27 +93,28 @@ model:
   pretrained: false          # Whether to load pretrained weights
 
 trainer:
-  epochs: 100
+  epochs: 500
   checkpoint_interval_epochs: 10
   save_folder: "rfdetr_checkpoints"
 
 optimizer:
-  name: "AdamW"
-  lr: 0.0001
+  name: "adamw"
+  lr: 0.001
+  #momentum: 0.9
   wd: 0.0001
 
 scheduler:
   name: "StepLR"
   step_size: 30
-  gamma: 0.1
+  gamma: 0.4
 
 device: "cuda"
 dual_modality: false
 
 evaluator:
   name: rfdetr_evaluator
-  conf_threshold: 0.3
-  nms_threshold: 0.45
+  conf_threshold: 0.15
+  nms_threshold: -1  # Disabled if -1
 
 logger:
   name: wandb
