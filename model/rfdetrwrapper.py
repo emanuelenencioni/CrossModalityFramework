@@ -205,15 +205,20 @@ class Rfdetrwrapper(nn.Module):
         Args:
             x: Input tensor [B, C, H, W]
             targets: Target tensor [B, N, 5] where N is max objects
-                     Format: [class_id, x1, y1, x2, y2] (xyxy format)
+                     Format: [class_id, x_center, y_center, width, height] (absolute pixels)
         
         Returns:
             dict with keys:
                 - 'backbone_features': dict with 'preflatten_feat' (list of tensors)
-                - 'head_outputs': model predictions
+                - 'head_outputs': predictions [B, num_queries, 5 + num_classes]
+                                 Format: [x_center, y_center, width, height, objectness, class_conf_0, ...]
+                                 (absolute pixel coordinates)
                 - 'total_loss': scalar tensor (if targets provided)
                 - 'losses': dict of individual losses (if targets provided)
         """
+        # Get image dimensions
+        B, C, W, H = x.shape
+        
         # Forward through model
         outputs = self.model(x)
         
@@ -223,17 +228,41 @@ class Rfdetrwrapper(nn.Module):
         else:
             backbone_feats = []
         
+        # Extract predictions and convert to standard format
+        # outputs['pred_logits']: [B, num_queries, num_classes]
+        # outputs['pred_boxes']: [B, num_queries, 4] in cxcywh normalized format
+        pred_logits = outputs['pred_logits']  # [B, num_queries, num_classes]
+        pred_boxes = outputs['pred_boxes']    # [B, num_queries, 4] (cxcywh normalized)
+        
+        # Convert boxes from normalized to absolute pixel coordinates
+        pred_boxes_abs = pred_boxes.clone()
+        pred_boxes_abs[..., 0] = pred_boxes[..., 0] * W  # cx
+        pred_boxes_abs[..., 1] = pred_boxes[..., 1] * H  # cy
+        pred_boxes_abs[..., 2] = pred_boxes[..., 2] * W  # width
+        pred_boxes_abs[..., 3] = pred_boxes[..., 3] * H  # height
+        
+        # Compute objectness score (max class probability as proxy)
+        class_probs = pred_logits.sigmoid()
+        objectness = class_probs.max(dim=-1, keepdim=True)[0]
+        
+        # Concatenate: [x_center, y_center, width, height, objectness, class_conf_0, ...]
+        head_outputs = torch.cat([
+            pred_boxes_abs,  # [B, num_queries, 4] (absolute pixels)
+            objectness,      # [B, num_queries, 1]
+            class_probs      # [B, num_queries, num_classes]
+        ], dim=-1)  # [B, num_queries, 5 + num_classes]
+        
         # Build result dict following framework standard
         result = {
             'backbone_features': {
                 'preflatten_feat': backbone_feats if isinstance(backbone_feats, list) else [backbone_feats]
             },
-            'head_outputs': outputs['pred_logits'] if 'pred_logits' in outputs else outputs
+            'head_outputs': head_outputs
         }
         
         if targets is not None:
-            # Convert targets to DETR format
-            targets_detr = self._convert_targets(targets, x.shape[-2:])
+            # Convert targets to DETR format (absolute → normalized)
+            targets_detr = self._convert_targets(targets, (H, W))
             
             # Compute losses
             loss_dict = self.criterion(outputs, targets_detr)
@@ -251,19 +280,19 @@ class Rfdetrwrapper(nn.Module):
         """
         Convert targets from [B, N, 5] format to DETR format.
         
-        Input format: [class_id, x1, y1, x2, y2] (xyxy in pixel coordinates)
+        Input format: [class_id, x_center, y_center, width, height] (absolute pixels)
         Output format: list of dicts with 'labels' and 'boxes' (cxcywh normalized [0,1])
         
         Args:
-            targets: tensor of shape [B, N, 5]
-            img_size: tuple (H, W) of image dimensions
+            targets: tensor of shape [B, N, 5] with absolute pixel coordinates
+            img_size: tuple (H, W) of image dimensions for normalization
         """
         batch_size = targets.shape[0]
+        H, W = img_size
         targets_detr = []
-        h, w = img_size
         
         for i in range(batch_size):
-            # Filter out padding (assuming class_id < 0 means no object)
+            # Filter out padding (class_id < 0 means no object)
             valid_mask = targets[i, :, 0] >= 0
             valid_targets = targets[i][valid_mask]
             
@@ -275,19 +304,18 @@ class Rfdetrwrapper(nn.Module):
                 continue
             
             labels = valid_targets[:, 0].long()
-            boxes_xyxy = valid_targets[:, 1:]
+            boxes_abs = valid_targets[:, 1:]  # [x_center, y_center, width, height] absolute
             
-            # Normalize boxes to [0, 1]
-            boxes_xyxy_norm = boxes_xyxy.clone()
-            boxes_xyxy_norm[:, [0, 2]] /= w
-            boxes_xyxy_norm[:, [1, 3]] /= h
-            
-            # Convert xyxy to cxcywh
-            boxes_cxcywh = self._xyxy_to_cxcywh(boxes_xyxy_norm)
+            # Normalize boxes to [0, 1] for DETR
+            boxes_norm = boxes_abs.clone()
+            boxes_norm[:, 0] = boxes_abs[:, 0] / W  # cx
+            boxes_norm[:, 1] = boxes_abs[:, 1] / H  # cy
+            boxes_norm[:, 2] = boxes_abs[:, 2] / W  # width
+            boxes_norm[:, 3] = boxes_abs[:, 3] / H  # height
             
             targets_detr.append({
                 'labels': labels,
-                'boxes': boxes_cxcywh
+                'boxes': boxes_norm
             })
         
         return targets_detr
