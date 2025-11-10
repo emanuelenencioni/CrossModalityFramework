@@ -115,12 +115,20 @@ class Rfdetrwrapper(nn.Module):
             'loss_giou': self.loss_cfg.get('giou_loss_coef', 2)
         }
         
+        # Add auxiliary losses if aux_loss is enabled
+        if head.get('aux_loss', True):
+            aux_weight_dict = {}
+            for i in range(self.transformer_cfg.get('dec_layers', 6) - 1):
+                aux_weight_dict.update({k + f'_{i}': v for k, v in weight_dict.items()})
+            weight_dict.update(aux_weight_dict)
+        
         self.criterion = SetCriterion(
             num_classes=self.num_classes,
             matcher=matcher,
             weight_dict=weight_dict,
             focal_alpha=self.loss_cfg.get('focal_alpha', 0.25),
             losses=['labels', 'boxes', 'cardinality'],
+            eos_coef=self.loss_cfg.get('eos_coef', 0.1),  # Add this line
             group_detr=head.get('group_detr', 1),
             sum_group_losses=self.loss_cfg.get('sum_group_losses', False),
             use_varifocal_loss=self.loss_cfg.get('use_varifocal_loss', False),
@@ -231,26 +239,33 @@ class Rfdetrwrapper(nn.Module):
         # Extract predictions and convert to standard format
         # outputs['pred_logits']: [B, num_queries, num_classes]
         # outputs['pred_boxes']: [B, num_queries, 4] in cxcywh normalized format
-        pred_logits = outputs['pred_logits']  # [B, num_queries, num_classes]
-        pred_boxes = outputs['pred_boxes']    # [B, num_queries, 4] (cxcywh normalized)
+        pred_logits = outputs['pred_logits']
+        pred_boxes = outputs['pred_boxes']
         
-        # Convert boxes from normalized to absolute pixel coordinates
+        # Convert boxes to absolute coordinates
         pred_boxes_abs = pred_boxes.clone()
         pred_boxes_abs[..., 0] = pred_boxes[..., 0] * W  # cx
         pred_boxes_abs[..., 1] = pred_boxes[..., 1] * H  # cy
         pred_boxes_abs[..., 2] = pred_boxes[..., 2] * W  # width
         pred_boxes_abs[..., 3] = pred_boxes[..., 3] * H  # height
         
-        # Compute objectness score (max class probability as proxy)
+        # Apply sigmoid to get class probabilities
         class_probs = pred_logits.sigmoid()
-        objectness = class_probs.max(dim=-1, keepdim=True)[0]
         
-        # Concatenate: [x_center, y_center, width, height, objectness, class_conf_0, ...]
+        # OPTION 1: Set objectness to 1.0 (since DETR doesn't have separate objectness)
+        objectness = torch.ones((B, self.num_queries, 1), 
+                               dtype=class_probs.dtype, 
+                               device=class_probs.device)
+        
+        # OPTION 2: Use sqrt of max class confidence to balance the multiplication
+        # objectness = class_probs.max(dim=-1, keepdim=True)[0].sqrt()
+        
+        # YOLOX format: [x_center, y_center, width, height, objectness, class_conf_0, ...]
         head_outputs = torch.cat([
-            pred_boxes_abs,  # [B, num_queries, 4] (absolute pixels)
-            objectness,      # [B, num_queries, 1]
+            pred_boxes_abs,  # [B, num_queries, 4]
+            objectness,      # [B, num_queries, 1] - set to 1.0
             class_probs      # [B, num_queries, num_classes]
-        ], dim=-1)  # [B, num_queries, 5 + num_classes]
+        ], dim=-1)
         
         # Build result dict following framework standard
         result = {
@@ -273,6 +288,14 @@ class Rfdetrwrapper(nn.Module):
             
             result['total_loss'] = total_loss
             result['losses'] = loss_dict
+        
+        if DEBUG >= 2:
+            class_probs = pred_logits.sigmoid()
+            max_probs = class_probs.max(dim=-1)[0]
+            logger.info(f"Confidence distribution:")
+            logger.info(f"  Min: {max_probs.min():.4f}, Max: {max_probs.max():.4f}")
+            logger.info(f"  Mean: {max_probs.mean():.4f}, Median: {max_probs.median():.4f}")
+            logger.info(f"  Predictions > 0.3: {(max_probs > 0.3).sum().item()}/{max_probs.numel()}")
         
         return result
     
