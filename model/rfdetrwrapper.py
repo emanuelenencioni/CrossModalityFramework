@@ -9,61 +9,12 @@ from utils.helpers import DEBUG
 class Rfdetrwrapper(nn.Module):
     """
     Wrapper for RF-DETR to work with CrossModalityFramework builder.py.
-    
-    Expected config structure:
-    model:
-      name: "rfdetrwrapper"
-      backbone:
-        name: "resnet50"      # Backbone name
-        embed_dim: 256        # Hidden dimension
-        input_size: 640       # Input image size
-        num_feature_levels: 4
-        pretrained_encoder: true
-        freeze_encoder: false
-        # ... see config file for all backbone parameters
-      head:
-        num_classes: 80
-        num_queries: 300
-        aux_loss: true
-        group_detr: 1
-        two_stage: false
-      transformer:
-        sa_nheads: 8          # Self-attention heads
-        ca_nheads: 8          # Cross-attention heads
-        dec_layers: 6
-        dim_feedforward: 1024
-        dropout: 0.1
-        dec_n_points: 4
-      matcher:
-        set_cost_class: 1.0
-        set_cost_bbox: 5.0
-        set_cost_giou: 2.0
-      loss:
-        cls_loss_coef: 1.0
-        bbox_loss_coef: 5.0
-        giou_loss_coef: 2.0
-        eos_coef: 0.1
     """
+
     
     def __init__(self, backbone, head, name="rfdetrwrapper", **kwargs):
         """
         Initialize RF-DETR wrapper compatible with builder.py.
-        
-        Args:
-            backbone (dict): Backbone configuration with keys:
-                - name: backbone name (resnet50, resnet101, dinov2, etc.)
-                - embed_dim: hidden dimension
-                - input_size: input image size
-                - dilation: whether to use dilation
-                - num_feature_levels: number of feature levels
-            head (dict): Head configuration with keys:
-                - num_classes: number of classes
-                - num_queries: number of queries
-                - aux_loss: whether to use auxiliary loss
-                - group_detr: group detr parameter
-                - two_stage: whether to use two-stage
-            name (str): Model name
-            **kwargs: Additional parameters including transformer, matcher, loss configs
         """
         super().__init__()
         
@@ -128,7 +79,6 @@ class Rfdetrwrapper(nn.Module):
             weight_dict=weight_dict,
             focal_alpha=self.loss_cfg.get('focal_alpha', 0.25),
             losses=['labels', 'boxes', 'cardinality'],
-            eos_coef=self.loss_cfg.get('eos_coef', 0.1),  # Add this line
             group_detr=head.get('group_detr', 1),
             sum_group_losses=self.loss_cfg.get('sum_group_losses', False),
             use_varifocal_loss=self.loss_cfg.get('use_varifocal_loss', False),
@@ -209,20 +159,6 @@ class Rfdetrwrapper(nn.Module):
     def forward(self, x, targets=None):
         """
         Forward pass compatible with CrossModalityFramework.
-        
-        Args:
-            x: Input tensor [B, C, H, W]
-            targets: Target tensor [B, N, 5] where N is max objects
-                     Format: [class_id, x_center, y_center, width, height] (absolute pixels)
-        
-        Returns:
-            dict with keys:
-                - 'backbone_features': dict with 'preflatten_feat' (list of tensors)
-                - 'head_outputs': predictions [B, num_queries, 5 + num_classes]
-                                 Format: [x_center, y_center, width, height, objectness, class_conf_0, ...]
-                                 (absolute pixel coordinates)
-                - 'total_loss': scalar tensor (if targets provided)
-                - 'losses': dict of individual losses (if targets provided)
         """
         # Get image dimensions
         B, C, W, H = x.shape
