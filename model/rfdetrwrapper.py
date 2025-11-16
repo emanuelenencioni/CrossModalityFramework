@@ -212,13 +212,9 @@ class Rfdetrwrapper(nn.Module):
         }
         
         if targets is not None:
-            # Convert targets to DETR format (absolute → normalized)
             targets_detr = self._convert_targets(targets, (H, W))
-            
-            # Compute losses
             loss_dict = self.criterion(outputs, targets_detr)
             
-            # Calculate total loss
             total_loss = sum(loss_dict[k] * self.criterion.weight_dict.get(k, 1) 
                            for k in loss_dict.keys() if k in self.criterion.weight_dict)
             
