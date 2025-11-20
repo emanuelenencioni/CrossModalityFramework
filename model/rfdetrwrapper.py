@@ -87,9 +87,6 @@ class Rfdetrwrapper(nn.Module):
             mask_point_sample_ratio=self.matcher_cfg.get('mask_point_sample_ratio', 16)
         )
         
-        # For compatibility with your framework
-        self.loss_keys = ['loss_ce', 'loss_bbox', 'loss_giou', 'loss_cardinality']
-        
         if DEBUG >= 1:
             logger.success("RF-DETR wrapper initialized successfully")
     
@@ -97,7 +94,7 @@ class Rfdetrwrapper(nn.Module):
         """Build backbone based on configuration."""
         from model.rf_detr.models.backbone import build_backbone
         
-        backbone_type = self.backbone_cfg.get('name', 'resnet50')
+        backbone_type = self.backbone_cfg.get('name', 'dinov2_small')
         hidden_dim = self.backbone_cfg.get('embed_dim', 256)
         
         if DEBUG >= 1:
@@ -172,11 +169,13 @@ class Rfdetrwrapper(nn.Module):
         else:
             backbone_feats = []
         
-        # Extract predictions and convert to standard format
-        # outputs['pred_logits']: [B, num_queries, num_classes]
-        # outputs['pred_boxes']: [B, num_queries, 4] in cxcywh normalized format
-        pred_logits = outputs['pred_logits']
-        pred_boxes = outputs['pred_boxes']
+        # Extract predictions
+        pred_logits = outputs['pred_logits']  # [B, num_queries, num_classes]
+        pred_boxes = outputs['pred_boxes']     # [B, num_queries, 4] normalized
+        
+        # DEBUG: Check raw logits distribution
+        if DEBUG >= 2:
+            logger.info(f"Raw logits stats: min={pred_logits.min():.4f}, max={pred_logits.max():.4f}, mean={pred_logits.mean():.4f}, std={pred_logits.std():.4f}")
         
         # Convert boxes to absolute coordinates
         pred_boxes_abs = pred_boxes.clone()
@@ -185,25 +184,32 @@ class Rfdetrwrapper(nn.Module):
         pred_boxes_abs[..., 2] = pred_boxes[..., 2] * W  # width
         pred_boxes_abs[..., 3] = pred_boxes[..., 3] * H  # height
         
-        # Apply sigmoid to get class probabilities
+        # Get class probabilities (sigmoid for focal loss compatibility)
         class_probs = pred_logits.sigmoid()
         
-        # OPTION 1: Set objectness to 1.0 (since DETR doesn't have separate objectness)
-        objectness = torch.ones((B, self.num_queries, 1), 
-                               dtype=class_probs.dtype, 
-                               device=class_probs.device)
+        # DEBUG: Check sigmoid output
+        if DEBUG >= 2:
+            logger.info(f"Class probs after sigmoid: min={class_probs.min():.4f}, max={class_probs.max():.4f}, mean={class_probs.mean():.4f}")
+            # Show distribution
+            high_conf = (class_probs > 0.5).sum().item()
+            mid_conf = ((class_probs > 0.1) & (class_probs <= 0.5)).sum().item()
+            low_conf = (class_probs <= 0.1).sum().item()
+            total = class_probs.numel()
+            logger.info(f"Confidence distribution: high(>0.5)={high_conf}/{total} ({100*high_conf/total:.2f}%), "
+                       f"mid(0.1-0.5)={mid_conf}/{total} ({100*mid_conf/total:.2f}%), "
+                       f"low(<0.1)={low_conf}/{total} ({100*low_conf/total:.2f}%)")
         
-        # OPTION 2: Use sqrt of max class confidence to balance the multiplication
-        # objectness = class_probs.max(dim=-1, keepdim=True)[0].sqrt()
+        # Use max class probability as "objectness"
+        objectness, pred_class_idx = class_probs.max(dim=-1, keepdim=True)  # [B, num_queries, 1]
         
-        # YOLOX format: [x_center, y_center, width, height, objectness, class_conf_0, ...]
+        # YOLOX format: [cx, cy, w, h, objectness, class_conf_0, ...]
         head_outputs = torch.cat([
             pred_boxes_abs,  # [B, num_queries, 4]
-            objectness,      # [B, num_queries, 1] - set to 1.0
+            objectness,      # [B, num_queries, 1]
             class_probs      # [B, num_queries, num_classes]
         ], dim=-1)
         
-        # Build result dict following framework standard
+        # Build result dict
         result = {
             'backbone_features': {
                 'preflatten_feat': backbone_feats if isinstance(backbone_feats, list) else [backbone_feats]
@@ -215,19 +221,49 @@ class Rfdetrwrapper(nn.Module):
             targets_detr = self._convert_targets(targets, (H, W))
             loss_dict = self.criterion(outputs, targets_detr)
             
+            # DEBUG: Show loss values and check if model is matching GTs
+            if DEBUG >= 2:
+                logger.info(f"Loss breakdown:")
+                for k, v in loss_dict.items():
+                    if k in self.criterion.weight_dict:
+                        weighted_loss = v * self.criterion.weight_dict[k]
+                        logger.info(f"  {k}: {v:.4f} × {self.criterion.weight_dict[k]} = {weighted_loss:.4f}")
+                
+                # Check predictions vs ground truth
+                for i, target in enumerate(targets_detr):
+                    if len(target['labels']) > 0:
+                        img_objectness = objectness[i].squeeze()
+                        img_pred_classes = pred_class_idx[i].squeeze()
+                        img_class_probs = class_probs[i]  # [num_queries, num_classes]
+                        
+                        # Top predictions
+                        top_k = min(5, len(img_objectness))
+                        top_conf, top_idx = img_objectness.topk(top_k)
+                        top_classes = img_pred_classes[top_idx]
+                        
+                        # Check if any predictions match GT classes
+                        gt_classes = target['labels']
+                        matches = sum(1 for c in top_classes if c in gt_classes)
+                        
+                        logger.info(f"Image {i}: GT classes={gt_classes.tolist()}, num_GT={len(gt_classes)}")
+                        logger.info(f"  Top-{top_k} preds: classes={top_classes.tolist()}, conf={top_conf.tolist()}")
+                        logger.info(f"  Matches with GT: {matches}/{top_k}")
+                        
+                        # Check the actual predictions for GT classes
+                        for gt_class in gt_classes[:3]:  # Show first 3 GT classes
+                            gt_class_probs_all = img_class_probs[:, gt_class]
+                            max_prob_for_gt = gt_class_probs_all.max()
+                            logger.info(f"  GT class {gt_class.item()}: max prob across all queries = {max_prob_for_gt:.4f}")
+            
             total_loss = sum(loss_dict[k] * self.criterion.weight_dict.get(k, 1) 
                            for k in loss_dict.keys() if k in self.criterion.weight_dict)
             
             result['total_loss'] = total_loss
             result['losses'] = loss_dict
         
-        if DEBUG >= 2:
-            class_probs = pred_logits.sigmoid()
-            max_probs = class_probs.max(dim=-1)[0]
-            logger.info(f"Confidence distribution:")
-            logger.info(f"  Min: {max_probs.min():.4f}, Max: {max_probs.max():.4f}")
-            logger.info(f"  Mean: {max_probs.mean():.4f}, Median: {max_probs.median():.4f}")
-            logger.info(f"  Predictions > 0.3: {(max_probs > 0.3).sum().item()}/{max_probs.numel()}")
+        if DEBUG >= 1:
+            logger.info(f"Objectness: min={objectness.min():.4f}, max={objectness.max():.4f}, mean={objectness.mean():.4f}")
+            logger.info(f"Predictions >0.1: {(objectness > 0.1).sum().item()}, >0.3: {(objectness > 0.3).sum().item()}, >0.5: {(objectness > 0.5).sum().item()}")
         
         return result
     
