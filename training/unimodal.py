@@ -7,6 +7,9 @@ import wandb
 import os
 import sys
 from loguru import logger
+import glob
+import shutil
+
 
 import torch
 import torch.nn as nn
@@ -61,7 +64,7 @@ class Trainer:
         
         # Get loss keys from model
         self._get_loss_keys()
-        
+        self.max_checkpoints = cfg['trainer'].get('max_checkpoints', 5)  # Keep only last 5 checkpoints
         # deciding checkpoint interval based on epochs or steps
         self.checkpoint_interval_epochs = cfg['trainer'].get('checkpoint_interval_epochs', 0)
         if self.checkpoint_interval_epochs > 0:
@@ -262,6 +265,14 @@ class Trainer:
     def _save_checkpoint(self, epoch):
         timestamp = datetime.datetime.now().strftime('%Y%m%d%H%M')
         checkpoint_path = f"{self.save_folder}{self.save_name}_checkpoint_epoch_{epoch}_{timestamp}.pth"
+
+        if not self._check_disk_space(checkpoint_path, min_free_gb=1):
+            logger.warning(f"Low disk space detected. Attempting to free space...")
+            self._delete_oldest_checkpoint()
+        
+        # Enforce maximum checkpoint limit
+        self._enforce_checkpoint_limit()
+        
         torch.save({
             'epoch': epoch,
             'model_state_dict': self.model.state_dict(),
@@ -270,6 +281,70 @@ class Trainer:
             'config': self.cfg
         }, checkpoint_path)
         logger.success(f"Checkpoint saved at epoch {epoch} to {checkpoint_path}")
+
+    def _check_disk_space(self, file_path, min_free_gb=5):
+        """Check if there's enough disk space available.
+        
+        Args:
+            file_path (str): Path where file will be saved
+            min_free_gb (float): Minimum free space required in GB
+            
+        Returns:
+            bool: True if enough space, False otherwise
+        """
+        try:
+            stat = shutil.disk_usage(os.path.dirname(file_path))
+            free_gb = stat.free / (1024 ** 3)  # Convert bytes to GB
+            
+            if DEBUG >= 1:
+                logger.info(f"Available disk space: {free_gb:.2f} GB")
+            
+            return free_gb >= min_free_gb
+        except Exception as e:
+            logger.warning(f"Could not check disk space: {e}")
+            return True  # Assume space is available if check fails
+
+    def _delete_oldest_checkpoint(self):
+        """Delete the oldest checkpoint file (excluding best model) to free up space."""
+        try:
+            # Find all checkpoint files (but not the best model)
+            checkpoint_pattern = f"{self.save_folder}{self.save_name}_checkpoint_epoch_*.pth"
+            checkpoint_files = glob.glob(checkpoint_pattern)
+            
+            if not checkpoint_files:
+                logger.warning("No checkpoint files found to delete.")
+                return
+            
+            # Sort by modification time (oldest first)
+            checkpoint_files.sort(key=os.path.getmtime)
+            oldest_checkpoint = checkpoint_files[0]
+            
+            # Get file size before deletion
+            file_size_mb = os.path.getsize(oldest_checkpoint) / (1024 ** 2)
+            
+            # Delete the oldest checkpoint
+            os.remove(oldest_checkpoint)
+            logger.info(f"Deleted oldest checkpoint: {oldest_checkpoint} (freed {file_size_mb:.2f} MB)")
+            
+        except Exception as e:
+            logger.error(f"Failed to delete oldest checkpoint: {e}")
+
+
+    def _enforce_checkpoint_limit(self):
+        """Keep only the most recent N checkpoints."""
+        checkpoint_pattern = f"{self.save_folder}{self.save_name}_checkpoint_epoch_*.pth"
+        checkpoint_files = glob.glob(checkpoint_pattern)
+        
+        if len(checkpoint_files) >= self.max_checkpoints:
+            # Sort by modification time (oldest first)
+            checkpoint_files.sort(key=os.path.getmtime)
+            
+            # Delete oldest checkpoints to stay under limit
+            num_to_delete = len(checkpoint_files) - self.max_checkpoints + 1
+            for checkpoint_file in checkpoint_files[:num_to_delete]:
+                os.remove(checkpoint_file)
+                if DEBUG >= 1:
+                    logger.info(f"Deleted old checkpoint (limit enforcement): {checkpoint_file}")
 
     def load_model_state(self, file_path):
         logger.info("Loading model...")
