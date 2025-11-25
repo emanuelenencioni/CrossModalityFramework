@@ -126,9 +126,9 @@ class Trainer:
         self.check_grad_nan(tot_loss, losses)
 
         tot_loss.backward()
-        
+        #print(f"Box Head Weight Sum: {self.model.bbox_embed.layers[-1].weight.abs().sum().item()}")
         # Add gradient clipping to prevent NaN values
-        torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
+        #torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
         
         self.optimizer.step()
 

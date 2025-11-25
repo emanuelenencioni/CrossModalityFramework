@@ -419,8 +419,13 @@ class SetCriterion(nn.Module):
         pred_logits = outputs['pred_logits']
         device = pred_logits.device
         tgt_lengths = torch.as_tensor([len(v["labels"]) for v in targets], device=device)
-        # Count the number of predictions that are NOT "no-object" (which is the last class)
-        card_pred = (pred_logits.argmax(-1) != pred_logits.shape[-1] - 1).sum(1)
+        
+        # FIX: For Focal Loss, we count predictions with high confidence
+        # instead of checking the background class index.
+        prob = pred_logits.sigmoid()
+        # Consider an object if max score > 0.5 (or any threshold)
+        card_pred = (prob.max(-1)[0] > 0.5).sum(1)
+        
         card_err = F.l1_loss(card_pred.float(), tgt_lengths.float())
         losses = {'cardinality_error': card_err}
         return losses
@@ -776,7 +781,7 @@ def build_model(args):
     # you should pass `num_classes` to be 2 (max_obj_id + 1).
     # For more details on this, check the following discussion
     # https://github.com/facebookresearch/detr/issues/108#issuecomment-650269223
-    num_classes = args.num_classes + 1
+    num_classes = args.num_classes
     device = torch.device(args.device)
 
 
@@ -854,7 +859,7 @@ def build_criterion_and_postprocessors(args):
     except:
         sum_group_losses = False
     if args.segmentation_head:
-        criterion = SetCriterion(args.num_classes + 1, matcher=matcher, weight_dict=weight_dict,
+        criterion = SetCriterion(args.num_classes, matcher=matcher, weight_dict=weight_dict,
                                 focal_alpha=args.focal_alpha, losses=losses, 
                                 group_detr=args.group_detr, sum_group_losses=sum_group_losses,
                                 use_varifocal_loss = args.use_varifocal_loss,
@@ -862,7 +867,7 @@ def build_criterion_and_postprocessors(args):
                                 ia_bce_loss=args.ia_bce_loss,
                                 mask_point_sample_ratio=args.mask_point_sample_ratio)
     else:
-        criterion = SetCriterion(args.num_classes + 1, matcher=matcher, weight_dict=weight_dict,
+        criterion = SetCriterion(args.num_classes, matcher=matcher, weight_dict=weight_dict,
                                 focal_alpha=args.focal_alpha, losses=losses, 
                                 group_detr=args.group_detr, sum_group_losses=sum_group_losses,
                                 use_varifocal_loss = args.use_varifocal_loss,
