@@ -1,0 +1,125 @@
+# General training parameters
+experiment_name: simpleCLIPTrain
+seed: 42
+device: cuda  # or cpu
+checkpoint_path: "" # path to a checkpoint to resume training from, if null training starts from scratch
+
+# Data parameters
+dataset:
+  name: cityscapes
+  data_dir: data
+  batch_size: 8
+  num_workers: 10
+  outputs: ["image", "BB", "labels", "img_metas"] # these mandatory for unimodal training
+  custom_classes: True # if True, the model will use custom classes defined in the dataset
+  bb_num_classes: 8 # according to DSEC
+  train_split: "cs_train.txt"
+  val_split: "cs_val.txt"
+  use_augmentations: True
+  output_size: [560, 560]  # height, width
+  augmentations:
+    resize: [560, 1024] # height, width
+    hflip_prob: 0.5
+    scale: [0.8, 1.2]
+    ratio: [0.9, 1.1]
+
+model:
+  name: "rfdetrwrapper"  # Must match the module name (without .py)
+  
+  backbone:
+    name: "dinov2_small"      # Must be dinov2_base, dinov2_small, dinov2_large, etc.
+                             # Options: dinov2_small, dinov2_base, dinov2_large, dinov2_giant
+                             # Can include: dinov2_registers_base, dinov2_windowed_base, etc.
+    embed_dim: 384          # Hidden dimension (768 for base, 384 for small, 1024 for large)
+                             # IMPORTANT: out_channels MUST equal embed_dim!
+    input_size: 560          # Input image size (must be divisible by 56 for DINOv2 with num_windows=4)
+                             # 560 = 56 * 10, or use 448 = 56 * 8, or 672 = 56 * 12
+    num_feature_levels: 4    # Number of feature pyramid levels (MUST match length of projector_scale)
+    position_embedding: "sine"
+    
+    # Advanced backbone parameters (with sensible defaults)
+    pretrained_encoder: true
+    freeze_encoder: false
+    vit_encoder_num_layers: 12
+    window_block_indexes: []
+    drop_path: 0.0
+    out_channels: 384          # Output channels for projector - MUST match embed_dim!
+    out_feature_indexes: [3, 6, 9, 12]  # Which DINOv2 layers to use (stages 3, 6, 9, 12)
+    projector_scale: ["P3", "P4", "P5", "P6"]  # Feature pyramid levels - P6 generated via pooling
+                                                # MUST have 4 levels to match num_feature_levels!
+    use_cls_token: false
+    layer_norm: true
+    target_shape: [560, 560]  # Must match input_size
+    rms_norm: false
+    backbone_lora: null
+    force_no_pretrain: false
+    gradient_checkpointing: false
+    load_dinov2_weights: true  # Load pretrained DINOv2 weights
+    patch_size: 14             # DINOv2 patch size
+    num_windows: 4             # For windowed attention
+    positional_encoding_size: null
+  
+  head:
+    num_classes: 8 # DSEC + no object         # Number of classes (required by builder.py)
+    num_queries: 300         # Number of object queries
+    aux_loss: true           # Use auxiliary decoding losses
+    group_detr: 1            # Group DETR parameter
+    two_stage: false         # Whether to use two-stage DETR
+    segmentation_head: null  # Optional: segmentation head config
+  
+  transformer:
+    sa_nheads: 8             # Number of self-attention heads
+    ca_nheads: 8             # Number of cross-attention heads  
+    dec_layers: 6            # Number of decoder layers
+    dim_feedforward: 1024    # Feedforward dimension
+    dropout: 0.1             # Dropout rate
+    dec_n_points: 4          # Number of sampling points in decoder
+    lite_refpoint_refine: false
+    decoder_norm: "LN"       # Must be "LN" or "Identity"
+    bbox_reparam: false
+  
+  matcher:
+    set_cost_class: 1.0      # Weight for classification cost in matching
+    set_cost_bbox: 5.0       # Weight for bbox L1 cost in matching
+    set_cost_giou: 2.0       # Weight for GIoU cost in matching
+  
+  loss:
+    cls_loss_coef: 1.0       # Weight for classification loss
+    bbox_loss_coef: 5.0      # Weight for bbox L1 loss
+    giou_loss_coef: 2.0      # Weight for GIoU loss
+    eos_coef: 0.1            # Weight for "no object" class
+  
+  pretrained_weights: null   # Path to pretrained weights (optional)
+  pretrained: false          # Whether to load pretrained weights
+
+trainer:
+  epochs: 50
+  checkpoint_interval_epochs: 5
+  save_folder: "rfdetr_checkpoints"
+  max_checkpoints: 15  # Maximum number of checkpoints to keep
+
+optimizer:
+  name: "adamw"
+  lr: 0.0001
+  #momentum: 0.9
+  wd: 0.0001
+
+scheduler:
+  name: "MultiStepLRWithWarmup"  # Use custom scheduler that combines both
+  milestones: [15, 20]
+  gamma: 0.1
+  warmup_epochs: 2
+  warmup_factor: 0.1  # Start at lr * 0.1 during warmup
+
+device: "cuda"
+dual_modality: false
+
+evaluator:
+  name: rfdetr_evaluator
+  conf_threshold: 0.3
+  nms_threshold: -1  # Disabled if -1
+
+logger:
+  name: wandb
+  project: Cross_Modality_Framework
+  entity: TwoGuysOneCode
