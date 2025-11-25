@@ -71,7 +71,7 @@ class ContextVar:
     def __eq__(self, x): return self.value == x
 
 DEBUG = ContextVar("DEBUG", 0)
-DEBUG_EVAL = ContextVar("DEBUG_EVAL", 0) # Disable training loops and just run evaluation for debugging
+EVAL_ONLY = ContextVar("EVAL_ONLY", 0) # Disable training loops and just run evaluation for debugging
 TORCH_VERSION = torch.__version__
 
 # **************** timer and profiler ****************

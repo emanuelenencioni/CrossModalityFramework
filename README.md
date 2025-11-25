@@ -104,7 +104,7 @@ The DSEC-Night and Cityscapes datasets are currently supported. To prepare them 
     - Use the `DEBUG` environment variable to monitor the internal processes. Higher values (>=1) will increase the verbosity of the output, Most used are:          
         - `DEBUG=1`: Provides basic information such as real-time loss for each batch and setup details.
         - `DEBUG=3`: e.g. saves and allows inspection of ground truth bounding box images (just one, >4 for all of them).
-    - For testing purposes, use the `DEBUG_EVAL` environment variable to skip the training loop and run only the evaluation pipeline.
+    - For testing purposes, use the `EVAL_ONLY` environment variable to skip the training loop and run only the evaluation pipeline.
 6. **Evaluating the Model:**
     - Run the evaluation script:
       ```shell

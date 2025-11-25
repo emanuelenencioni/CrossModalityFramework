@@ -18,7 +18,7 @@ import torch.optim as optim
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 
-from utils.helpers import DEBUG, DEBUG_EVAL, deep_dict_equal
+from utils.helpers import DEBUG, EVAL_ONLY, deep_dict_equal
 
 
 
@@ -164,7 +164,7 @@ class Trainer:
         start_epoch = self.epoch
         avg_loss = float('inf')
         for epoch in range(start_epoch, self.total_epochs):
-            if DEBUG_EVAL == 0:
+            if EVAL_ONLY == 0:
                 self.model.train()
                 start_time = time.time()
                 with tqdm(total=len(self.dataloader), desc=f"Epoch {self.epoch}/{self.total_epochs}") as pbar:

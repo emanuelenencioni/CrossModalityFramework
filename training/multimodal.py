@@ -8,7 +8,7 @@ from tqdm import tqdm
 from loguru import logger
 import numpy as np
 
-from utils.helpers import DEBUG,DEBUG_EVAL, Timing, deep_dict_equal
+from utils.helpers import DEBUG,EVAL_ONLY, Timing, deep_dict_equal
 import time
 from datetime import datetime
 import sys
@@ -146,7 +146,7 @@ class DualModalityTrainer(Trainer):
         avg_loss = float('inf')
         
         for epoch in range(start_epoch, self.total_epochs):
-            if DEBUG_EVAL == 0:
+            if EVAL_ONLY == 0:
                 self.model1.train()
                 if self.model2 is not None:
                     self.model2.train()
