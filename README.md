@@ -80,6 +80,11 @@ The DSEC-Night and Cityscapes datasets are currently supported. To prepare them 
             python dataset/create_cs_txt.py
             ```
 
+        - **For Cityscapes Events:**
+            ```bash
+            python dataset/create_cs_events_txt.py
+            ```
+
         - **For DSEC-Night:**
             ```bash
             python dataset/create_dataset_txt.py
