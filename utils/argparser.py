@@ -128,6 +128,9 @@ def parse_arguments():
     parser.add_argument("--project", type=str,  help="Wandb project name", default=None)
     parser.add_argument("--entity", type=str, help="Wandb entity name", default=None)
 
+    # evaluator parameters
+    parser.add_argument("--conf_threshold", type=float, help="Evaluator confidence threshold", default=None)
+
     args = parser.parse_args()
 
     cfg = None
