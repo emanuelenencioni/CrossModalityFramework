@@ -199,9 +199,13 @@ class Rfdetrwrapper(nn.Module):
                        f"mid(0.1-0.5)={mid_conf}/{total} ({100*mid_conf/total:.2f}%), "
                        f"low(<0.1)={low_conf}/{total} ({100*low_conf/total:.2f}%)")
         
-        # Use max class probability as "objectness"
-        objectness, pred_class_idx = class_probs.max(dim=-1, keepdim=True)  # [B, num_queries, 1]
+        # Get max class probability and index for logging/debug
+        max_probs, pred_class_idx = class_probs.max(dim=-1, keepdim=True)
         
+        # For DETR, objectness should be 1 so that score = 1 * class_prob
+        # The evaluator calculates score = objectness * class_prob.
+        objectness = torch.ones_like(max_probs)
+
         # YOLOX format: [cx, cy, w, h, objectness, class_conf_0, ...]
         head_outputs = torch.cat([
             pred_boxes_abs,  # [B, num_queries, 4]
@@ -232,7 +236,8 @@ class Rfdetrwrapper(nn.Module):
                 # Check predictions vs ground truth
                 for i, target in enumerate(targets_detr):
                     if len(target['labels']) > 0:
-                        img_objectness = objectness[i].squeeze()
+                        # Use max_probs for debug logging instead of the artificial objectness=1
+                        img_objectness = max_probs[i].squeeze()
                         img_pred_classes = pred_class_idx[i].squeeze()
                         img_class_probs = class_probs[i]  # [num_queries, num_classes]
                         
@@ -262,8 +267,9 @@ class Rfdetrwrapper(nn.Module):
             result['losses'] = loss_dict
         
         if DEBUG >= 1:
-            logger.info(f"Objectness: min={objectness.min():.4f}, max={objectness.max():.4f}, mean={objectness.mean():.4f}")
-            logger.info(f"Predictions >0.1: {(objectness > 0.1).sum().item()}, >0.3: {(objectness > 0.3).sum().item()}, >0.5: {(objectness > 0.5).sum().item()}")
+            # Use max_probs for statistics (this represents the effective score the evaluator sees)
+            logger.info(f"Effective Score (Max Class Prob): min={max_probs.min():.4f}, max={max_probs.max():.4f}, mean={max_probs.mean():.4f}")
+            logger.info(f"Predictions >0.1: {(max_probs > 0.1).sum().item()}, >0.3: {(max_probs > 0.3).sum().item()}, >0.5: {(max_probs > 0.5).sum().item()}")
         
         return result
     
